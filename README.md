@@ -14,9 +14,9 @@
 - Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
 - MIT License.  
-- Basic sample is available [here]().  
-- Tests are available [here]().  
-- An example with 100,000 entities is available [here]().  
+- Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basic/main.odin).  
+- Tests are available [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
+- An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 
 # Basics  
 
