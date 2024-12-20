@@ -1,0 +1,15 @@
+out/*
+!out/.keep
+
+tests/out/*
+!tests/out/.keep
+
+samples/basic/out/*
+!samples/basic/out/.keep
+
+samples/sample01/out/*
+!samples/sample01/out/.keep
+
+.vscode
+ols.json
+*.code-workspace
