@@ -162,7 +162,7 @@ To iterate over views, you need to use an `Iterator`:
     }
 ```  
 
-To get the entity or its components inside the iterator loop, you can do this:  
+To get an entity or its components inside the iterator loop, you can do this:  
 
 ```odin
     eid: ecs.entity_id
