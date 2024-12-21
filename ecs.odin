@@ -43,9 +43,11 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Public API 
 //
-//  API proc name        | Internal proc name   
+//  API proc name        | Internal proc name (grouped by file name) 
 
-    // Database
+    //
+    // Database (db)
+    //
     init                :: db__init
     terminate           :: db__terminate
     clear               :: db__clear
@@ -58,7 +60,9 @@ package ode_ecs
         view__memory_usage,
     }
 
+    //
     // Table
+    //
     table_init          :: table__init
     table_terminate     :: table__terminate
     add_component       :: table__add_component
@@ -75,7 +79,9 @@ package ode_ecs
     }
     table_clear         :: table_raw__clear
 
+    //
     // View 
+    //
     view_init           :: view__init
     view_terminate      :: view__terminate
     rebuild             :: view__rebuild
@@ -86,7 +92,9 @@ package ode_ecs
     suspend             :: view__suspend
     resume              :: view__resume
 
+    //
     // Iterator
+    //
     iterator_init       :: iterator__init
     iterator_reset      :: iterator__init // same as init
     iterator_next       :: iterator__next
