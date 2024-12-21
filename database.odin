@@ -1,7 +1,5 @@
 /*
-    2025 (c) Oleh, https://github.com/zm69
-
-    ODE_ECS is an fast sparse/dense ECS with tail swap, written in Odin.  
+    2025 (c) Oleh, https://github.com/zm69 
 */
 package ode_ecs
 
@@ -115,7 +113,7 @@ db__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
     } 
 
     // clean bit_sets
-    bits__clear(&self.eid_to_bits[eid.ix])
+    uni_bits__clear(&self.eid_to_bits[eid.ix])
 
     oc.ix_gen_factory__free_id(&self.id_factory, eid) or_return
 
