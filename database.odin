@@ -8,7 +8,7 @@ package ode_ecs
     
 // Core
     import "core:log"
-    import "core:mem"
+    import "core:slice"
 
 // ODE
     import oc "ode_core"
@@ -87,7 +87,7 @@ db__clear :: proc(self: ^Database) -> Error {
 
     if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
-    mem.zero(raw_data(self.eid_to_bits), size_of(Uni_Bits) * len(self.eid_to_bits))
+    slice.zero(self.eid_to_bits)
 
     for view in self.views.items {
         if view != nil {
