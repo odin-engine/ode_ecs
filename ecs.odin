@@ -73,6 +73,7 @@ package ode_ecs
         table__get_entity,
         iterator__get_entity,
     }
+    table_clear         :: table_raw__clear
 
     // View 
     view_init           :: view__init
@@ -82,6 +83,8 @@ package ode_ecs
     view_cap            :: view__cap
     view_clear          :: view__clear
     view_entity_match   :: view__entity_match
+    suspend             :: view__suspend
+    resume              :: view__resume
 
     // Iterator
     iterator_init       :: iterator__init

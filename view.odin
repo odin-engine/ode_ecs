@@ -31,6 +31,7 @@ package ode_ecs
         cap: int,
 
         bits: Uni_Bits,
+        suspended: bool,
     }
 
     view__init :: proc(self: ^View, ecs: ^Database, includes: []^Table_Base, excludes: []^Table_Base = nil) -> Error {
@@ -157,7 +158,7 @@ package ode_ecs
             for i := 0; i < len(self.eid_to_rid); i+=1 do self.eid_to_rid[i] = DELETED_INDEX
         }
 
-        if self.records != nil {
+        if self.cap > 0 && self.records != nil {
             total_count := self.cap * self.columns_count
             #no_bounds_check {
                 for i := 0; i < total_count; i+=1 do self.records[i] = DELETED_INDEX
@@ -191,7 +192,7 @@ package ode_ecs
 
         for i:= 0; i < table_raw__len(min_table); i+=1 {
             eid = min_table.rid_to_eid[i]
-            assert(int(eid) >= 0)
+            assert(eid.ix >= 0)
 
             // check if view bits is subset of entity bits
             if view__entity_match(self, eid) {
@@ -233,6 +234,22 @@ package ode_ecs
         return uni_bits__is_subset(&self.bits, &self.ecs.eid_to_bits[eid.ix]) 
     }
 
+    view__suspend :: proc(self: ^View) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+
+        self.suspended = true
+    }
+
+    view__resume :: proc(self: ^View) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+
+        self.suspended = false
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Private
 
@@ -272,7 +289,7 @@ package ode_ecs
     view__remove_record :: proc(self: ^View, eid: entity_id) {
         raw := (^runtime.Raw_Slice)(&self.records)
         if raw.len <= 0 do return // no records
-        if self.eid_to_rid[eid.ix] == DELETED_INDEX do return // already deleted
+        if self.eid_to_rid[eid.ix] == DELETED_INDEX do return // already deleted or this view doesn't match entity
 
         dest_row_ix :=  int(self.eid_to_rid[eid.ix]) * self.columns_count
         src_row_ix := (raw.len - 1) * self.columns_count

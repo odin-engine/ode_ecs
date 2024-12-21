@@ -45,8 +45,6 @@ package ode_ecs
 
         oc.dense_arr__init(&self.subscribers, VIEWS_CAP, ecs.allocator) or_return
 
-        table__clear(self, false)
-
         return nil
     }
 
@@ -136,8 +134,10 @@ package ode_ecs
 
             // Notify subscribed views
             for view in self.subscribers.items {
-                view__remove_record(view, target_eid)
-                view__update_component(view, self, tail_eid, target_rid)
+                if !view.suspended {
+                    view__remove_record(view, target_eid)
+                    view__update_component(view, self, tail_eid, target_rid)
+                }
             }
         }
 
@@ -149,6 +149,26 @@ package ode_ecs
         db__remove_component(self.ecs, target_eid, self.id)
 
         return
+    }
+
+    // clear data, nothing else
+    table_raw__clear :: proc (self: ^Table_Raw, zero_components := true) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        if self.rid_to_eid != nil {
+            for i := 0; i < len(self.rid_to_eid); i+=1 do self.rid_to_eid[i].ix = DELETED_INDEX
+        }
+
+        if self.eid_to_rid != nil {
+            for i := 0; i < len(self.eid_to_rid); i+=1 do self.eid_to_rid[i] = DELETED_INDEX
+        }
+
+        if zero_components && self.cap > 0 && self.records != nil {
+            mem.zero(raw_data(self.records), self.type_info.size * self.cap)
+        }
+        (^runtime.Raw_Slice)(&self.records).len = 0
+
+        return nil
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -175,11 +195,12 @@ package ode_ecs
         table_base__init(&self.base, ecs, cap) or_return 
 
         self.records = make([]T, cap, ecs.allocator) or_return
-        (^runtime.Raw_Slice)(&self.records).len = 0
+        
+        self.id = db__attach_table(ecs, self) or_return
 
         self.state = Object_State.Normal
 
-        self.id = db__attach_table(ecs, self) or_return
+        table_raw__clear(cast(^Table_Raw)self) or_return 
 
         return nil
     }
@@ -235,7 +256,7 @@ package ode_ecs
 
         // Notify subscribed views
         for view in self.subscribers.items {
-            if view__entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__entity_match(view, eid) do view__add_record(view, eid)
         }
 
         return 
@@ -302,6 +323,7 @@ package ode_ecs
 
         return total
     }
+    
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private
@@ -318,22 +340,5 @@ package ode_ecs
         return err
     }
 
-    // clear data, nothing else
-    @(private)
-    table__clear :: proc (self: ^Table_Base, zero_components := true) {
-
-        if self.rid_to_eid != nil {
-            for i := 0; i < len(self.rid_to_eid); i+=1 do self.rid_to_eid[i].ix = DELETED_INDEX
-        }
-
-        if self.eid_to_rid != nil {
-            for i := 0; i < len(self.eid_to_rid); i+=1 do self.eid_to_rid[i] = DELETED_INDEX
-        }
-
-        raw := cast(^Table_Raw) self
-        if zero_components && raw.records != nil {
-            mem.zero(&raw.records, self.type_info.size * self.cap)
-        }
-    }
 
 

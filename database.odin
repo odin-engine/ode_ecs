@@ -8,6 +8,7 @@ package ode_ecs
     
 // Core
     import "core:log"
+    import "core:mem"
 
 // ODE
     import oc "ode_core"
@@ -78,8 +79,31 @@ db__terminate :: proc(self: ^Database) -> Error {
     return nil
 }
 
-db__clear :: proc(self: ^Database) {
-    // TODO: implement
+db__clear :: proc(self: ^Database) -> Error {
+    when VALIDATIONS {
+        assert(self != nil)
+        assert(self.eid_to_bits != nil)
+    }
+
+    if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+    mem.zero(raw_data(self.eid_to_bits), size_of(Uni_Bits) * len(self.eid_to_bits))
+
+    for view in self.views.items {
+        if view != nil {
+            view__clear(view) or_return
+        }
+    }
+
+    for table in self.tables.items {
+        if table != nil {
+            table_raw__clear(cast(^Table_Raw)table) or_return 
+        }
+    } 
+
+    oc.ix_gen_factory__clear(&self.id_factory)
+
+    return nil
 }
 
 @(require_results)
