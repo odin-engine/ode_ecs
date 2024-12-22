@@ -182,3 +182,34 @@ To get an entity or its components inside the iterator loop, you can do this:
         // ...
     }
 ```
+# Advanced
+
+### Public API
+
+List of public procedures (public API) is [here](https://github.com/odin-engine/ode_ecs/blob/main/ecs.odin).
+
+### Entity  
+
+In ODE_ECS, an entity is simply an ID. In the `ecs.odin` file, an entity is defined as follows:  
+
+```odin
+    entity_id ::        oc.ix_gen
+```  
+
+The `ix_gen` is defined like this:  
+
+```odin
+    ix_gen :: bit_field i64 {
+        ix: int | 56,       // index
+        gen: uint | 8,      // generation
+    }
+```  
+
+This approach is very useful because it ensures that if you save an entity ID somewhere and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
+
+### Maximum number of component types
+
+By default maximum number of component types is 128. You can have unlimited number of component types. To increase maximum number of component types change 
+```odin
+    TABLES_MULT :: #config(ecs_tables_mult, 1)
+```

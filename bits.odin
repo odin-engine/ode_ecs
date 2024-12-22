@@ -82,10 +82,10 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Uni_Bits
 
-    when TABLES_BIT_SET_COUNT == 1 {
+    when TABLES_MULT == 1 {
         Uni_Bits :: Bits
     } else {
-        Uni_Bits :: Bits_Arr(TABLES_BIT_SET_COUNT)
+        Uni_Bits :: Bits_Arr(TABLES_MULT)
     }   
 
     uni_bits__clear :: proc {

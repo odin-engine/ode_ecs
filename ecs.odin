@@ -27,13 +27,13 @@ package ode_ecs
 
     // Like in other ECSs we use bit_set to store info about what components an entity has.
     // By default one bit_set can store info about 128 types of components, 
-    // if you increase TABLES_BIT_SET_COUNT number to 2,
+    // if you increase TABLES_MULT number to 2,
     // ODE ECS will store info about 256 types of components, if 3 then 384, 4 = 512, etc. 
     // You can have unlimited number of types of components (as long as you have memory). 
-    TABLES_BIT_SET_COUNT :: #config(ecs_tables_bit_set_count, 1)
+    TABLES_MULT :: #config(ecs_tables_mult, 1)
     
     // Maximum number of tables (component types)
-    TABLES_CAP :: BIT_SET_VALUES_CAP * TABLES_BIT_SET_COUNT
+    TABLES_CAP :: BIT_SET_VALUES_CAP * TABLES_MULT
 
     // Maximum number of views
     VIEWS_CAP :: #config(ecs_views_cap, TABLES_CAP)
@@ -50,10 +50,10 @@ package ode_ecs
     //
     init                :: db__init
     terminate           :: db__terminate
-    clear               :: db__clear
+    clear               :: db__clear                    // clear all data (and only data) from database
     create_entity       :: db__create_entity
     destroy_entity      :: db__destroy_entity
-    is_expired          :: db__is_expired               // to check if entity expired
+    is_expired          :: db__is_expired               // to check if entity expired (was deleted)
     memory_usage        :: proc {
         db__memory_usage,
         table__memory_usage,
@@ -77,23 +77,23 @@ package ode_ecs
         table__get_entity,
         iterator__get_entity,
     }
-    table_clear         :: table_raw__clear
+    table_clear         :: table_raw__clear             // clear all data from table
 
     //
     // View 
     //
     view_init           :: view__init
     view_terminate      :: view__terminate
-    rebuild             :: view__rebuild
+    rebuild             :: view__rebuild                // regenerate view data from tables
     view_len            :: view__len
     view_cap            :: view__cap
-    view_clear          :: view__clear
+    view_clear          :: view__clear                  // clear all data from view
     view_entity_match   :: view__entity_match
-    suspend             :: view__suspend
+    suspend             :: view__suspend                // suspend receiving "events" from tables
     resume              :: view__resume
 
     //
-    // Iterator
+    // View iterator
     //
     iterator_init       :: iterator__init
     iterator_reset      :: iterator__init // same as init
