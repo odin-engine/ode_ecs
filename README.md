@@ -207,9 +207,12 @@ The `ix_gen` is defined like this:
 
 This approach is very useful because it ensures that if you save an entity ID somewhere and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 
-### Maximum number of component types
+### Maximum Number of Component Types  
 
-By default maximum number of component types is 128. You can have unlimited number of component types. To increase maximum number of component types change 
+By default, the maximum number of component types is 128. However, you can have an unlimited number of component types. To increase the maximum number of component types, modify `TABLES_MULT` either in `ecs.odin` or by using the command-line define `ecs_tables_mult`:  
+
 ```odin
     TABLES_MULT :: #config(ecs_tables_mult, 1)
-```
+```  
+
+A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on.  
