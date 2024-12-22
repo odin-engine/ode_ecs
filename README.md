@@ -18,6 +18,10 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - Tests are available [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 
+# How to install
+
+`git clone` this repo into your project and then `import ecs "ode_ecs"`.
+
 # Basics  
 
 An `Entity` is simply an ID. All data associated with an entity is stored in its components.  
@@ -215,4 +219,4 @@ By default, the maximum number of component types is 128. However, you can have 
     TABLES_MULT :: #config(ecs_tables_mult, 1)
 ```  
 
-A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values will make ODE_ECS work faster and use less memory, so increase it only if necessary.
+A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
