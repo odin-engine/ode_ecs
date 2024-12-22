@@ -215,4 +215,4 @@ By default, the maximum number of component types is 128. However, you can have 
     TABLES_MULT :: #config(ecs_tables_mult, 1)
 ```  
 
-A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on.  
+A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values will make ODE_ECS work faster and use less memory, so increase it only if necessary.
