@@ -675,9 +675,11 @@ package ode_ecs__tests
         eid_3, err = ecs.create_entity(ecs_1)
         testing.expect(t, eid_3.ix == 2)
         testing.expect(t, err == nil)
-        
+
+        testing.expect(t, ecs.has_component(positions, eid_2) == false)
         pos, err = ecs.table__add_component(positions, eid_2)
         testing.expect(t,  err == nil)
+        testing.expect(t, ecs.has_component(positions, eid_2) == true)
 
         ai, err = ecs.table__add_component(ais, eid_2)
         testing.expect(t, err == nil)

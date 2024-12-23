@@ -71,6 +71,8 @@ package ode_ecs
         table__get_component_by_entity_id,
         iterator__get_component, 
     }
+    table_has_component :: table__has_component
+    has_component       :: table__has_component
     table_len           :: table__len
     table_cap           :: table__len
     get_entity          :: proc {

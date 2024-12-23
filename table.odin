@@ -301,6 +301,20 @@ package ode_ecs
         return &self.records[rid], nil
     }
 
+    @(require_results)
+    table__has_component :: proc (self: ^Table($T), eid: entity_id) -> bool {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
+        err := db__is_entity_correct(self.ecs, eid)
+        if err != nil do return false
+
+        return self.eid_to_rid[eid.ix] != DELETED_INDEX
+    }
+
     table__get_entity :: #force_inline proc "contextless" (self: ^Table($T), #any_int record_index: int) -> entity_id {
         return self.rid_to_eid[record_index]
     }
