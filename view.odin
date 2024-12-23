@@ -20,7 +20,6 @@ package ode_ecs
         state: Object_State,
         ecs: ^Database, 
         tables: oc.Dense_Arr(^Table_Raw), // includes tables, removing table invalidates View
-        excludes: oc.Dense_Arr(^Table_Raw),
 
         tid_to_cid: []view_column_id,  
         eid_to_rid: []view_record_id, 
@@ -34,7 +33,7 @@ package ode_ecs
         suspended: bool,
     }
 
-    view__init :: proc(self: ^View, ecs: ^Database, includes: []^Table_Base, excludes: []^Table_Base = nil) -> Error {
+    view__init :: proc(self: ^View, ecs: ^Database, includes: []^Table_Base) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(ecs != nil)
@@ -52,15 +51,6 @@ package ode_ecs
         len_uniq_tables := len(uniq_tables)
 
         oc.dense_arr__init(&self.tables, len_uniq_tables, ecs.allocator) or_return
-
-        // excludes
-        if len(excludes) > 0 {
-            slice.sort(excludes)
-            uniq_excludes := slice.unique(excludes)
-            len_uniq_excludes := len(uniq_excludes)
-    
-            oc.dense_arr__init(&self.excludes, len_uniq_excludes, ecs.allocator) or_return
-        }
 
         // max table id
         max_table_id: int = -1
@@ -139,7 +129,6 @@ package ode_ecs
         //
         for table in self.tables.items do table__detach_subscriber(table, self) or_return
 
-        oc.dense_arr__terminate(&self.excludes, self.ecs.allocator) or_return
         oc.dense_arr__terminate(&self.tables, self.ecs.allocator) or_return
 
         //

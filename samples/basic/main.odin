@@ -20,8 +20,9 @@ package ode_ecs_basics
     AI :: struct { neurons_count: int }
 
 //
-// NOTE: Purpose of this sample is to show basic functionality and we are not handling 
-// errors in this example to make code less verbose. All non-trivial procs can return errors.
+// NOTE: The purpose of this sample is to demonstrate basic functionality. 
+// To keep the code less verbose, we are not handling errors in this example. 
+// All non-trivial procedures can return errors.
 //
 main :: proc() {
 
@@ -36,9 +37,9 @@ main :: proc() {
     //
     // Init component tables
     // 
-    // Note: We don't need to terminate tables and views, they are attached to a Database 
-    // and will be automatically terminated when Database is terminated. You can still manually
-    // terminate tables and views if you need.
+    // Note: Tables and views do not need to be terminated manually as they are attached to a Database
+    // and will be automatically terminated when the Database is terminated. However, you can still 
+    // manually terminate tables and views if necessary.
     //
     
     positions : ecs.Table(Position)
@@ -137,7 +138,7 @@ main :: proc() {
 
 
     // fmt.println(a <= b)
-    // fmt.println(c & b == {})
+    // fmt.println(a & b == {})
 }
 
 

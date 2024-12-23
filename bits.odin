@@ -38,6 +38,10 @@ package ode_ecs
         return a^ <= b^
     }
 
+    bits__no_intersection :: #force_inline proc "contextless" (a: ^Bits, b: ^Bits) -> bool {
+        return a^ & b^ == {}
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Bits_Arr
 
@@ -74,6 +78,15 @@ package ode_ecs
         assert(N == S)
         for i:=0; i < N; i += 1 {
             if !(a.value[i] <= b.value[i]) do return false
+        }
+
+        return true
+    }
+
+    bits_arr__no_intersection :: #force_inline proc "contextless" (a: ^Bits_Arr($N), b: ^Bits_Arr($S)) -> bool {
+        assert(N == S)
+        for i:=0; i < N; i += 1 {
+            if (a^ & b^) != {} do return false
         }
 
         return true
@@ -117,6 +130,12 @@ package ode_ecs
     uni_bits__is_subset :: proc {
         bits__is_subset,
         bits_arr__is_subset,
+    }
+
+    // a^ & b^ == {}
+    uni_bits__no_intersection :: proc {
+        bits__no_intersection,
+        bits_arr__no_intersection,
     }
 
     @(test)
