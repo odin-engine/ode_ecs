@@ -115,30 +115,6 @@ main :: proc() {
     }
 
     fmt.println("Total memory usage:", ecs.memory_usage(&my_ecs), "bytes")
-
-    // a: bit_set[0..<ecs.BIT_SET_VALUES_CAP]
-    // b: bit_set[0..<ecs.BIT_SET_VALUES_CAP]
-    // c: bit_set[0..<ecs.BIT_SET_VALUES_CAP]
-
-    // a += {66}
-    // a += {5}
-    // a += {99}
-
-    // b += {1}
-    // b += {5}
-    // b += {99}
-    // b += {44}
-    // b += {66}
-
-    // c += {100}
-    // c += {5}
-    // c += {109}
-
-    // // c = {}
-
-
-    // fmt.println(a <= b)
-    // fmt.println(a & b == {})
 }
 
 
