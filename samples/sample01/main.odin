@@ -12,6 +12,10 @@ package ode_ecs_sample1
     import "core:log"
     import "core:slice"
     import "core:mem"
+    import "core:math"
+    import "core:math/rand"
+    import "core:time"
+     
 
 // ODE_ECS
     import ecs "../../"
@@ -23,7 +27,6 @@ package ode_ecs_sample1
     Position :: struct { x, y: int } 
     AI :: struct { neurons_count: int }
     Physical :: struct { velocity, mass: f32 }
-
 
 //
 // This example includes simple error handing.
@@ -94,10 +97,10 @@ main :: proc() {
         err = ecs.table_init(&positions, &db, 100_000) // Maximum 100K position components
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&ais, &db, 20_000) // Maximum 20K AI components
+        err = ecs.table_init(&ais, &db, 100_000) // Maximum 20K AI components
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&physics, &db, 70_000) // Maximum 70K position components
+        err = ecs.table_init(&physics, &db, 100_000) // Maximum 70K position components
         if err != nil { report_error(err); return }
 
         // Init views
@@ -129,7 +132,6 @@ main :: proc() {
                 ph.velocity += 0.4
                 ph.mass += 0.1
             }
-
         }
 
         process_ai :: proc (table: ^ecs.Table(AI)) {
@@ -139,7 +141,70 @@ main :: proc() {
             }
         }       
 
-    
+    //
+    // Game load, create 100_000 entities with random components
+    // 
+        // All possible components combinations
+        combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
 
+        pos: ^Position
+        ph: ^Physical
+        ai: ^AI
+
+        eid: ecs.entity_id
+        eid_components_count: int
+        for i:=0; i < 100_000; i+= 1 {
+            eid, err = ecs.create_entity(&db)
+            if err != nil { report_error(err); return }
+
+            // Randomly chose what components combo we want for entity
+            combo := rand.choice(combo_choice[:])
+
+            for j:=0; j<3; j+=1 {
+
+                switch combo[j] {
+                    case 0:
+                        break
+                    case 1:
+                        pos, err = ecs.add_component(&positions, eid)
+                        if err != nil { report_error(err); return }
+                        pos.x = int(rand.int63()) % 1920
+                        pos.y = int(rand.int63()) % 1080
+                    case 2:               
+                        ai, err = ecs.add_component(&ais, eid)
+                        if err != nil { report_error(err); return }
+                        ai.neurons_count = int(rand.uint32()) % 400
+                    case 3:
+                        ph, err = ecs.add_component(&physics, eid)
+                        if err != nil { report_error(err); return } 
+                        ph.mass = rand.float32_range(30, 100)
+                }
+
+            }
+        }
+
+    //
+    //  Game loop
+    // 
+
+        sw: time.Stopwatch
+        time.stopwatch_start(&sw)
+
+            process_physics(&physical, &positions, &physics)
+
+            process_ai(&ais)
+
+        time.stopwatch_stop(&sw)
+
+        _, _, sec, nanos := time.precise_clock_from_stopwatch(sw)
+
+    //
+    // Finish
+    //
+        fmt.println("Position components count:", ecs.table_len(&positions))
+        fmt.println("AI components count:", ecs.table_len(&ais))
+        fmt.println("Physics components count:", ecs.table_len(&physics)) 
+        fmt.println("Physical view len:", ecs.view_len(&physical))
+        fmt.printfln("Game loop time: %v sec %.2f ms", sec, f64(nanos)/1000000.0)
         fmt.println("Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte, "MB")
 }
