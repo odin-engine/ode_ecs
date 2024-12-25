@@ -67,10 +67,8 @@ main :: proc() {
         //
         // Views
         //
-        robots: ecs.View 
-        stones: ecs.View
+        physical: ecs.View 
         
-
         //
         // Simple error handling
         //
@@ -103,7 +101,45 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
         // Init views
+        err = ecs.view__init(&physical, &db, {&positions, &physics})
+        if err != nil { report_error(err); return }
 
+    //
+    // Systems
+    //
+
+        process_physics :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
+            pos: ^Position
+            ph: ^Physical
+            err: ecs.Error
+            it: ecs.Iterator
+
+            err = ecs.iterator_init(&it, view)
+            if err != nil { report_error(err); return }
+
+            for ecs.iterator__next(&it) {
+
+                // Doing some calculations on components
+
+                pos = ecs.get_component(positions, &it)
+                pos.x += 34
+                pos.y += 7
+
+                ph = ecs.get_component(physics, &it)
+                ph.velocity += 0.4
+                ph.mass += 0.1
+            }
+
+        }
+
+        process_ai :: proc (table: ^ecs.Table(AI)) {
+            for &ai in table.records {
+                // Doing some calculations on components
+                ai.neurons_count += 1 
+            }
+        }       
+
+    
 
         fmt.println("Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte, "MB")
 }
