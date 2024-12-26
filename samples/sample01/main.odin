@@ -28,6 +28,23 @@ package ode_ecs_sample1
     AI :: struct { neurons_count: int }
     Physical :: struct { velocity, mass: f32 }
 
+// 
+// Globals
+// 
+    // ECS Database
+    db: ecs.Database
+
+    // Component tables
+    positions : ecs.Table(Position)
+    ais : ecs.Table(AI)
+    physics: ecs.Table(Physical)
+
+    // Views
+    physical: ecs.View 
+
+    // All possible components combinations for generating random entities
+    g_combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
+
 //
 // This example includes simple error handing.
 //
@@ -55,31 +72,11 @@ main :: proc() {
     //
     // Actual ODE_ECS sample starts here.
     //
-        //
-        // ECS Database
-        //
-        db: ecs.Database
 
-        // 
-        // Component tables
-        //
-        positions : ecs.Table(Position)
-        ais : ecs.Table(AI)
-        physics: ecs.Table(Physical)
-
-        //
-        // Views
-        //
-        physical: ecs.View 
-        
         //
         // Simple error handling
         //
         err: ecs.Error
-
-        report_error :: proc (err: ecs.Error, loc := #caller_location) {
-            log.error("Error:", err, location = loc)
-        }
 
     //
     // Init 
@@ -144,50 +141,24 @@ main :: proc() {
     //
     // Game load, create 100_000 entities with random components
     // 
-        // All possible components combinations
-        combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
+        create_entities_with_random_components_and_data(100_000)
+    //
+    //  Game loop, frame zero, iterating over table only
+    // 
+    sw: time.Stopwatch
+    time.stopwatch_start(&sw)
 
-        pos: ^Position
-        ph: ^Physical
-        ai: ^AI
+        process_ai(&ais) 
 
-        eid: ecs.entity_id
-        eid_components_count: int
-        for i:=0; i < 100_000; i+= 1 {
-            eid, err = ecs.create_entity(&db)
-            if err != nil { report_error(err); return }
+    time.stopwatch_stop(&sw)
 
-            // Randomly chose what components combo we want for entity
-            combo := rand.choice(combo_choice[:])
-
-            for j:=0; j<3; j+=1 {
-
-                switch combo[j] {
-                    case 0:
-                        break
-                    case 1:
-                        pos, err = ecs.add_component(&positions, eid)
-                        if err != nil { report_error(err); return }
-                        pos.x = int(rand.int63()) % 1920
-                        pos.y = int(rand.int63()) % 1080
-                    case 2:               
-                        ai, err = ecs.add_component(&ais, eid)
-                        if err != nil { report_error(err); return }
-                        ai.neurons_count = int(rand.uint32()) % 400
-                    case 3:
-                        ph, err = ecs.add_component(&physics, eid)
-                        if err != nil { report_error(err); return } 
-                        ph.mass = rand.float32_range(30, 100)
-                }
-
-            }
-        }
+    _, _, _, nanos0 := time.precise_clock_from_stopwatch(sw)
 
     //
-    //  Game loop
+    //  Game loop, frame one, iterating over view and table
     // 
-
-        sw: time.Stopwatch
+     
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
             process_physics(&physical, &positions, &physics)
@@ -196,15 +167,87 @@ main :: proc() {
 
         time.stopwatch_stop(&sw)
 
-        _, _, sec, nanos := time.precise_clock_from_stopwatch(sw)
+        _, _, _, nanos1 := time.precise_clock_from_stopwatch(sw)
 
+    //
+    //  Game loop, frame two, destroying and creating 10_000 entities plus iterating over view and table
+    // 
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+            destroy_entities_in_range(45_000, 55_000)
+
+            create_entities_with_random_components_and_data(10_000)
+
+            process_physics(&physical, &positions, &physics)
+
+            process_ai(&ais)
+
+        time.stopwatch_stop(&sw)
+
+        _, _, _, nanos2 := time.precise_clock_from_stopwatch(sw)
     //
     // Finish
     //
-        fmt.println("Position components count:", ecs.table_len(&positions))
-        fmt.println("AI components count:", ecs.table_len(&ais))
-        fmt.println("Physics components count:", ecs.table_len(&physics)) 
-        fmt.println("Physical view len:", ecs.view_len(&physical))
-        fmt.printfln("Game loop time: %v sec %.2f ms", sec, f64(nanos)/1000000.0)
-        fmt.println("Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte, "MB")
+        fmt.printfln("%-30s %v", "Position components count:", ecs.table_len(&positions))
+        fmt.printfln("%-30s %v", "AI components count:", ecs.table_len(&ais))
+        fmt.printfln("%-30s %v", "Physics components count:", ecs.table_len(&physics)) 
+        fmt.printfln("%-30s %v", "Physical view len:", ecs.view_len(&physical))
+        fmt.printfln("%-30s %v MB", "Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte)
+        fmt.println("-----------------------------------------------------------")
+        fmt.printfln("%-30s %.2f ms", "Frame zero time:", f64(nanos0)/1_000_000.0)
+        fmt.printfln("%-30s %.2f ms", "Frame one time:", f64(nanos1)/1_000_000.0)
+        fmt.printfln("%-30s %.2f ms", "Frame two time:", f64(nanos2)/1_000_000.0)
+}
+
+report_error :: proc (err: ecs.Error, loc := #caller_location) {
+    log.error("Error:", err, location = loc)
+}
+
+create_entities_with_random_components_and_data :: proc(number_of_components_to_create: int) {
+    pos: ^Position
+    ph: ^Physical
+    ai: ^AI
+    err: ecs.Error
+
+    eid: ecs.entity_id
+    eid_components_count: int
+    for i:=0; i < number_of_components_to_create; i+=1 {
+        eid, err = ecs.create_entity(&db)
+        if err != nil { report_error(err); return }
+
+        // Randomly chose what components combo we want for entity
+        combo := rand.choice(g_combo_choice[:])
+
+        for j:=0; j<3; j+=1 {
+            switch combo[j] {
+                case 0:
+                    break
+                case 1:
+                    pos, err = ecs.add_component(&positions, eid)
+                    if err != nil { report_error(err); return }
+                    pos.x = int(rand.int63()) % 1920
+                    pos.y = int(rand.int63()) % 1080
+                case 2:               
+                    ai, err = ecs.add_component(&ais, eid)
+                    if err != nil { report_error(err); return }
+                    ai.neurons_count = int(rand.uint32()) % 400
+                case 3:
+                    ph, err = ecs.add_component(&physics, eid)
+                    if err != nil { report_error(err); return } 
+                    ph.mass = rand.float32_range(30, 100)
+            }
+
+        }
+    }
+}
+
+destroy_entities_in_range :: proc(start_ix, end_ix: int) {
+    assert(end_ix > start_ix)
+    assert(start_ix >= 0)
+
+    for i:=start_ix; i < end_ix; i+=1 {
+        eid := ecs.get_entity(&db, i)
+        ecs.db__destroy_entity(&db, eid)
+    }
 }

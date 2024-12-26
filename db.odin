@@ -126,12 +126,15 @@ db__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
     err: Error = nil 
 
     table: ^Table_Base
+    bits := self.eid_to_bits[eid.ix]
+
     for table in self.tables.items {  
         if table == nil do continue
+        if int(table.id) not_in bits  do continue
 
         err = table_raw__remove_component(cast(^Table_Raw)table, eid)
         if err != nil {
-            log.error("Unable to remove component from", table, ". Error: ", err)
+            log.error("Unable to remove component from table.id = ", table.id, ". Error: ", err)
             return err
         }
     } 
@@ -142,6 +145,10 @@ db__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
     oc.ix_gen_factory__free_id(&self.id_factory, eid) or_return
 
     return err
+}
+@(require_results)
+db__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
+    return oc.ix_gen_factory__get_id(&self.id_factory, index, loc)
 }
 
 @(require_results)

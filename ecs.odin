@@ -53,6 +53,11 @@ package ode_ecs
     clear               :: db__clear                    // clear all data (and only data) from database
     create_entity       :: db__create_entity
     destroy_entity      :: db__destroy_entity
+    get_entity          :: proc {
+        db__get_entity,
+        table__get_entity,
+        iterator__get_entity,
+    }
     is_expired          :: db__is_expired               // to check if entity expired (was deleted)
     memory_usage        :: proc {
         db__memory_usage,
@@ -75,10 +80,6 @@ package ode_ecs
     has_component       :: table__has_component
     table_len           :: table__len
     table_cap           :: table__len
-    get_entity          :: proc {
-        table__get_entity,
-        iterator__get_entity,
-    }
     table_clear         :: table_raw__clear             // clear all data from table
 
     //
