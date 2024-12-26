@@ -20,7 +20,18 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 
 # How to install
 
-`git clone` this repo into your project and then `import ecs "ode_ecs"`.
+```  
+    git clone --recursive https://github.com/odin-engine/ode_ecs.git  
+```  
+
+Use `git clone --recursive` to clone this repository into your project, and then `import ecs "ode_ecs"`.  
+
+> **NOTE:** The `--recursive` flag is required because this project contains a submodule. If you forgot to use the `--recursive` flag, you can run the following commands in the `ode_ecs` folder to download the submodule:  
+
+```  
+    git submodule init  
+    git submodule update  
+```  
 
 # Basics  
 
