@@ -189,6 +189,7 @@ main :: proc() {
     //
     // Finish
     //
+        fmt.printfln("%-30s %d", "Entities count:", ecs.entities_len(&db))
         fmt.printfln("%-30s %v", "Position components count:", ecs.table_len(&positions))
         fmt.printfln("%-30s %v", "AI components count:", ecs.table_len(&ais))
         fmt.printfln("%-30s %v", "Physics components count:", ecs.table_len(&physics)) 

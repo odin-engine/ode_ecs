@@ -58,6 +58,8 @@ package ode_ecs
         table__get_entity,
         iterator__get_entity,
     }
+    entities_count      :: db__entities_len
+    entities_len        :: db__entities_len
     is_expired          :: db__is_expired               // to check if entity expired (was deleted)
     memory_usage        :: proc {
         db__memory_usage,

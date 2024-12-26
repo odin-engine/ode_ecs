@@ -146,9 +146,15 @@ db__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
 
     return err
 }
+
 @(require_results)
 db__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
     return oc.ix_gen_factory__get_id(&self.id_factory, index, loc)
+}
+
+@(require_results)
+db__entities_len :: #force_inline proc "contextless" (self: ^Database) -> int {
+    return oc.ix_gen_factory__len(&self.id_factory)
 }
 
 @(require_results)
