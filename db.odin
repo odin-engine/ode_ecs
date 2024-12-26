@@ -214,7 +214,7 @@ db__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, tabl
 
 @(private)
 db__is_entity_correct :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> Error {
-    if eid >= cast(entity_id)self.id_factory.cap do return API_Error.Entity_Id_Out_of_Bounds
+    if eid.ix < 0 || eid.ix >= self.id_factory.cap do return API_Error.Entity_Id_Out_of_Bounds
     if db__is_expired(self, eid) do return API_Error.Entity_Id_Expired
     return nil
 }

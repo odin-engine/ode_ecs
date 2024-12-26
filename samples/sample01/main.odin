@@ -195,9 +195,9 @@ main :: proc() {
         fmt.printfln("%-30s %v", "Physical view len:", ecs.view_len(&physical))
         fmt.printfln("%-30s %v MB", "Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte)
         fmt.println("-----------------------------------------------------------")
-        fmt.printfln("%-30s %.2f ms", "Frame zero time:", f64(nanos0)/1_000_000.0)
-        fmt.printfln("%-30s %.2f ms", "Frame one time:", f64(nanos1)/1_000_000.0)
-        fmt.printfln("%-30s %.2f ms", "Frame two time:", f64(nanos2)/1_000_000.0)
+        fmt.printfln("%-30s %.2f ms (iterating %vK table only)", "Frame zero time:", f64(nanos0)/1_000_000.0, ecs.table_len(&ais) / 1000)
+        fmt.printfln("%-30s %.2f ms (iterating %vK table and %vK view)", "Frame one time:", f64(nanos1)/1_000_000.0, ecs.table_len(&ais) / 1000, ecs.view_len(&physical) / 1000)
+        fmt.printfln("%-30s %.2f ms (destroying 10K entities, creating 10K entities with random components and iterating table and view)", "Frame two time:", f64(nanos2)/1_000_000.0)
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
@@ -225,17 +225,17 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
                     break
                 case 1:
                     pos, err = ecs.add_component(&positions, eid)
-                    if err != nil { report_error(err); return }
-                    pos.x = int(rand.int63()) % 1920
-                    pos.y = int(rand.int63()) % 1080
+                    if err != nil { report_error(err); fmt.println(eid); return }
+                    // pos.x = int(rand.int63()) % 1920
+                    // pos.y = int(rand.int63()) % 1080
                 case 2:               
                     ai, err = ecs.add_component(&ais, eid)
-                    if err != nil { report_error(err); return }
-                    ai.neurons_count = int(rand.uint32()) % 400
+                    if err != nil { report_error(err); fmt.println(eid); return }
+                    // ai.neurons_count = int(rand.uint32()) % 400
                 case 3:
                     ph, err = ecs.add_component(&physics, eid)
                     if err != nil { report_error(err); return } 
-                    ph.mass = rand.float32_range(30, 100)
+                    // ph.mass = rand.float32_range(30, 100)
             }
 
         }

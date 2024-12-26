@@ -230,7 +230,6 @@ package ode_ecs
         raw := (^runtime.Raw_Slice)(&self.records)
 
         if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full 
-        if eid.ix < 0 || eid.ix >= self.ecs.id_factory.cap do return nil, API_Error.Entity_Id_Out_of_Bounds
 
         // Check if component already exist
         if  self.eid_to_rid[eid.ix] == DELETED_INDEX {
