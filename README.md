@@ -197,6 +197,21 @@ To get an entity or its components inside the iterator loop, you can do this:
         // ...
     }
 ```
+
+# How to Run Samples and Tests  
+
+To run samples, navigate to the appropriate folder (`samples/basic` or `samples/sample01`) and execute:  
+
+```  
+    odin run .  
+```  
+
+To run tests, go to the `tests` folder and execute:  
+
+```  
+    odin test .  
+```  
+
 # Advanced
 
 ### Public API
