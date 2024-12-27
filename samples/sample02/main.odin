@@ -355,17 +355,27 @@ main :: proc() {
     // Print results
     //
 
+        difference := f64(nanos1) / f64(nanos2)
+
         fmt.printfln("%-30s %.2f ms", "Approach 1 time:", f64(nanos1)/1_000_000.0)
         fmt.printfln("%-30s %.2f ms", "Approach 2 time:", f64(nanos2)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
-        fmt.printfln("%-30s %.2f times", "Difference is ", f64(nanos1) / f64(nanos2))
+        fmt.printfln("%-30s %.2f times", "Difference is ", difference)
         
         fmt.printfln("")
+
+        difference_with_payload := f64(nanos1_with_payload) / f64(nanos2_with_payload)
 
         fmt.printfln("%-30s %.2f ms", "Approach 1 with payload time:", f64(nanos1_with_payload)/1_000_000.0)
         fmt.printfln("%-30s %.2f ms", "Approach 2 with payload time:", f64(nanos2_with_payload)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
-        fmt.printfln("%-30s %.2f times", "Difference is ", f64(nanos1_with_payload) / f64(nanos2_with_payload))
+        fmt.printfln("%-30s %.2f times", "Difference is ", difference_with_payload)
+         
+        fmt.printfln("")
+        fmt.printfln("")
+
+        fmt.printfln("%-30s Approach 2 is %.2f to %2f times faster dependently on component size", "End result: ", difference_with_payload, difference)
+
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
