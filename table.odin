@@ -181,13 +181,13 @@ package ode_ecs
         records: []T,     
     }
 
-    table__init :: proc(self: ^Table($T), ecs: ^Database, cap: int) -> Error {
+    table__init :: proc(self: ^Table($T), ecs: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
-            assert(self != nil)
-            assert(ecs != nil)
-            assert(self.state == Object_State.Not_Initialized) // table should be NOT_INITIALIZED
-            assert(ecs.state == Object_State.Normal) // ecs should be initialized
-            assert(cap <= ecs.id_factory.cap) // cannot be larger than entities_cap
+            assert(self != nil, loc = loc)
+            assert(ecs != nil, loc = loc)
+            assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
+            assert(ecs.state == Object_State.Normal, loc = loc) // ecs should be initialized
+            assert(cap <= ecs.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 
         self.type_info = type_info_of(typeid_of(T))

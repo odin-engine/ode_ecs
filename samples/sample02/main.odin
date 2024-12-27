@@ -31,6 +31,8 @@ package ode_ecs_sample2
 //
     Enemy1 :: struct { 
         id: int,
+        
+        // State
         dead: bool,
         frenzy: bool,
     } 
@@ -52,6 +54,41 @@ package ode_ecs_sample2
     dead_enemies : ecs.Table(Enemy2)
     frenzy_enemies: ecs.Table(Enemy2)
     normal_enemies: ecs.Table(Enemy2)
+
+//
+// Approach 1 with payload (more data to make things more realistic)
+//
+    Enemy1_With_Payload :: struct { 
+        id: int,
+        
+        // State
+        dead: bool,
+        frenzy: bool,
+
+        // Payload to make things more realistic
+        some_data: [20]int, 
+    } 
+
+    db1_with_payload: ecs.Database
+
+    all_enemies_with_payload : ecs.Table(Enemy1_With_Payload)
+
+// 
+// Approach 2 with payload
+// 
+
+    Enemy2_With_Payload :: struct {
+        id: int,
+
+        // Payload
+        some_data: [20]int, 
+    }
+
+    db2_with_payload: ecs.Database
+
+    dead_enemies_with_payload : ecs.Table(Enemy2_With_Payload)
+    frenzy_enemies_with_payload: ecs.Table(Enemy2_With_Payload)
+    normal_enemies_with_payload: ecs.Table(Enemy2_With_Payload)
     
 //
 // ECS Optimization example
@@ -86,8 +123,14 @@ main :: proc() {
         eid1: ecs.entity_id
         eid2: ecs.entity_id
 
+        eid1_with_payload: ecs.entity_id
+        eid2_with_payload: ecs.entity_id
+
         enemy1: ^Enemy1
         enemy2: ^Enemy2
+
+        enemy1_with_payload: ^Enemy1_With_Payload
+        enemy2_with_payload: ^Enemy2_With_Payload
 
         sw: time.Stopwatch
     //
@@ -119,6 +162,33 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
     //
+    // Init db1 with payload
+    //
+
+        defer ecs.terminate(&db1_with_payload)
+        err = ecs.init(&db1_with_payload, NUMBER_OF_ENTITIES, allocator)
+        if err != nil { report_error(err); return }
+
+        err = ecs.table_init(&all_enemies_with_payload, &db1_with_payload, NUMBER_OF_ENTITIES)
+        if err != nil { report_error(err); return }
+
+    //
+    // Init db2 with payload
+    //
+
+        defer ecs.terminate(&db2_with_payload)
+        ecs.init(&db2_with_payload, NUMBER_OF_ENTITIES, allocator)
+        
+        err = ecs.table_init(&normal_enemies_with_payload, &db2_with_payload, NUMBER_OF_ENTITIES)
+        if err != nil { report_error(err); return }
+
+        err = ecs.table_init(&dead_enemies_with_payload, &db2_with_payload, NUMBER_OF_ENTITIES)
+        if err != nil { report_error(err); return }
+
+        err = ecs.table_init(&frenzy_enemies_with_payload, &db2_with_payload, NUMBER_OF_ENTITIES)
+        if err != nil { report_error(err); return }
+
+    //
     // Feel both dbs with the "same" data
     //
 
@@ -136,6 +206,18 @@ main :: proc() {
             if err != nil { report_error(err); return }
             enemy1.id = i
 
+            // With payload:
+
+            eid1_with_payload, err = ecs.create_entity(&db1_with_payload)
+            if err != nil { report_error(err); return }
+
+            eid2_with_payload, err = ecs.create_entity(&db2_with_payload)
+            if err != nil { report_error(err); return }
+
+            enemy1_with_payload, err = ecs.add_component(&all_enemies_with_payload, eid1_with_payload)
+            if err != nil { report_error(err); return }
+            enemy1_with_payload.id = i
+
             switch rand.choice(choose_state[:]) {
                 case .Normal: 
                     enemy1.dead = false
@@ -144,6 +226,14 @@ main :: proc() {
                     enemy2, err = ecs.add_component(&normal_enemies, eid2)
                     enemy2.id = i 
 
+                    // With payload:
+
+                    enemy1_with_payload.dead = false
+                    enemy1_with_payload.frenzy = false
+
+                    enemy2_with_payload, err = ecs.add_component(&normal_enemies_with_payload, eid2_with_payload)
+                    enemy2_with_payload.id = i 
+
                 case .Dead:
                     enemy1.dead = true
                     enemy1.frenzy = false
@@ -151,12 +241,28 @@ main :: proc() {
                     enemy2, err = ecs.add_component(&dead_enemies, eid2)
                     enemy2.id = i 
 
+                    // With payload:
+
+                    enemy1_with_payload.dead = true
+                    enemy1_with_payload.frenzy = false
+
+                    enemy2_with_payload, err = ecs.add_component(&dead_enemies_with_payload, eid2_with_payload)
+                    enemy2_with_payload.id = i 
+
                 case .Frenzy:
                     enemy1.dead = false
                     enemy1.frenzy = true
 
                     enemy2, err = ecs.add_component(&frenzy_enemies, eid2)
                     enemy2.id = i 
+
+                    // With payload:
+
+                    enemy1_with_payload.dead = false
+                    enemy1_with_payload.frenzy = true
+
+                    enemy2_with_payload, err = ecs.add_component(&frenzy_enemies_with_payload, eid2_with_payload)
+                    enemy2_with_payload.id = i 
             }
         }
 
@@ -203,6 +309,49 @@ main :: proc() {
         _, _, _, nanos2 := time.precise_clock_from_stopwatch(sw)
 
     //
+    // Test speed with payload 
+    //
+
+        // Approach 1 with payload
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+            for &en, index in all_enemies_with_payload.records {
+
+                if en.dead {
+                    en.id += 1
+                } else if en.frenzy {
+                    en.id += 2
+                } else {
+                    en.id += 3
+                }
+
+            }
+        
+        time.stopwatch_stop(&sw)
+        _, _, _, nanos1_with_payload := time.precise_clock_from_stopwatch(sw)
+
+        // Approach 2 with payload
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+            for &en, index in dead_enemies_with_payload.records {
+                en.id += 1
+            }
+
+            for &en, index in frenzy_enemies_with_payload.records {
+                en.id += 2
+            }
+
+            for &en, index in normal_enemies_with_payload.records {
+                en.id += 3
+            }
+
+    
+        time.stopwatch_stop(&sw)
+        _, _, _, nanos2_with_payload := time.precise_clock_from_stopwatch(sw)
+
+    //
     // Print results
     //
 
@@ -210,6 +359,13 @@ main :: proc() {
         fmt.printfln("%-30s %.2f ms", "Approach 2 time:", f64(nanos2)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.2f times", "Difference is ", f64(nanos1) / f64(nanos2))
+        
+        fmt.printfln("")
+
+        fmt.printfln("%-30s %.2f ms", "Approach 1 with payload time:", f64(nanos1_with_payload)/1_000_000.0)
+        fmt.printfln("%-30s %.2f ms", "Approach 2 with payload time:", f64(nanos2_with_payload)/1_000_000.0)
+        fmt.println("-----------------------------------------------------------")
+        fmt.printfln("%-30s %.2f times", "Difference is ", f64(nanos1_with_payload) / f64(nanos2_with_payload))
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
