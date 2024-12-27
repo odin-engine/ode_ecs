@@ -48,6 +48,7 @@ When initializing a `Database`, you can specify the maximum `entities_cap` as we
 
     my_ecs: ecs.Database
 
+    // in some procedure:
     ecs.init(&my_ecs, entities_cap=100, allocator=my_allocator)
 ```  
 
