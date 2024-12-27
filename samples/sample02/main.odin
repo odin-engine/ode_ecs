@@ -27,7 +27,7 @@ package ode_ecs_sample2
     NUMBER_OF_ENTITIES :: 100_000
 
 //
-// Components
+// Approach 1
 //
     Enemy1 :: struct { 
         id: int,
@@ -35,19 +35,19 @@ package ode_ecs_sample2
         frenzy: bool,
     } 
 
+    db1: ecs.Database
+
+    all_enemies : ecs.Table(Enemy1)
+
+// 
+// Approach 2
+// 
+
     Enemy2 :: struct {
         id: int,
     }
 
-// 
-// Globals
-// 
-    // ECS Databases
-    db1: ecs.Database
     db2: ecs.Database
-
-    // Component tables
-    all_enemies : ecs.Table(Enemy1)
 
     dead_enemies : ecs.Table(Enemy2)
     frenzy_enemies: ecs.Table(Enemy2)
@@ -161,10 +161,10 @@ main :: proc() {
         }
 
     //
-    // 
+    // Test speed
     //
 
-        // db1 
+        // Approach 1
         time.stopwatch_start(&sw)
 
             for &en, index in all_enemies.records {
@@ -182,7 +182,7 @@ main :: proc() {
         time.stopwatch_stop(&sw)
         _, _, _, nanos1 := time.precise_clock_from_stopwatch(sw)
 
-        // db2
+        // Approach 2
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
@@ -202,13 +202,14 @@ main :: proc() {
         time.stopwatch_stop(&sw)
         _, _, _, nanos2 := time.precise_clock_from_stopwatch(sw)
 
-        //
-        // Print results
-        //
+    //
+    // Print results
+    //
 
-        fmt.printfln("%-30s %.2f ms", "DB1 approach time:", f64(nanos1)/1_000_000.0)
-        fmt.printfln("%-30s %.2f ms", "DB2 approach time:", f64(nanos2)/1_000_000.0)
-        fmt.printfln("%-30s %.2f times.", "Difference is ", f64(nanos1) / f64(nanos2))
+        fmt.printfln("%-30s %.2f ms", "Approach 1 time:", f64(nanos1)/1_000_000.0)
+        fmt.printfln("%-30s %.2f ms", "Approach 2 time:", f64(nanos2)/1_000_000.0)
+        fmt.println("-----------------------------------------------------------")
+        fmt.printfln("%-30s %.2f times", "Difference is ", f64(nanos1) / f64(nanos2))
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
