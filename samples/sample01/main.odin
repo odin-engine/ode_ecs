@@ -187,13 +187,28 @@ main :: proc() {
 
         _, _, _, nanos2 := time.precise_clock_from_stopwatch(sw)
     //
-    // Finish
+    // Print results
     //
-        fmt.printfln("%-30s %d", "Entities count:", ecs.entities_len(&db))
-        fmt.printfln("%-30s %v", "Position components count:", ecs.table_len(&positions))
-        fmt.printfln("%-30s %v", "AI components count:", ecs.table_len(&ais))
-        fmt.printfln("%-30s %v", "Physics components count:", ecs.table_len(&physics)) 
-        fmt.printfln("%-30s %v", "Physical view len:", ecs.view_len(&physical))
+        s:= oc.add_thousand_separator(ecs.entities_len(&db), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %s", "Entities count:", s)
+        delete(s, allocator)
+
+        s = oc.add_thousand_separator(ecs.table_len(&positions), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %v", "Position components count:", s)
+        delete(s, allocator)
+
+        s = oc.add_thousand_separator(ecs.table_len(&ais), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %v", "AI components count:", s)
+        delete(s, allocator)
+
+        s = oc.add_thousand_separator(ecs.table_len(&physics), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %v", "Physics components count:", s) 
+        delete(s, allocator)
+
+        s = oc.add_thousand_separator(ecs.view_len(&physical), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %v", "Physical view len:", s)
+        delete(s, allocator)
+
         fmt.printfln("%-30s %v MB", "Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte)
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.2f ms (iterating %vK table only)", "Frame zero time:", f64(nanos0)/1_000_000.0, ecs.table_len(&ais) / 1000)

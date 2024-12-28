@@ -355,6 +355,12 @@ main :: proc() {
     // Print results
     //
 
+        s:= oc.add_thousand_separator(NUMBER_OF_ENTITIES, sep=',', allocator=allocator)
+        fmt.println("Iterating over", s, "entities.")
+        delete(s, allocator)
+
+        fmt.println("")
+
         difference := f64(nanos1) / f64(nanos2)
 
         fmt.printfln("%-30s %.2f ms", "Approach 1 time:", f64(nanos1)/1_000_000.0)
@@ -362,7 +368,7 @@ main :: proc() {
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.2f times", "Difference is ", difference)
         
-        fmt.printfln("")
+        fmt.println("")
 
         difference_with_payload := f64(nanos1_with_payload) / f64(nanos2_with_payload)
 
@@ -371,11 +377,12 @@ main :: proc() {
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.2f times", "Difference is ", difference_with_payload)
          
-        fmt.printfln("")
-        fmt.printfln("")
+        
+        fmt.println("")
+        fmt.println("")
+        
 
-        fmt.printfln("%-30s Approach 2 is %.2f to %2f times faster dependently on component size", "End result: ", difference_with_payload, difference)
-
+        fmt.printfln("%-30s \"Approach 2\" is %.1f to %.1f times faster than \"Approach 1\" depending on component size", "End result: ", difference_with_payload, difference)
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
