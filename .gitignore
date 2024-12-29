@@ -16,3 +16,5 @@ samples/sample02/out/*
 .vscode
 ols.json
 *.code-workspace
+
+ode_core copy

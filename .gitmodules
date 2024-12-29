@@ -1,3 +1,0 @@
-[submodule "ode_core"]
-	path = ode_core
-	url = https://github.com/odin-engine/ode_core.git
