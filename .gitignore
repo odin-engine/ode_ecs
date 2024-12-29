@@ -17,4 +17,5 @@ samples/sample02/out/*
 ols.json
 *.code-workspace
 
-ode_core copy
+ode_core/out/*
+ode_core/!out/.keep
