@@ -58,30 +58,30 @@ package ode_ecs__tests
             testing.expect(t, ecs.init(&ecs_1, entities_cap=0, allocator=allocator) == ecs.API_Error.Entities_Cap_Should_Be_Greater_Than_Zero)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            testing.expect(t, ecs.table__init(&ais, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.table_init(&ais, &ecs_1, 10) == nil)
             testing.expect(t, ais.id == 0)
 
-            testing.expect(t, ecs.table__init(&ais_table2, &ecs_1, 10) == nil)
-            defer ecs.table__terminate(&positions)
-            testing.expect(t, ecs.table__init(&positions, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.table_init(&ais_table2, &ecs_1, 10) == nil)
+            defer ecs.table_terminate(&positions)
+            testing.expect(t, ecs.table_init(&positions, &ecs_1, 10) == nil)
 
             testing.expect(t, ais.id == 0)
             testing.expect(t, positions.id == 2)
 
-            ecs.table__terminate(&ais_table2)
+            ecs.table_terminate(&ais_table2)
 
             testing.expect(t, ais_table2.id == ecs.DELETED_INDEX)
             testing.expect(t, ecs_1.tables.items[1] == nil)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
             testing.expect(t, ecs_1.tables.has_nil_item == true)
 
-            defer ecs.table__terminate(&pos_table2)
-            testing.expect(t, ecs.table__init(&pos_table2, &ecs_1, 10) == nil)
+            defer ecs.table_terminate(&pos_table2)
+            testing.expect(t, ecs.table_init(&pos_table2, &ecs_1, 10) == nil)
             testing.expect(t, pos_table2.id == 1)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
             testing.expect(t, ecs_1.tables.has_nil_item == false)
 
-            ecs.table__terminate(&ais)
+            ecs.table_terminate(&ais)
 
             testing.expect(t, ais.id == ecs.DELETED_INDEX)
             testing.expect(t, ecs_1.tables.items[0] == nil) 
@@ -113,23 +113,23 @@ package ode_ecs__tests
             defer ecs.terminate(&ecs_1)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            defer ecs.table__terminate(&ais)
-            testing.expect(t, ecs.table__init(&ais, &ecs_1, 10) == nil)
+            defer ecs.table_terminate(&ais)
+            testing.expect(t, ecs.table_init(&ais, &ecs_1, 10) == nil)
             
-            defer ecs.table__terminate(&positions)
-            testing.expect(t, ecs.table__init(&positions, &ecs_1, 10) == nil)
+            defer ecs.table_terminate(&positions)
+            testing.expect(t, ecs.table_init(&positions, &ecs_1, 10) == nil)
 
-            testing.expect(t, ecs.view__init(&view1, &ecs_1, {&ais, &positions}) == nil)
+            testing.expect(t, ecs.view_init(&view1, &ecs_1, {&ais, &positions}) == nil)
 
-            defer ecs.view__terminate(&view2)
-            testing.expect(t, ecs.view__init(&view2, &ecs_1, {}) == ecs.API_Error.Tables_Array_Should_Not_Be_Empty)
-            testing.expect(t, ecs.view__init(&view2, &ecs_1, {&positions}) == nil)
+            defer ecs.view_terminate(&view2)
+            testing.expect(t, ecs.view_init(&view2, &ecs_1, {}) == ecs.API_Error.Tables_Array_Should_Not_Be_Empty)
+            testing.expect(t, ecs.view_init(&view2, &ecs_1, {&positions}) == nil)
 
             testing.expect(t, oc.sparse_arr__len(&ecs_1.views) == 2)
             testing.expect(t, view1.id == 0)
             testing.expect(t, view2.id == 1)
 
-            ecs.view__terminate(&view1)
+            ecs.view_terminate(&view1)
 
             testing.expect(t, view2.id == 1)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.views) == 2)
@@ -137,12 +137,12 @@ package ode_ecs__tests
             testing.expect(t, ecs_1.views.has_nil_item)
             
             mem.zero(&view1, size_of(ecs.View))
-            testing.expect(t, ecs.view__init(&view1, &ecs_1, {&positions, &ais}) == nil)
+            testing.expect(t, ecs.view_init(&view1, &ecs_1, {&positions, &ais}) == nil)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.views) == 2)
             testing.expect(t, ecs_1.views.items[0] == &view1)
             testing.expect(t, ecs_1.views.has_nil_item == false)
 
-            ecs.view__terminate(&view1)
+            ecs.view_terminate(&view1)
 
             testing.expect(t, oc.sparse_arr__len(&ecs_1.views) == 2)
             testing.expect(t, ecs_1.views.items[0] == nil)
@@ -221,11 +221,11 @@ package ode_ecs__tests
             defer ecs.terminate(&ecs_1)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            defer ecs.table__terminate(&ais)
-            testing.expect(t, ecs.table__init(&ais, &ecs_1, 10) == nil)
+            defer ecs.table_terminate(&ais)
+            testing.expect(t, ecs.table_init(&ais, &ecs_1, 10) == nil)
             
-            defer ecs.table__terminate(&positions)
-            testing.expect(t, ecs.table__init(&positions, &ecs_1, 10) == nil)
+            defer ecs.table_terminate(&positions)
+            testing.expect(t, ecs.table_init(&positions, &ecs_1, 10) == nil)
 
             eid_1, eid_2: ecs.entity_id
             err: ecs.Error
@@ -246,33 +246,33 @@ package ode_ecs__tests
             ai, ai2: ^AI
 
             // Boundaries check
-            pos, err = ecs.table__add_component(&positions, ecs.entity_id{ix = 99999})
+            pos, err = ecs.add_component(&positions, ecs.entity_id{ix = 99999})
             testing.expect(t, pos == nil)
             testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
 
-            pos, err = ecs.table__add_component(&positions, eid_1)
+            pos, err = ecs.add_component(&positions, eid_1)
             testing.expect(t, err == nil)
             testing.expect(t, pos != nil)
             testing.expect(t, pos.x == 0 && pos.y == 0)
-            testing.expect(t, ecs.table__len(&positions) == 1)
+            testing.expect(t, ecs.table_len(&positions) == 1)
 
-            pos2, err = ecs.table__add_component(&positions, eid_2)
+            pos2, err = ecs.add_component(&positions, eid_2)
             testing.expect(t, pos2 != nil)
             testing.expect(t, pos2.x == 0 && pos2.y == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs.table__len(&positions) == 2)
+            testing.expect(t, ecs.table_len(&positions) == 2)
 
-            ai, err = ecs.table__add_component(&ais, eid_1)
+            ai, err = ecs.add_component(&ais, eid_1)
             testing.expect(t, ai != nil)
             testing.expect(t, ai.IQ == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs.table__len(&ais) == 1)
+            testing.expect(t, ecs.table_len(&ais) == 1)
 
-            ai2, err = ecs.table__add_component(&ais, eid_2)
+            ai2, err = ecs.add_component(&ais, eid_2)
             testing.expect(t, ai2 != nil)
             testing.expect(t, ai2.IQ == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs.table__len(&ais) == 2)
+            testing.expect(t, ecs.table_len(&ais) == 2)
 
             pos.x = 44
             pos.y = 77
@@ -288,9 +288,9 @@ package ode_ecs__tests
             testing.expect(t, positions.eid_to_rid[eid_2.ix] == 1)
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
-            testing.expect(t, ecs.table__len(&positions) == 2)
+            testing.expect(t, ecs.table_len(&positions) == 2)
 
-            testing.expect(t, ecs.table__remove_component(&positions, eid_1) == nil)
+            testing.expect(t, ecs.remove_component(&positions, eid_1) == nil)
 
             testing.expect(t, pos.x == 55)
             testing.expect(t, pos.y == 88)
@@ -302,21 +302,21 @@ package ode_ecs__tests
             testing.expect(t, positions.eid_to_rid[eid_2.ix] == 0)
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
-            testing.expect(t, ecs.table__len(&positions) == 1)
+            testing.expect(t, ecs.table_len(&positions) == 1)
 
-            testing.expect(t, ecs.table__remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
-            testing.expect(t, ecs.table__remove_component(&positions, eid_2) == nil)
+            testing.expect(t, ecs.remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
+            testing.expect(t, ecs.remove_component(&positions, eid_2) == nil)
 
             testing.expect(t, positions.eid_to_rid[eid_1.ix] == ecs.DELETED_INDEX)
             testing.expect(t, positions.eid_to_rid[eid_2.ix] == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[0].ix == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
-            testing.expect(t, ecs.table__len(&positions) == 0)
+            testing.expect(t, ecs.table_len(&positions) == 0)
 
-            testing.expect(t, ecs.table__remove_component(&positions, eid_2) == oc.Core_Error.Not_Found)
+            testing.expect(t, ecs.remove_component(&positions, eid_2) == oc.Core_Error.Not_Found)
 
             // Get Component
-            testing.expect(t, ecs.table__len(&ais) == 2)
+            testing.expect(t, ecs.table_len(&ais) == 2)
 
             a : ^AI
    
@@ -324,16 +324,16 @@ package ode_ecs__tests
             testing.expect(t, a == ai)
             testing.expect(t, err == nil)
 
-            a, err = ecs.table__get_component_by_entity_id(&ais, ecs.entity_id{ix = 99999})
+            a, err = ecs.get_component_by_entity(&ais, ecs.entity_id{ix = 99999})
             testing.expect(t, a == nil)
             testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
 
             
-            a, err = ecs.table__get_component_by_entity_id(&ais, eid_2)
+            a, err = ecs.get_component_by_entity(&ais, eid_2)
             testing.expect(t, a == ai2)
             testing.expect(t, err == nil)
 
-            pos, err = ecs.table__get_component_by_entity_id(&positions, eid_2)
+            pos, err = ecs.get_component_by_entity(&positions, eid_2)
             testing.expect(t, pos == nil)
             testing.expect(t, err == oc.Core_Error.Not_Found)
     }
@@ -358,8 +358,8 @@ package ode_ecs__tests
 
         ecs.rebuild(view1)
 
-        testing.expect(t, ecs.view__len(view1) == 2)
-        testing.expect(t, ecs.view__len(view3) == 0)
+        testing.expect(t, ecs.view_len(view1) == 2)
+        testing.expect(t, ecs.view_len(view3) == 0)
         
         #no_bounds_check {
             testing.expect(t, view1.records[0] == eid_2.ix)
@@ -371,16 +371,16 @@ package ode_ecs__tests
         }
 
         // ADD POS 1
-        pos, err = ecs.table__add_component(positions, eid_3)
+        pos, err = ecs.add_component(positions, eid_3)
         pos.x = 333
         testing.expect(t,  err == nil)
-        testing.expect(t, ecs.view__len(view1) == 2)
-        testing.expect(t, ecs.view__len(view3) == 1)
+        testing.expect(t, ecs.view_len(view1) == 2)
+        testing.expect(t, ecs.view_len(view3) == 1)
 
-        ai, err = ecs.table__add_component(ais, eid_3)
+        ai, err = ecs.add_component(ais, eid_3)
         testing.expect(t, err == nil) 
-        testing.expect(t, ecs.view__len(view1) == 3)
-        testing.expect(t, ecs.view__len(view3) == 1)
+        testing.expect(t, ecs.view_len(view1) == 3)
+        testing.expect(t, ecs.view_len(view3) == 1)
 
         #no_bounds_check {
             testing.expect(t, view1.records[2 * view1.columns_count] == eid_3.ix)
@@ -388,9 +388,9 @@ package ode_ecs__tests
             testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])  
         }
         
-        ecs.table__remove_component(ais, eid_1) 
-        testing.expect(t, ecs.view__len(view1) == 2)
-        testing.expect(t, ecs.view__len(view3) == 1)
+        ecs.remove_component(ais, eid_1) 
+        testing.expect(t, ecs.view_len(view1) == 2)
+        testing.expect(t, ecs.view_len(view3) == 1)
 
         #no_bounds_check {
             testing.expect(t, view1.records[0] == eid_2.ix)
@@ -402,12 +402,12 @@ package ode_ecs__tests
             // ais.eid_to_rid[eid_3.ix] was changed because ais component was removed
             testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
         }
-        err = ecs.table__remove_component(ais, eid_1)
+        err = ecs.remove_component(ais, eid_1)
         testing.expect(t, err == oc.Core_Error.Not_Found) 
-        testing.expect(t, ecs.view__len(view1) == 2)
+        testing.expect(t, ecs.view_len(view1) == 2)
 
-        ecs.table__remove_component(ais, eid_3)
-        testing.expect(t, ecs.view__len(view1) == 1)
+        ecs.remove_component(ais, eid_3)
+        testing.expect(t, ecs.view_len(view1) == 1)
 
         #no_bounds_check {
             testing.expect(t, view1.records[0] == eid_2.ix)
@@ -418,8 +418,8 @@ package ode_ecs__tests
             testing.expect(t, view1.records[1 * view1.columns_count + 2] == ecs.DELETED_INDEX)
         }
 
-        ecs.table__remove_component(ais, eid_2)
-        testing.expect(t, ecs.view__len(view1) == 0)
+        ecs.remove_component(ais, eid_2)
+        testing.expect(t, ecs.view_len(view1) == 0)
 
         #no_bounds_check {
             testing.expect(t, view1.records[0] == ecs.DELETED_INDEX)
@@ -430,20 +430,20 @@ package ode_ecs__tests
             testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == ecs.DELETED_INDEX)
         }
 
-        err = ecs.table__remove_component(ais, eid_2)
+        err = ecs.remove_component(ais, eid_2)
         testing.expect(t, err == oc.Core_Error.Not_Found)
-        testing.expect(t, ecs.view__len(view1) == 0)
+        testing.expect(t, ecs.view_len(view1) == 0)
 
-        testing.expect(t, ecs.view__len(view3) == 1)
-        err = ecs.table__remove_component(positions, eid_2)
-        testing.expect(t, ecs.view__len(view3) == 1)
+        testing.expect(t, ecs.view_len(view3) == 1)
+        err = ecs.remove_component(positions, eid_2)
+        testing.expect(t, ecs.view_len(view3) == 1)
         testing.expect(t, err == nil)
-        testing.expect(t, ecs.view__len(view1) == 0)
+        testing.expect(t, ecs.view_len(view1) == 0)
 
-        ai, err = ecs.table__add_component(ais, eid_3)
+        ai, err = ecs.add_component(ais, eid_3)
         ai.IQ = 33
         testing.expect(t, err == nil) 
-        testing.expect(t, ecs.view__len(view1) == 1)
+        testing.expect(t, ecs.view_len(view1) == 1)
 
         #no_bounds_check {
             testing.expect(t, view1.records[0] == eid_3.ix)
@@ -451,15 +451,15 @@ package ode_ecs__tests
             testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
         }
 
-        ai, err = ecs.table__add_component(ais, eid_2)
+        ai, err = ecs.add_component(ais, eid_2)
         ai.IQ = 22
         testing.expect(t, err == nil) 
-        testing.expect(t, ecs.view__len(view1) == 1)
+        testing.expect(t, ecs.view_len(view1) == 1)
 
-        ai, err = ecs.table__add_component(ais, eid_1)
+        ai, err = ecs.add_component(ais, eid_1)
         ai.IQ = 11
         testing.expect(t, err == nil) 
-        testing.expect(t, ecs.view__len(view1) == 2)
+        testing.expect(t, ecs.view_len(view1) == 2)
 
         #no_bounds_check {
             testing.expect(t, view1.records[0] == eid_3.ix)
@@ -475,11 +475,11 @@ package ode_ecs__tests
         view1.cap = 2
 
         // ADD POS
-        pos, err = ecs.table__add_component(positions, eid_2)
+        pos, err = ecs.add_component(positions, eid_2)
         pos.x = 22
         testing.expect(t,  err == nil)
-        testing.expect(t, ecs.view__len(view1) == 2)
-        testing.expect(t, ecs.view__len(view3) == 2)
+        testing.expect(t, ecs.view_len(view1) == 2)
+        testing.expect(t, ecs.view_len(view3) == 2)
 
         #no_bounds_check {
             testing.expect(t, view3.records[0] == eid_3.ix)
@@ -491,10 +491,10 @@ package ode_ecs__tests
         view1.cap = old_cap
 
         // ADD POS
-        pos, err = ecs.table__add_component(positions, eid_2)     
+        pos, err = ecs.add_component(positions, eid_2)     
         pos.x = 222       
         testing.expect(t,  err == ecs.API_Error.Component_Already_Exist)
-        testing.expect(t, ecs.view__len(view1) == 3)
+        testing.expect(t, ecs.view_len(view1) == 3)
 
         #no_bounds_check {
             testing.expect(t, view1.records[0] == eid_3.ix)
@@ -518,7 +518,7 @@ package ode_ecs__tests
         it: ecs.Iterator
         ecs.iterator_init(&it, view1)
 
-        for ecs.iterator__next(&it) {
+        for ecs.iterator_next(&it) {
             switch it.index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
@@ -548,7 +548,7 @@ package ode_ecs__tests
         // Init again and see if everything still works
         ecs.iterator_init(&it, view1)
 
-        for ecs.iterator__next(&it) {
+        for ecs.iterator_next(&it) {
             switch it.index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
@@ -574,7 +574,7 @@ package ode_ecs__tests
         }
 
         testing.expect(t, it.index == 3)
-        testing.expect(t, ecs.view__len(view2) == 3)
+        testing.expect(t, ecs.view_len(view2) == 3)
 
         #no_bounds_check {
             testing.expect(t, view2.records[0] == eid_3.ix)
@@ -590,7 +590,7 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.iterator_init(&it, view2) == nil)
 
-        for ecs.iterator__next(&it) {
+        for ecs.iterator_next(&it) {
             switch it.index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
@@ -617,7 +617,7 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.iterator_init(&it, view3) == nil)
 
-        for ecs.iterator__next(&it) {
+        for ecs.iterator_next(&it) {
             switch it.index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
@@ -636,7 +636,7 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.iterator_init(&it, view3) == nil)
 
-        for ecs.iterator__next(&it) {
+        for ecs.iterator_next(&it) {
             switch it.index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
@@ -677,18 +677,18 @@ package ode_ecs__tests
         testing.expect(t, err == nil)
 
         testing.expect(t, ecs.has_component(positions, eid_2) == false)
-        pos, err = ecs.table__add_component(positions, eid_2)
+        pos, err = ecs.add_component(positions, eid_2)
         testing.expect(t,  err == nil)
         testing.expect(t, ecs.has_component(positions, eid_2) == true)
 
-        ai, err = ecs.table__add_component(ais, eid_2)
+        ai, err = ecs.add_component(ais, eid_2)
         testing.expect(t, err == nil)
 
-        pos, err = ecs.table__add_component(positions, eid_1)
+        pos, err = ecs.add_component(positions, eid_1)
         pos.x = 111
         testing.expect(t,  err == nil)
 
-        ai, err = ecs.table__add_component(ais, eid_1)
+        ai, err = ecs.add_component(ais, eid_1)
         testing.expect(t, err == nil) 
 
         return 
@@ -718,8 +718,8 @@ package ode_ecs__tests
             defer ecs.terminate(&ecs_1)
 
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
-            testing.expect(t, ecs.table__init(&ais, &ecs_1, 8) == nil)
-            testing.expect(t, ecs.table__init(&positions, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.table_init(&ais, &ecs_1, 8) == nil)
+            testing.expect(t, ecs.table_init(&positions, &ecs_1, 10) == nil)
 
         //
         // Test
@@ -735,20 +735,20 @@ package ode_ecs__tests
 
         // Init views
 
-        testing.expect(t, ecs.view__init(&view1, &ecs_1, {&ais, &positions}) == nil)
+        testing.expect(t, ecs.view_init(&view1, &ecs_1, {&ais, &positions}) == nil)
         testing.expect(t, view1.columns_count == 3)
-        testing.expect(t, ecs.view__len(&view1) == 0)
+        testing.expect(t, ecs.view_len(&view1) == 0)
         testing.expect(t, view1.cap == 8)
 
-        testing.expect(t, ecs.view__init(&view2, &ecs_1, {&ais, &positions}) == nil)
+        testing.expect(t, ecs.view_init(&view2, &ecs_1, {&ais, &positions}) == nil)
         testing.expect(t, view2.columns_count == 3)
-        testing.expect(t, ecs.view__len(&view2) == 0)
+        testing.expect(t, ecs.view_len(&view2) == 0)
         testing.expect(t, view2.cap == 8)
 
-        testing.expect(t, ecs.view__init(&view3, &ecs_1, {&positions}) == nil)
+        testing.expect(t, ecs.view_init(&view3, &ecs_1, {&positions}) == nil)
         testing.expect(t, view3.id == 2)
         testing.expect(t, view3.columns_count == 2)
-        testing.expect(t, ecs.view__len(&view3) == 0)
+        testing.expect(t, ecs.view_len(&view3) == 0)
         testing.expect(t, view3.cap == 10)
 
         views_testing(t, &ecs_1, &ais, &positions, &view1, &view2, &view3, eid_1, eid_2, eid_3)
@@ -779,16 +779,16 @@ package ode_ecs__tests
         //
 
         testing.expect(t, view1.columns_count == 3)
-        testing.expect(t, ecs.view__len(&view1) == 0)
+        testing.expect(t, ecs.view_len(&view1) == 0)
         testing.expect(t, view1.cap == 8)
 
         testing.expect(t, view2.columns_count == 3)
-        testing.expect(t, ecs.view__len(&view2) == 0)
+        testing.expect(t, ecs.view_len(&view2) == 0)
         testing.expect(t, view2.cap == 8)
 
         testing.expect(t, view3.id == 2)
         testing.expect(t, view3.columns_count == 2)
-        testing.expect(t, ecs.view__len(&view3) == 0)
+        testing.expect(t, ecs.view_len(&view3) == 0)
         testing.expect(t, view3.cap == 10)
 
         views_testing(t, &ecs_1, &ais, &positions, &view1, &view2, &view3, eid_1, eid_2, eid_3)

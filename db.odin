@@ -28,7 +28,7 @@ Database :: struct {
     eid_to_bits: []Uni_Bits, 
 }
 
-db__init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator) -> Error {
+init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator) -> Error {
     when VALIDATIONS {
         assert(self != nil)
         assert(self.state == Object_State.Not_Initialized)
@@ -51,7 +51,7 @@ db__init :: proc(self: ^Database, entities_cap: int, allocator := context.alloca
     return nil
 }
 
-db__terminate :: proc(self: ^Database) -> Error {
+terminate :: proc(self: ^Database) -> Error {
     when VALIDATIONS {
         assert(self != nil)
     }
@@ -61,7 +61,7 @@ db__terminate :: proc(self: ^Database) -> Error {
     view: ^View
     for view in self.views.items {
         if view == nil do continue 
-        if view.state == Object_State.Normal do view__terminate(view) or_return
+        if view.state == Object_State.Normal do view_terminate(view) or_return
     }
 
     oc.sparse_arr__terminate(&self.views, self.allocator) or_return
@@ -79,7 +79,7 @@ db__terminate :: proc(self: ^Database) -> Error {
     return nil
 }
 
-db__clear :: proc(self: ^Database) -> Error {
+db_clear :: proc(self: ^Database) -> Error {
     when VALIDATIONS {
         assert(self != nil)
         assert(self.eid_to_bits != nil)
@@ -91,7 +91,7 @@ db__clear :: proc(self: ^Database) -> Error {
 
     for view in self.views.items {
         if view != nil {
-            view__clear(view) or_return
+            view_clear(view) or_return
         }
     }
 
@@ -107,7 +107,7 @@ db__clear :: proc(self: ^Database) -> Error {
 }
 
 @(require_results)
-db__create_entity :: proc(self: ^Database) -> (entity_id, Error) {
+create_entity :: proc(self: ^Database) -> (entity_id, Error) {
     when VALIDATIONS {
         assert(self != nil)
     }
@@ -115,7 +115,7 @@ db__create_entity :: proc(self: ^Database) -> (entity_id, Error) {
     return oc.ix_gen_factory__new_id(&self.id_factory)
 }
 
-db__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
+destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
     when VALIDATIONS {
         assert(self != nil)
         assert(eid.ix >= 0)
@@ -148,31 +148,31 @@ db__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
 }
 
 @(require_results)
-db__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
+get_entity_from_db :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
     return oc.ix_gen_factory__get_id(&self.id_factory, index, loc)
 }
 
 @(require_results)
-db__entities_len :: #force_inline proc "contextless" (self: ^Database) -> int {
+entities_len :: #force_inline proc "contextless" (self: ^Database) -> int {
     return oc.ix_gen_factory__len(&self.id_factory)
 }
 
 @(require_results)
-db__is_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
+is_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
     // Happens when eid.gen do not match. It means eid expired (was deleted)
     return oc.ix_gen_factory__is_expired(&self.id_factory, eid)
 }
 
-db__memory_usage :: proc (self: ^Database) -> int {
+db_memory_usage :: proc (self: ^Database) -> int {
     total := size_of(self^)
 
     total += oc.ix_gen_factory__memory_usage(&self.id_factory)
     for table in self.tables.items {
-        if table != nil do total += table__memory_usage(table)
+        if table != nil do total += table_memory_usage(table)
     }
 
     for view in self.views.items {
-        if view != nil do total += view__memory_usage(view)
+        if view != nil do total += view_memory_usage(view)
     }
 
     return total
@@ -221,6 +221,6 @@ db__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, tabl
 @(private)
 db__is_entity_correct :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> Error {
     if eid.ix < 0 || eid.ix >= self.id_factory.cap do return API_Error.Entity_Id_Out_of_Bounds
-    if db__is_expired(self, eid) do return API_Error.Entity_Id_Expired
+    if is_expired(self, eid) do return API_Error.Entity_Id_Expired
     return nil
 }

@@ -101,7 +101,7 @@ main :: proc() {
 
     ecs.iterator_init(&it, &view)
 
-    for ecs.iterator__next(&it) {
+    for ecs.iterator_next(&it) {
         // Get entity with iterator
         eid = ecs.get_entity(&it)
 

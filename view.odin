@@ -33,7 +33,7 @@ package ode_ecs
         suspended: bool,
     }
 
-    view__init :: proc(self: ^View, ecs: ^Database, includes: []^Table_Base) -> Error {
+    view_init :: proc(self: ^View, ecs: ^Database, includes: []^Table_Base) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(ecs != nil)
@@ -99,7 +99,7 @@ package ode_ecs
         self.state = Object_State.Normal
 
         // Clear 
-        view__clear(self) or_return
+        view_clear(self) or_return
 
         //
         // Attach to ecs
@@ -114,7 +114,7 @@ package ode_ecs
         return nil
     }
 
-    view__terminate :: proc(self: ^View) -> Error {
+    view_terminate :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.ecs != nil)
@@ -140,7 +140,7 @@ package ode_ecs
         return nil
     }
 
-    view__clear :: proc(self: ^View) -> Error {
+    view_clear :: proc(self: ^View) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
         if self.eid_to_rid != nil {
@@ -158,13 +158,13 @@ package ode_ecs
         return nil
     }
 
-    view__rebuild :: proc(self: ^View) -> Error {
+    rebuild :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.tables.items != nil)
         }
         
-        view__clear(self) or_return 
+        view_clear(self) or_return 
 
         min_records_count: int = max(int)
         min_table, table: ^Table_Raw
@@ -184,7 +184,7 @@ package ode_ecs
             assert(eid.ix >= 0)
 
             // check if view bits is subset of entity bits
-            if view__entity_match(self, eid) {
+            if view_entity_match(self, eid) {
                 view__add_record(self, eid) or_return
             }
         }
@@ -192,13 +192,13 @@ package ode_ecs
         return nil
     }
     
-    view__len :: #force_inline proc "contextless" (self: ^View) -> int {
+    view_len :: #force_inline proc "contextless" (self: ^View) -> int {
         return (^runtime.Raw_Slice)(&self.records).len
     }
 
-    view__cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
+    view_cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
 
-    view__memory_usage :: proc (self: ^View) -> int { 
+    view_memory_usage :: proc (self: ^View) -> int { 
         total := size_of(self^)
 
         total += oc.dense_arr__memory_usage(&self.tables)
@@ -219,11 +219,11 @@ package ode_ecs
     }
 
     // returns true if entity has components that would match this view
-    view__entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
+    view_entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
         return uni_bits__is_subset(&self.bits, &self.ecs.eid_to_bits[eid.ix]) 
     }
 
-    view__suspend :: proc(self: ^View) {
+    suspend :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
         }
@@ -231,7 +231,7 @@ package ode_ecs
         self.suspended = true
     }
 
-    view__resume :: proc(self: ^View) {
+    resume :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
         }

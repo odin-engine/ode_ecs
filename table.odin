@@ -85,7 +85,7 @@ package ode_ecs
     }
 
     @(private)
-    table_raw__len :: #force_inline proc(self: ^Table_Raw) -> int {
+    table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
         return (^runtime.Raw_Slice)(&self.records).len
     }
 
@@ -181,7 +181,7 @@ package ode_ecs
         records: []T,     
     }
 
-    table__init :: proc(self: ^Table($T), ecs: ^Database, cap: int, loc := #caller_location) -> Error {
+    table_init :: proc(self: ^Table($T), ecs: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(ecs != nil, loc = loc)
@@ -205,7 +205,7 @@ package ode_ecs
         return nil
     }
 
-    table__terminate :: proc(self: ^Table($T)) -> Error {
+    table_terminate :: proc(self: ^Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.type_info.id == typeid_of(T))
@@ -217,7 +217,7 @@ package ode_ecs
         return nil
     }
 
-    table__add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
+    add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Normal)
@@ -255,13 +255,13 @@ package ode_ecs
 
         // Notify subscribed views
         for view in self.subscribers.items {
-            if !view.suspended && view__entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
         }
 
         return 
     }
 
-    table__remove_component :: proc(self: ^Table($T), eid: entity_id) -> Error {
+    remove_component :: proc(self: ^Table($T), eid: entity_id) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Normal)
@@ -274,16 +274,16 @@ package ode_ecs
         return table_raw__remove_component(cast(^Table_Raw) self, eid)
     }
 
-    table__len :: #force_inline proc(self: ^Table($T)) -> int {
+    table_len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
         return (^runtime.Raw_Slice)(&self.records).len
     }
 
-    table__cap :: #force_inline proc(self: ^Table($T)) -> int {
+    table_cap :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
         return self.cap
     }
 
     @(require_results)
-    table__get_component_by_entity_id :: proc (self: ^Table($T), eid: entity_id) -> (^T, Error) {
+    get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> (^T, Error) {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
@@ -301,7 +301,7 @@ package ode_ecs
     }
 
     @(require_results)
-    table__has_component :: proc (self: ^Table($T), eid: entity_id) -> bool {
+    has_component :: proc (self: ^Table($T), eid: entity_id) -> bool {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
@@ -314,11 +314,11 @@ package ode_ecs
         return self.eid_to_rid[eid.ix] != DELETED_INDEX
     }
 
-    table__get_entity :: #force_inline proc "contextless" (self: ^Table($T), #any_int record_index: int) -> entity_id {
+    get_entity_from_table :: #force_inline proc "contextless" (self: ^Table($T), #any_int record_index: int) -> entity_id {
         return self.rid_to_eid[record_index]
     }
 
-    table__memory_usage :: proc (self: ^Table_Base) -> int {    
+    table_memory_usage :: proc (self: ^Table_Base) -> int {    
         total := size_of(self^)
 
         if self.rid_to_eid != nil {

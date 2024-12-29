@@ -101,7 +101,7 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
         // Init views
-        err = ecs.view__init(&physical, &db, {&positions, &physics})
+        err = ecs.view_init(&physical, &db, {&positions, &physics})
         if err != nil { report_error(err); return }
 
     //
@@ -117,7 +117,7 @@ main :: proc() {
             err = ecs.iterator_init(&it, view)
             if err != nil { report_error(err); return }
 
-            for ecs.iterator__next(&it) {
+            for ecs.iterator_next(&it) {
 
                 // Doing some calculations on components
 
@@ -264,6 +264,6 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
 
     for i:=start_ix; i < end_ix; i+=1 {
         eid := ecs.get_entity(&db, i)
-        ecs.db__destroy_entity(&db, eid)
+        ecs.destroy_entity(&db, eid)
     }
 }

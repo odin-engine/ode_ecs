@@ -376,11 +376,9 @@ main :: proc() {
         fmt.printfln("%-30s %.2f ms", "Approach 2 with payload time:", f64(nanos2_with_payload)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.2f times", "Difference is ", difference_with_payload)
-         
         
         fmt.println("")
         fmt.println("")
-        
 
         fmt.printfln("%-30s \"Approach 2\" is %.1f to %.1f times faster than \"Approach 1\" depending on component size", "End result: ", difference_with_payload, difference)
 }

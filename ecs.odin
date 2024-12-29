@@ -41,69 +41,37 @@ package ode_ecs
     DELETED_INDEX :: oc.DELETED_INDEX
 
 ///////////////////////////////////////////////////////////////////////////////
-// Public API 
+// Proc groups and aliases
 //
-//  API proc name        | Internal proc name (grouped by file name) 
 
-    //
-    // Database (db)
-    //
-    init                :: db__init
-    terminate           :: db__terminate
-    clear               :: db__clear                    // clear all data (and only data) from database
-    create_entity       :: db__create_entity
-    destroy_entity      :: db__destroy_entity
+    clear               :: proc {  // only data clear
+        db_clear,                    
+        table_clear,
+        view_clear,
+    }
+
     get_entity          :: proc {
-        db__get_entity,
-        table__get_entity,
-        iterator__get_entity,
+        get_entity_from_db,
+        get_entity_from_table,
+        get_entity_by_iterator,
     }
-    entities_count      :: db__entities_len
-    entities_len        :: db__entities_len
-    is_expired          :: db__is_expired               // to check if entity expired (was deleted)
+
+    entities_count      :: entities_len
+ 
     memory_usage        :: proc {
-        db__memory_usage,
-        table__memory_usage,
-        view__memory_usage,
+        db_memory_usage,
+        table_memory_usage,
+        view_memory_usage,
     }
 
-    //
-    // Table
-    //
-    table_init          :: table__init
-    table_terminate     :: table__terminate
-    add_component       :: table__add_component
-    remove_component    :: table__remove_component
     get_component       :: proc {
-        table__get_component_by_entity_id,
-        iterator__get_component, 
+        get_component_by_entity,
+        get_component_by_iterator, 
     }
-    table_has_component :: table__has_component
-    has_component       :: table__has_component
-    table_len           :: table__len
-    table_cap           :: table__len
-    table_clear         :: table_raw__clear             // clear all data from table
-
-    //
-    // View 
-    //
-    view_init           :: view__init
-    view_terminate      :: view__terminate
-    rebuild             :: view__rebuild                // regenerate view data from tables
-    view_len            :: view__len
-    view_cap            :: view__cap
-    view_clear          :: view__clear                  // clear all data from view
-    view_entity_match   :: view__entity_match
-    suspend             :: view__suspend                // suspend receiving "events" from tables
-    resume              :: view__resume
-
-    //
-    // View iterator
-    //
-    iterator_init       :: iterator__init
-    iterator_reset      :: iterator__init // same as init
-    iterator_next       :: iterator__next
-
+ 
+    table_clear         :: table_raw__clear // clear all data from table
+    iterator_reset      :: iterator_init // same as init
+    
 ///////////////////////////////////////////////////////////////////////////////
 // Basic types
 

@@ -17,6 +17,7 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basic/main.odin).  
 - Tests are available [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
+- An example with 100,000 entities demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
 
 # How to install
 
@@ -173,7 +174,7 @@ To iterate over views, you need to use an `Iterator`:
 
     ecs.iterator_init(&it, &view1)
 
-    for ecs.iterator__next(&it) {
+    for ecs.iterator_next(&it) {
         // ...
     }
 ```  
@@ -185,7 +186,7 @@ To get an entity or its components inside the iterator loop, you can do this:
     pos: ^Position // Position component
     ai: ^AI        // AI component
 
-    for ecs.iterator__next(&it) {
+    for ecs.iterator_next(&it) {
         // To get the entity
         eid = ecs.get_entity(&it)
 
@@ -214,10 +215,6 @@ To run tests, go to the `tests` folder and execute:
 ```  
 
 # Advanced
-
-### Public API
-
-List of public procedures (public API) is [here](https://github.com/odin-engine/ode_ecs/blob/main/ecs.odin).
 
 ### Entity  
 
