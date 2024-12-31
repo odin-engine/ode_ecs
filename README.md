@@ -14,7 +14,7 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
 - MIT License.  
-- Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basic/main.odin).  
+- Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
 - Tests are available [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 - An example demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
@@ -91,7 +91,7 @@ Now you can add a `Position` component to the `robot` entity:
     position, _ = ecs.add_component(&positions, robot)
 
     // Get the existing component from the table for the entity
-    position, _ = ecs.get_component(&positions, robot)
+    position = ecs.get_component(&positions, robot)
 ```  
 
 To iterate over components in a table, you can do this:  
@@ -130,7 +130,7 @@ Using an entity, you can access its other components:
     ai: ^AI // AI component
     for &pos, index in positions.records {
         eid = ecs.get_entity(&positions, index)
-        ai, _ = ecs.get_component(&ais, eid) // assuming we have variable `ais: Table(AI)`
+        ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: Table(AI)`
         fmt.println(eid, pos, ai)
     }
 ```  

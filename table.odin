@@ -11,7 +11,6 @@ package ode_ecs
     import "core:mem"
     import "core:fmt"
 
-
 // ODE
     import oc "ode_core"
 
@@ -85,6 +84,14 @@ package ode_ecs
     }
 
     @(private)
+    table_raw__get_component :: proc (self: ^Table_Raw, eid: entity_id) -> rawptr {
+        rid := self.eid_to_rid[eid.ix]
+        #no_bounds_check {
+            return cast(rawptr)&self.records[int(rid) * self.type_info.size]
+        }
+    }
+
+    @(private)
     table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
         return (^runtime.Raw_Slice)(&self.records).len
     }
@@ -136,7 +143,7 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component(view, self, tail_eid, target_rid)
+                    view__update_component(view, self, tail_eid, rawptr(dst))
                 }
             }
         }
@@ -283,7 +290,7 @@ package ode_ecs
     }
 
     @(require_results)
-    get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> (^T, Error) {
+    get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> ^T {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
@@ -291,13 +298,13 @@ package ode_ecs
         }
 
         err := db__is_entity_correct(self.ecs, eid)
-        if err != nil do return nil, err
+        if err != nil do return nil
 
         rid := self.eid_to_rid[eid.ix]
 
-        if rid == DELETED_INDEX do return nil, oc.Core_Error.Not_Found
+        if rid == DELETED_INDEX do return nil
 
-        return &self.records[rid], nil
+        return &self.records[rid]
     }
 
     @(require_results)

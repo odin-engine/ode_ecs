@@ -9,12 +9,18 @@ package ode_ecs
     import "core:slice"
     import "core:log"
     import "core:fmt"
+    import "core:mem"
 // ODE
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
 // View
 // 
+    View_Record :: struct {
+        eid: entity_id,
+        refs: [1] rawptr, // at least one component
+    }
+
     View :: struct {
         id: view_id, 
         state: Object_State,
@@ -24,8 +30,10 @@ package ode_ecs
         tid_to_cid: []view_column_id,  
         eid_to_rid: []view_record_id, 
         
-        records: []int,  // tail swap, order doesn't matter here
-        columns_count: int, 
+        records: []byte,  // tail swap, order doesn't matter here
+        one_record_size: int, 
+        records_size: int,
+        tables_len: int, 
 
         cap: int,
 
@@ -45,12 +53,12 @@ package ode_ecs
 
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
-        // Make sure we do not have repeating columns
+        // Make sure we do not have repeating columns (copmonent typse/tables)
         slice.sort(includes)
         uniq_tables := slice.unique(includes)
-        len_uniq_tables := len(uniq_tables)
+        self.tables_len = len(uniq_tables)
 
-        oc.dense_arr__init(&self.tables, len_uniq_tables, ecs.allocator) or_return
+        oc.dense_arr__init(&self.tables, self.tables_len, ecs.allocator) or_return
 
         // max table id
         max_table_id: int = -1
@@ -76,15 +84,11 @@ package ode_ecs
                 self.cap = table.cap
             }
 
-            // Plus 1 because the first column is reserverd for entity_id
-            self.tid_to_cid[table.id] = cast(view_column_id)index + 1 
+            self.tid_to_cid[table.id] = cast(view_column_id)index 
 
             uni_bits__add(&self.bits, table.id)
         }
 
-        // first column is entity_id
-        self.columns_count = 1 + len_uniq_tables
-    
         //
         // eid_to_rid
         //
@@ -93,8 +97,13 @@ package ode_ecs
         //
         // records
         //
-        total_count := self.cap * self.columns_count
-        self.records = make([]int, total_count, ecs.allocator) or_return
+        self.one_record_size = size_of(View_Record) + (self.tables_len - 1) * size_of(rawptr)  // -1 because one is already in struct
+        self.records_size = self.cap * self.one_record_size
+
+        raw := (^runtime.Raw_Slice)(&self.records)
+
+        raw.data = mem.alloc(self.records_size, allocator = ecs.allocator) or_return
+        raw.len = 0
 
         self.state = Object_State.Normal
 
@@ -147,11 +156,8 @@ package ode_ecs
             for i := 0; i < len(self.eid_to_rid); i+=1 do self.eid_to_rid[i] = DELETED_INDEX
         }
 
-        if self.cap > 0 && self.records != nil {
-            total_count := self.cap * self.columns_count
-            #no_bounds_check {
-                for i := 0; i < total_count; i+=1 do self.records[i] = DELETED_INDEX
-            }
+        if len(self.records) > 0 {
+            mem.zero((^runtime.Raw_Slice)(&self.records).data, self.records_size)
             (^runtime.Raw_Slice)(&self.records).len = 0
         }
 
@@ -239,6 +245,17 @@ package ode_ecs
         self.suspended = false
     }
 
+    view__get_record :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Record { 
+        if index < 0 || index >= view_len(self) do return nil
+        return view__get_record_private(self, index)
+    }
+
+    view__get_component_for_record :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Table($T)) -> ^T {
+        #no_bounds_check {
+            return (^T)(rec.refs[self.tid_to_cid[table.id]])
+        }
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Private
 
@@ -250,22 +267,18 @@ package ode_ecs
         if raw.len >= self.cap do return API_Error.Cannot_Add_Record_To_View_Container_Is_Full
         if self.eid_to_rid[eid.ix] != DELETED_INDEX do return oc.Core_Error.Already_Exists
 
-        row_ix := raw.len * self.columns_count
         self.eid_to_rid[eid.ix] = cast(view_record_id)raw.len
 
-        // first column
-        #no_bounds_check {
-            self.records[row_ix] = int(eid)
-        }
+        record := view__get_record_private(self, raw.len)
+        record.eid = eid
 
         table: ^Table_Raw
         cid: view_column_id
         rid: table_record_id
         for table in self.tables.items {
             cid = self.tid_to_cid[table.id]
-            rid = table.eid_to_rid[eid.ix]
             #no_bounds_check {
-                self.records[row_ix + cid] = int(rid)
+                record.refs[cid] = table_raw__get_component(table, eid)
             }
         }
 
@@ -278,58 +291,51 @@ package ode_ecs
     view__remove_record :: proc(self: ^View, eid: entity_id) {
         raw := (^runtime.Raw_Slice)(&self.records)
         if raw.len <= 0 do return // no records
-        if self.eid_to_rid[eid.ix] == DELETED_INDEX do return // already deleted or this view doesn't match entity
+        
+        dest_row_ix :=  int(self.eid_to_rid[eid.ix])
+        if dest_row_ix < 0 do return // already deleted or this view doesn't match entity
 
-        dest_row_ix :=  int(self.eid_to_rid[eid.ix]) * self.columns_count
-        src_row_ix := (raw.len - 1) * self.columns_count
+        src_row_ix := raw.len - 1
 
-        // check if record is tail
+        src_record:= view__get_record_private(self, src_row_ix)
+    
+        // check if record is not tail
         if dest_row_ix != src_row_ix {
-            src_eid: int = DELETED_INDEX
-            #no_bounds_check {
-                src_eid = self.records[src_row_ix]
+            dst_record := view__get_record_private(self, dest_row_ix)    
+            
+            mem.copy(dst_record, src_record, self.one_record_size)
 
-                // COPY
-                for j:= 0; j < self.columns_count; j += 1 {
-                    self.records[dest_row_ix + j] = self.records[src_row_ix + j]
-                }
-            }
-           
-            self.eid_to_rid[src_eid] = self.eid_to_rid[eid.ix]
+            self.eid_to_rid[src_record.eid.ix] = self.eid_to_rid[eid.ix]
         }
 
-        #no_bounds_check {
-            // Reset tail
-            for i:= 0; i < self.columns_count; i += 1 {
-                self.records[src_row_ix + i] = DELETED_INDEX
-            }
-        }
+        mem.zero(src_record, self.one_record_size)
+        src_record.eid.ix = DELETED_INDEX
 
         self.eid_to_rid[eid.ix] = DELETED_INDEX
         raw.len -= 1 
     }
 
     @(private)
-    view__update_component :: proc(self: ^View, table: ^Table_Raw, eid: entity_id, rid: table_record_id) -> Error  {
+    view__update_component :: proc(self: ^View, table: ^Table_Raw, eid: entity_id, addr: rawptr) -> Error  {
         cid := self.tid_to_cid[table.id]
         assert(cid != DELETED_INDEX)
 
         // record must exist
         if self.eid_to_rid[eid.ix] == DELETED_INDEX do return oc.Core_Error.Not_Found   // it is possible when removal of other component
                                                                                         // removed enity from the view      
-        
-        row_ix := int(self.eid_to_rid[eid.ix]) * self.columns_count
-        
+        row_ix := int(self.eid_to_rid[eid.ix])
+        record := view__get_record_private(self, row_ix)
         #no_bounds_check {
-            assert(self.records[row_ix + cid] != int(rid))
-            self.records[row_ix + cid] = int(rid)
+            record.refs[cid] = addr
         }
-
+        
         return nil
     }
 
     @(private)
-    view__get_record :: #force_inline proc "contextless" (self: ^View, index: int) -> []int {
-        low := self.columns_count *  index 
-        return self.records[low : low + self.columns_count]
+    view__get_record_private :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Record { 
+        #no_bounds_check {
+            return (^View_Record)(&self.records[index * self.one_record_size])
+        }
     }
+

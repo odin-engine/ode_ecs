@@ -69,7 +69,7 @@ main :: proc() {
     pos1.y = 43
 
     // Get existing component from table for entity
-    pos2, _ := ecs.get_component(&positions, robot)
+    pos2 := ecs.get_component(&positions, robot)
 
     assert(pos1 == pos2)
 
@@ -88,7 +88,7 @@ main :: proc() {
         eid = ecs.get_entity(&positions, index)
 
         // Get other component with entity
-        ai, _ = ecs.get_component(&ais, eid) 
+        ai = ecs.get_component(&ais, eid) 
 
         fmt.println("Iterating over table: ", eid, pos, ai)
     }

@@ -4,8 +4,8 @@ out/*
 tests/out/*
 !tests/out/.keep
 
-samples/basic/out/*
-!samples/basic/out/.keep
+samples/basics/out/*
+!samples/basics/out/.keep
 
 samples/sample01/out/*
 !samples/sample01/out/.keep

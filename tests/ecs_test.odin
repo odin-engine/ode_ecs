@@ -320,22 +320,15 @@ package ode_ecs__tests
 
             a : ^AI
    
-            a, err = ecs.get_component(&ais, eid_1)
+            a = ecs.get_component(&ais, eid_1)
+            testing.expect(t, a != nil)
             testing.expect(t, a == ai)
-            testing.expect(t, err == nil)
-
-            a, err = ecs.get_component_by_entity(&ais, ecs.entity_id{ix = 99999})
-            testing.expect(t, a == nil)
-            testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
-
             
-            a, err = ecs.get_component_by_entity(&ais, eid_2)
+            a = ecs.get_component_by_entity(&ais, eid_2)
             testing.expect(t, a == ai2)
-            testing.expect(t, err == nil)
 
-            pos, err = ecs.get_component_by_entity(&positions, eid_2)
+            pos = ecs.get_component_by_entity(&positions, eid_2)
             testing.expect(t, pos == nil)
-            testing.expect(t, err == oc.Core_Error.Not_Found)
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -360,15 +353,16 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 0)
-        
-        #no_bounds_check {
-            testing.expect(t, view1.records[0] == eid_2.ix)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix])
-            testing.expect(t, view1.records[1 * view1.columns_count] == eid_1.ix)
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_1.ix])
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_1.ix])         
-        }
+ 
+        r := ecs.view__get_record(view1, 0)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_2))
+
+        r = ecs.view__get_record(view1, 1)
+        testing.expect(t, r.eid == eid_1)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_1))
 
         // ADD POS 1
         pos, err = ecs.add_component(positions, eid_3)
@@ -382,26 +376,27 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 3)
         testing.expect(t, ecs.view_len(view3) == 1)
 
-        #no_bounds_check {
-            testing.expect(t, view1.records[2 * view1.columns_count] == eid_3.ix)
-            testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-            testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])  
-        }
-        
+        r = ecs.view__get_record(view1, 2)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+
         ecs.remove_component(ais, eid_1) 
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 1)
 
-        #no_bounds_check {
-            testing.expect(t, view1.records[0] == eid_2.ix)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix])
-            testing.expect(t, view1.records[1 * view1.columns_count] == eid_3.ix)
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix]) 
+        r = ecs.view__get_record(view1, 0)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_2))
 
-            // ais.eid_to_rid[eid_3.ix] was changed because ais component was removed
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-        }
+        r = ecs.view__get_record(view1, 1)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+        
+        // ais.eid_to_rid[eid_3.ix] was changed because ais component was removed
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_3))
+
         err = ecs.remove_component(ais, eid_1)
         testing.expect(t, err == oc.Core_Error.Not_Found) 
         testing.expect(t, ecs.view_len(view1) == 2)
@@ -409,25 +404,27 @@ package ode_ecs__tests
         ecs.remove_component(ais, eid_3)
         testing.expect(t, ecs.view_len(view1) == 1)
 
-        #no_bounds_check {
-            testing.expect(t, view1.records[0] == eid_2.ix)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix])
-            testing.expect(t, view1.records[1 * view1.columns_count] == ecs.DELETED_INDEX)
-            testing.expect(t, view1.records[1 * view1.columns_count + 1] == ecs.DELETED_INDEX) 
-            testing.expect(t, view1.records[1 * view1.columns_count + 2] == ecs.DELETED_INDEX)
-        }
+        r = ecs.view__get_record(view1, 0)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_2))
+
+        testing.expect(t, ecs.view__get_record(view1, 1) == nil)
 
         ecs.remove_component(ais, eid_2)
         testing.expect(t, ecs.view_len(view1) == 0)
 
         #no_bounds_check {
-            testing.expect(t, view1.records[0] == ecs.DELETED_INDEX)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == ecs.DELETED_INDEX)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == ecs.DELETED_INDEX)
-            testing.expect(t, view1.records[1 * view1.columns_count] == ecs.DELETED_INDEX)
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == ecs.DELETED_INDEX) 
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == ecs.DELETED_INDEX)
+            // Direct memory check 
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).eid.ix == ecs.DELETED_INDEX)
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).eid.gen == 0)
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).refs[0] == nil)
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).refs[1] == nil)
+
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).eid.ix == ecs.DELETED_INDEX)
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).eid.gen == 0)
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).refs[0] == nil)
+            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).refs[1] == nil)
         }
 
         err = ecs.remove_component(ais, eid_2)
@@ -445,11 +442,10 @@ package ode_ecs__tests
         testing.expect(t, err == nil) 
         testing.expect(t, ecs.view_len(view1) == 1)
 
-        #no_bounds_check {
-            testing.expect(t, view1.records[0] == eid_3.ix)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-        }
+        r = ecs.view__get_record(view1, 0)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_3))
 
         ai, err = ecs.add_component(ais, eid_2)
         ai.IQ = 22
@@ -461,14 +457,15 @@ package ode_ecs__tests
         testing.expect(t, err == nil) 
         testing.expect(t, ecs.view_len(view1) == 2)
 
-        #no_bounds_check {
-            testing.expect(t, view1.records[0] == eid_3.ix)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-            testing.expect(t, view1.records[1 * view1.columns_count] == eid_1.ix)
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_1.ix]) 
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_1.ix])
-        }
+        r = ecs.view__get_record(view1, 0)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+
+        r = ecs.view__get_record(view1, 1)
+        testing.expect(t, r.eid == eid_1)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_1))
 
         // force cap = 2
         old_cap := view1.cap
@@ -481,12 +478,13 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 2)
 
-        #no_bounds_check {
-            testing.expect(t, view3.records[0] == eid_3.ix)
-            testing.expect(t, view3.records[0 + view3.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-            testing.expect(t, view3.records[1 * view3.columns_count] == eid_2.ix)
-            testing.expect(t, view3.records[1 * view3.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix]) 
-        }
+        r = ecs.view__get_record(view3, 0)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view3, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+
+        r = ecs.view__get_record(view3, 1)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view3, r, positions) == ecs.get_component_by_entity(positions, eid_2))
 
         view1.cap = old_cap
 
@@ -496,24 +494,44 @@ package ode_ecs__tests
         testing.expect(t,  err == ecs.API_Error.Component_Already_Exist)
         testing.expect(t, ecs.view_len(view1) == 3)
 
-        #no_bounds_check {
-            testing.expect(t, view1.records[0] == eid_3.ix)
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-            testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-            testing.expect(t, view1.records[1 * view1.columns_count] == eid_1.ix)
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_1.ix]) 
-            testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_1.ix])
-            testing.expect(t, view1.records[2 * view1.columns_count] == eid_2.ix)
-            testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix]) 
-            testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
-        }
+        // #no_bounds_check {
+        //     testing.expect(t, view1.records[0] == eid_3.ix)
+        //     testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
+        //     testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
+        //     testing.expect(t, view1.records[1 * view1.columns_count] == eid_1.ix)
+        //     testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_1.ix]) 
+        //     testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_1.ix])
+        //     testing.expect(t, view1.records[2 * view1.columns_count] == eid_2.ix)
+        //     testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix]) 
+        //     testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
+        // }
 
-        #no_bounds_check {
-            testing.expect(t, view3.records[0] == eid_3.ix)
-            testing.expect(t, view3.records[0 + view3.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-            testing.expect(t, view3.records[1 * view3.columns_count] == eid_2.ix)
-            testing.expect(t, view3.records[1 * view3.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix]) 
-        }
+        // view1 
+
+        r = ecs.view__get_record(view1, 0)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+
+        r = ecs.view__get_record(view1, 1)
+        testing.expect(t, r.eid == eid_1)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_1))
+
+        r = ecs.view__get_record(view1, 2)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_2))
+
+        // view3
+        
+        r = ecs.view__get_record(view3, 0)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view3, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+
+        r = ecs.view__get_record(view3, 1)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view3, r, positions) == ecs.get_component_by_entity(positions, eid_2))
 
         it: ecs.Iterator
         ecs.iterator_init(&it, view1)
@@ -539,6 +557,7 @@ package ode_ecs__tests
                     ai = ecs.get_component(ais, &it)
                     testing.expect(t, ai.IQ == 22)
                 case: 
+                    
                     testing.expect(t, false)
             }
         }
@@ -576,17 +595,18 @@ package ode_ecs__tests
         testing.expect(t, it.index == 3)
         testing.expect(t, ecs.view_len(view2) == 3)
 
-        #no_bounds_check {
-            testing.expect(t, view2.records[0] == eid_3.ix)
-            testing.expect(t, view2.records[0 + view2.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-            testing.expect(t, view2.records[0 + view2.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-            testing.expect(t, view2.records[1 * view2.columns_count] == eid_1.ix)
-            testing.expect(t, view2.records[1 * view2.columns_count + view2.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_1.ix]) 
-            testing.expect(t, view2.records[1 * view2.columns_count + view2.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_1.ix])
-            testing.expect(t, view2.records[2 * view2.columns_count] == eid_2.ix)
-            testing.expect(t, view2.records[2 * view2.columns_count + view2.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix]) 
-            testing.expect(t, view2.records[2 * view2.columns_count + view2.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
-        }
+        r = ecs.view__get_record(view2, 0)
+        testing.expect(t, r.eid == eid_3)
+        testing.expect(t, ecs.view__get_component_for_record(view2, r, ais) == ecs.get_component_by_entity(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_record(view2, r, positions) == ecs.get_component_by_entity(positions, eid_3))
+        r = ecs.view__get_record(view2, 1)
+        testing.expect(t, r.eid == eid_1)
+        testing.expect(t, ecs.view__get_component_for_record(view2, r, ais) == ecs.get_component_by_entity(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_record(view2, r, positions) == ecs.get_component_by_entity(positions, eid_1))
+        r = ecs.view__get_record(view2, 2)
+        testing.expect(t, r.eid == eid_2)
+        testing.expect(t, ecs.view__get_component_for_record(view2, r, ais) == ecs.get_component_by_entity(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_record(view2, r, positions) == ecs.get_component_by_entity(positions, eid_2))
 
         testing.expect(t, ecs.iterator_init(&it, view2) == nil)
 
@@ -736,18 +756,15 @@ package ode_ecs__tests
         // Init views
 
         testing.expect(t, ecs.view_init(&view1, &ecs_1, {&ais, &positions}) == nil)
-        testing.expect(t, view1.columns_count == 3)
         testing.expect(t, ecs.view_len(&view1) == 0)
         testing.expect(t, view1.cap == 8)
 
         testing.expect(t, ecs.view_init(&view2, &ecs_1, {&ais, &positions}) == nil)
-        testing.expect(t, view2.columns_count == 3)
         testing.expect(t, ecs.view_len(&view2) == 0)
         testing.expect(t, view2.cap == 8)
 
         testing.expect(t, ecs.view_init(&view3, &ecs_1, {&positions}) == nil)
         testing.expect(t, view3.id == 2)
-        testing.expect(t, view3.columns_count == 2)
         testing.expect(t, ecs.view_len(&view3) == 0)
         testing.expect(t, view3.cap == 10)
 
@@ -778,16 +795,13 @@ package ode_ecs__tests
         // Retest if everything was suspended
         //
 
-        testing.expect(t, view1.columns_count == 3)
         testing.expect(t, ecs.view_len(&view1) == 0)
         testing.expect(t, view1.cap == 8)
 
-        testing.expect(t, view2.columns_count == 3)
         testing.expect(t, ecs.view_len(&view2) == 0)
         testing.expect(t, view2.cap == 8)
 
         testing.expect(t, view3.id == 2)
-        testing.expect(t, view3.columns_count == 2)
         testing.expect(t, ecs.view_len(&view3) == 0)
         testing.expect(t, view3.cap == 10)
 
@@ -802,6 +816,7 @@ package ode_ecs__tests
 
         it: ecs.Iterator
         testing.expect(t, ecs.iterator_init(&it, &view1) == ecs.API_Error.Object_Invalid)
+        //log.error(it.view, it.index, it.raw_index, it.len)
         testing.expect(t, ecs.iterator_next(&it) == false)
 
         testing.expect(t, ecs.view_clear(&view1) == ecs.API_Error.Object_Invalid)
