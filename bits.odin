@@ -4,8 +4,6 @@
 #+private
 package ode_ecs
 
-// Base
-    import "base:runtime"
 // Core
     import "core:testing"
 

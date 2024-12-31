@@ -7,8 +7,6 @@ package ode_ecs
     import "base:runtime"
 // Core
     import "core:slice"
-    import "core:log"
-    import "core:fmt"
     import "core:mem"
 // ODE
     import oc "ode_core"

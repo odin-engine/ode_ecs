@@ -3,13 +3,6 @@
 */
 package ode_ecs
 
-// Base
-    import "base:runtime"
-// Core
-    import "core:slice"
-    import "core:log"
-    import "core:fmt"
-
 ///////////////////////////////////////////////////////////////////////////////
 // Iterator
     

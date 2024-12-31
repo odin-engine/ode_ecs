@@ -7,7 +7,6 @@ package ode_ecs
     import "base:runtime"
     
 // Core
-    import "core:log"
     import "core:slice"
 
 // ODE
@@ -132,11 +131,7 @@ package ode_ecs
             if table == nil do continue
             if int(table.id) not_in bits  do continue
 
-            err = table_raw__remove_component(cast(^Table_Raw)table, eid)
-            if err != nil {
-                log.error("Unable to remove component from table.id = ", table.id, ". Error: ", err)
-                return err
-            }
+            table_raw__remove_component(cast(^Table_Raw)table, eid) or_return
         } 
 
         // clean bit_sets
