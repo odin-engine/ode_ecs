@@ -494,18 +494,6 @@ package ode_ecs__tests
         testing.expect(t,  err == ecs.API_Error.Component_Already_Exist)
         testing.expect(t, ecs.view_len(view1) == 3)
 
-        // #no_bounds_check {
-        //     testing.expect(t, view1.records[0] == eid_3.ix)
-        //     testing.expect(t, view1.records[0 + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_3.ix])
-        //     testing.expect(t, view1.records[0 + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_3.ix])
-        //     testing.expect(t, view1.records[1 * view1.columns_count] == eid_1.ix)
-        //     testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_1.ix]) 
-        //     testing.expect(t, view1.records[1 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_1.ix])
-        //     testing.expect(t, view1.records[2 * view1.columns_count] == eid_2.ix)
-        //     testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[positions.id]] == cast(int) positions.eid_to_rid[eid_2.ix]) 
-        //     testing.expect(t, view1.records[2 * view1.columns_count + view1.tid_to_cid[ais.id]] == cast(int) ais.eid_to_rid[eid_2.ix])
-        // }
-
         // view1 
 
         r = ecs.view__get_record(view1, 0)
