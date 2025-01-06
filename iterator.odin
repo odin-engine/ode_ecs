@@ -3,47 +3,57 @@
 */
 package ode_ecs
 
+    import "core:fmt"
+
 ///////////////////////////////////////////////////////////////////////////////
 // Iterator
     
     Iterator :: struct {
         view: ^View,
-        index: int, 
+        //index: int, 
         raw_index: int,
-        len: int,
+        one_record_size: int, 
+        records_len: int,
         record: ^View_Record,
     }
 
     iterator_init :: proc(self: ^Iterator, view: ^View) -> (err: Error)  {
-        if view == nil || view.state != Object_State.Normal {
+        self.view = view 
+
+        return iterator_reset(self)
+    }
+
+    iterator_reset :: proc(self: ^Iterator) -> Error {
+        if self.view == nil || self.view.state != Object_State.Normal {
             self.view = nil
             self.raw_index = 0
-            self.index = DELETED_INDEX
-            self.len = 0
+            self.records_len = 0
             return API_Error.Object_Invalid
         } 
-        
-        self.view = view
-        self.raw_index = -view.one_record_size
-        self.index = -1
-        self.len = view_len(view)
 
-        return 
+        self.one_record_size = self.view.one_record_size
+        self.raw_index = -self.one_record_size
+        //self.index = -1
+
+        self.records_len = len(self.view.records) * self.one_record_size
+
+        return nil
     }
 
     iterator_next :: proc "contextless" (self: ^Iterator) -> bool {
-        if self.view == nil do return false 
-        
-        self.raw_index += self.view.one_record_size
-        self.index += 1
 
-        if self.index >= self.len do return false
-        
-        #no_bounds_check {
-            self.record = (^View_Record)(&self.view.records[self.raw_index])
+        self.raw_index += self.one_record_size
+
+        if self.raw_index < self.records_len {
+            #no_bounds_check {
+                self.record = (^View_Record)(&self.view.records[self.raw_index])
+            }
+            return true 
+
+        } else {
+            self.record = nil 
+            return false
         }
-
-        return true
     }
 
     get_component_by_iterator :: #force_inline proc "contextless" (table: ^Table($T), it: ^Iterator) -> ^T #no_bounds_check {

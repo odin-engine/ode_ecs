@@ -1,5 +1,9 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
+
+    Run this sample with speed optimization to see times closer to real-world performance:
+
+    odin run . -o:speed 
 */
 
 package ode_ecs_sample1
@@ -108,7 +112,7 @@ main :: proc() {
     // Systems
     //
 
-        process_physics :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
+        iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
             pos: ^Position
             ph: ^Physical
             err: ecs.Error
@@ -131,7 +135,7 @@ main :: proc() {
             }
         }
 
-        process_ai :: proc (table: ^ecs.Table(AI)) {
+        iterate_over_table :: proc (table: ^ecs.Table(AI)) {
             for &ai in table.records {
                 // Doing some calculations on components
                 ai.neurons_count += 1 
@@ -145,14 +149,14 @@ main :: proc() {
     //
     //  Game loop, frame zero, iterating over table only
     // 
-    sw: time.Stopwatch
-    time.stopwatch_start(&sw)
+        sw: time.Stopwatch
+        time.stopwatch_start(&sw)
 
-        process_ai(&ais) 
+            iterate_over_table(&ais) 
 
-    time.stopwatch_stop(&sw)
+        time.stopwatch_stop(&sw)
 
-    _, _, _, nanos0 := time.precise_clock_from_stopwatch(sw)
+        _, _, _, nanos0 := time.precise_clock_from_stopwatch(sw)
 
     //
     //  Game loop, frame one, iterating over view and table
@@ -161,9 +165,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            process_physics(&physical, &positions, &physics)
-
-            process_ai(&ais)
+            iterate_over_view(&physical, &positions, &physics)
 
         time.stopwatch_stop(&sw)
 
@@ -179,9 +181,9 @@ main :: proc() {
 
             create_entities_with_random_components_and_data(10_000)
 
-            process_physics(&physical, &positions, &physics)
+            iterate_over_view(&physical, &positions, &physics)
 
-            process_ai(&ais)
+            iterate_over_table(&ais)
 
         time.stopwatch_stop(&sw)
 
@@ -211,8 +213,17 @@ main :: proc() {
 
         fmt.printfln("%-30s %v MB", "Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte)
         fmt.println("-----------------------------------------------------------")
-        fmt.printfln("%-30s %.2f ms (iterating %vK table only)", "Frame zero time:", f64(nanos0)/1_000_000.0, ecs.table_len(&ais) / 1000)
-        fmt.printfln("%-30s %.2f ms (iterating %vK table and %vK view)", "Frame one time:", f64(nanos1)/1_000_000.0, ecs.table_len(&ais) / 1000, ecs.view_len(&physical) / 1000)
+
+        s = oc.add_thousand_separator(ecs.table_len(&ais), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %.2f ms (%v components)", "Iterate over table:", f64(nanos0)/1_000_000.0, s)
+        delete(s, allocator)
+        
+        s = oc.add_thousand_separator(ecs.view_len(&physical), sep=',', allocator=allocator)
+        s2 := oc.add_thousand_separator(ecs.view_len(&physical) * 2, sep=',', allocator=allocator)
+        fmt.printfln("%-30s %.2f ms (%v records, %v components)", "Iterate over view:", f64(nanos1)/1_000_000.0, s, s2)
+        delete(s, allocator)
+        delete(s2, allocator)
+
         fmt.printfln("%-30s %.2f ms (destroying 10K entities, creating 10K entities with random components and iterating table and view)", "Frame two time:", f64(nanos2)/1_000_000.0)
 }
 

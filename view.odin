@@ -155,7 +155,7 @@ package ode_ecs
         }
 
         if len(self.records) > 0 {
-            mem.zero((^runtime.Raw_Slice)(&self.records).data, self.records_size)
+            mem.zero((^runtime.Raw_Slice)(&self.records).data, len(self.records) * self.one_record_size)
             (^runtime.Raw_Slice)(&self.records).len = 0
         }
 

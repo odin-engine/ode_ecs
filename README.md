@@ -15,7 +15,7 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - Supports an unlimited number of component types (default is 128).  
 - MIT License.  
 - Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
-- Tests are available [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
+- Tests are [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 - An example demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
 

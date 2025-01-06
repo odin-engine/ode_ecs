@@ -1,5 +1,9 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
+
+    Run this sample with speed optimization to see times closer to real-world performance:
+
+    odin run . -o:speed 
 */
 
 package ode_ecs_sample2

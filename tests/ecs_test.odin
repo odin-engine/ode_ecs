@@ -524,8 +524,9 @@ package ode_ecs__tests
         it: ecs.Iterator
         ecs.iterator_init(&it, view1)
 
-        for ecs.iterator_next(&it) {
-            switch it.index {
+        index: int
+        for index = 0; ecs.iterator_next(&it); index+=1 {
+            switch index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
                     testing.expect(t, pos.x == 333)
@@ -550,13 +551,13 @@ package ode_ecs__tests
             }
         }
 
-        testing.expect(t, it.index == 3)
+        testing.expect(t, index == 3)
 
         // Init again and see if everything still works
         ecs.iterator_init(&it, view1)
 
-        for ecs.iterator_next(&it) {
-            switch it.index {
+        for index=0; ecs.iterator_next(&it); index+=1 {
+            switch index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
                     testing.expect(t, pos.x == 333)
@@ -580,7 +581,7 @@ package ode_ecs__tests
             }
         }
 
-        testing.expect(t, it.index == 3)
+        testing.expect(t, index == 3)
         testing.expect(t, ecs.view_len(view2) == 3)
 
         r = ecs.view__get_record(view2, 0)
@@ -598,8 +599,8 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.iterator_init(&it, view2) == nil)
 
-        for ecs.iterator_next(&it) {
-            switch it.index {
+        for index = 0; ecs.iterator_next(&it); index += 1 {
+            switch index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
                     testing.expect(t, pos.x == 333)
@@ -625,8 +626,8 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.iterator_init(&it, view3) == nil)
 
-        for ecs.iterator_next(&it) {
-            switch it.index {
+        for index = 0; ecs.iterator_next(&it); index += 1 {
+            switch index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
                     testing.expect(t, pos.x == 333)
@@ -644,8 +645,8 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.iterator_init(&it, view3) == nil)
 
-        for ecs.iterator_next(&it) {
-            switch it.index {
+        for index = 0; ecs.iterator_next(&it); index += 1 {
+            switch index {
                 case 0:
                     pos = ecs.get_component(positions, &it)
                     testing.expect(t, pos.x == 333)
@@ -804,7 +805,6 @@ package ode_ecs__tests
 
         it: ecs.Iterator
         testing.expect(t, ecs.iterator_init(&it, &view1) == ecs.API_Error.Object_Invalid)
-        //log.error(it.view, it.index, it.raw_index, it.len)
         testing.expect(t, ecs.iterator_next(&it) == false)
 
         testing.expect(t, ecs.view_clear(&view1) == ecs.API_Error.Object_Invalid)

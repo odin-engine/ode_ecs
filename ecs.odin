@@ -66,7 +66,6 @@ package ode_ecs
     }
  
     table_clear         :: table_raw__clear // clear all data from table
-    iterator_reset      :: iterator_init // same as init
     
 ///////////////////////////////////////////////////////////////////////////////
 // Basic types
