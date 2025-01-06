@@ -16,6 +16,9 @@ samples/sample02/out/*
 samples/sample03/out/*
 !samples/sample03/out/.keep
 
+samples/sample04/out/*
+!samples/sample04/out/.keep
+
 .vscode
 ols.json
 *.code-workspace

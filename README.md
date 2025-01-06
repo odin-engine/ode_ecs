@@ -19,6 +19,10 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 - An example demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
 
+# Documentation
+- [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
+(more documentation incoming)
+
 # How to install
 
 Use `git clone` to clone this repository into your project, and then `import ecs "ode_ecs"`: 

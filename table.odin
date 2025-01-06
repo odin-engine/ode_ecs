@@ -341,7 +341,14 @@ package ode_ecs
 
         return total
     }
-    
+
+    copy :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> Error {
+
+    }
+
+    move :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> Error {
+
+    }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Private
