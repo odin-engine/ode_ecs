@@ -216,6 +216,7 @@ package ode_ecs__tests
             
             ecs_1: ecs.Database
             ais: ecs.Table(AI)
+            ais_2: ecs.Table(AI)
             positions: ecs.Table(Position)
 
             defer ecs.terminate(&ecs_1)
@@ -323,12 +324,45 @@ package ode_ecs__tests
             a = ecs.get_component(&ais, eid_1)
             testing.expect(t, a != nil)
             testing.expect(t, a == ai)
+
+            a.neurons_count = 111
             
             a = ecs.get_component_by_entity(&ais, eid_2)
             testing.expect(t, a == ai2)
 
+            a.neurons_count = 222
+
             pos = ecs.get_component_by_entity(&positions, eid_2)
             testing.expect(t, pos == nil)
+
+            //
+            // Copy component 
+            //
+
+            defer ecs.table_terminate(&ais_2)
+            testing.expect(t, ecs.table_init(&ais_2, &ecs_1, 10) == nil)
+
+            a, _, err = ecs.copy_component(&ais_2, &ais, eid_2)
+            testing.expect(t, err == nil)
+            testing.expect(t, a.neurons_count == 222)
+
+            a_2 := ecs.get_component_by_entity(&ais_2, eid_2)
+            testing.expect(t, a.neurons_count == a_2.neurons_count)
+
+            //
+            // Move component 
+            //
+
+            a, err = ecs.move_component(&ais_2, &ais, eid_1)
+            testing.expect(t, err == nil)
+            testing.expect(t, a.neurons_count == 111)
+            a_2 = ecs.get_component_by_entity(&ais_2, eid_1)
+            testing.expect(t, a == a_2)
+            a_2 = ecs.get_component_by_entity(&ais, eid_1)
+            testing.expect(t, a_2 == nil)
+
+            ecs.clear(&ais)
+
     }
 
 ///////////////////////////////////////////////////////////////////////////////

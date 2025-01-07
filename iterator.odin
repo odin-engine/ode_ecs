@@ -10,10 +10,11 @@ package ode_ecs
     
     Iterator :: struct {
         view: ^View,
-        //index: int, 
-        raw_index: int,
         one_record_size: int, 
-        records_len: int,
+        records_size: int,
+
+        // cache
+        raw_index: int,
         record: ^View_Record,
     }
 
@@ -27,15 +28,14 @@ package ode_ecs
         if self.view == nil || self.view.state != Object_State.Normal {
             self.view = nil
             self.raw_index = 0
-            self.records_len = 0
+            self.records_size = 0
             return API_Error.Object_Invalid
         } 
 
         self.one_record_size = self.view.one_record_size
         self.raw_index = -self.one_record_size
-        //self.index = -1
 
-        self.records_len = len(self.view.records) * self.one_record_size
+        self.records_size = len(self.view.records) * self.one_record_size
 
         return nil
     }
@@ -44,7 +44,7 @@ package ode_ecs
 
         self.raw_index += self.one_record_size
 
-        if self.raw_index < self.records_len {
+        if self.raw_index < self.records_size {
             #no_bounds_check {
                 self.record = (^View_Record)(&self.view.records[self.raw_index])
             }

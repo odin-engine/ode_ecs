@@ -44,6 +44,7 @@ package ode_ecs
         db_clear,                    
         table_clear,
         view_clear,
+        table_raw__clear,
     }
 
     get_entity          :: proc {
@@ -64,8 +65,6 @@ package ode_ecs
         get_component_by_entity,
         get_component_by_iterator, 
     }
- 
-    table_clear         :: table_raw__clear // clear all data from table
     
 ///////////////////////////////////////////////////////////////////////////////
 // Basic types

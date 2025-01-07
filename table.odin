@@ -169,7 +169,8 @@ package ode_ecs
         }
 
         if zero_components && self.cap > 0 && self.records != nil {
-            mem.zero(raw_data(self.records), self.type_info.size * self.cap)
+            raw := (^runtime.Raw_Slice)(&self.records)
+            mem.zero(raw_data(self.records), self.type_info.size * raw.len)
         }
         (^runtime.Raw_Slice)(&self.records).len = 0
 
@@ -341,13 +342,37 @@ package ode_ecs
 
         return total
     }
+ 
+    // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
+    copy_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
+        src_component = get_component_by_entity(src, eid)
+        if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
 
-    copy :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> Error {
+        dest_component = get_component_by_entity(dest, eid) // if it exists we will overwrite data
+        if dest_component == nil {
+            dest_component = add_component(dest, eid) or_return 
+        }
 
+        // copy data
+        dest_component^ = src_component^
+
+        return dest_component, src_component, nil
     }
 
-    move :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> Error {
+    // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
+    move_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
+        dest_component, _ = copy_component(dest, src, eid) or_return
 
+        remove_component(src, eid) or_return
+
+        return dest_component, nil
+    }
+
+    table_clear :: proc(self: ^Table($T)) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        table_raw__clear((^Table_Raw)(self), true)
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -364,6 +389,5 @@ package ode_ecs
         err := oc.dense_arr__remove_by_value(&self.subscribers, view)
         return err
     }
-
 
 

@@ -12,7 +12,7 @@
     odin run . -o:speed 
 */
 
-package ode_ecs_sample1
+package ode_ecs_sample3
 
 // Base
     import "base:runtime"

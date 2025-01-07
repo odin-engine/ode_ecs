@@ -1,8 +1,10 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
+
+    NOTE: Work In Progress (WIP)
 */
 
-package ode_ecs_sample1
+package ode_ecs_sample4
 
 // Base
     import "base:runtime"
