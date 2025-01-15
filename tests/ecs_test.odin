@@ -285,8 +285,8 @@ package ode_ecs__tests
             ai2.IQ = 42
 
             // Remove components
-            testing.expect(t, positions.eid_to_rid[eid_1.ix] == 0)
-            testing.expect(t, positions.eid_to_rid[eid_2.ix] == 1)
+            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.records[0])
+            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.records[1])
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
             testing.expect(t, ecs.table_len(&positions) == 2)
@@ -299,8 +299,8 @@ package ode_ecs__tests
             testing.expect(t, pos2.x == 0)
             testing.expect(t, pos2.y == 0)
 
-            testing.expect(t, positions.eid_to_rid[eid_1.ix] == ecs.DELETED_INDEX)
-            testing.expect(t, positions.eid_to_rid[eid_2.ix] == 0)
+            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
+            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.records[0])
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 1)
@@ -308,8 +308,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
             testing.expect(t, ecs.remove_component(&positions, eid_2) == nil)
 
-            testing.expect(t, positions.eid_to_rid[eid_1.ix] == ecs.DELETED_INDEX)
-            testing.expect(t, positions.eid_to_rid[eid_2.ix] == ecs.DELETED_INDEX)
+            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
+            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == nil)
             testing.expect(t, positions.rid_to_eid[0].ix == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 0)
@@ -428,7 +428,7 @@ package ode_ecs__tests
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_3))
         
-        // ais.eid_to_rid[eid_3.ix] was changed because ais component was removed
+        // ais.eid_to_ptr[eid_3.ix] was changed because ais component was removed
         testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_3))
 
         err = ecs.remove_component(ais, eid_1)
@@ -501,7 +501,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_1))
 
-        // force cap = 2
+        // FORCE CAP = 2
         old_cap := view1.cap
         view1.cap = 2
 
@@ -509,7 +509,7 @@ package ode_ecs__tests
         pos, err = ecs.add_component(positions, eid_2)
         pos.x = 22
         testing.expect(t,  err == nil)
-        testing.expect(t, ecs.view_len(view1) == 2)
+        testing.expect(t, ecs.view_len(view1) == 2) // LEN DIDN'T INCREASE, BECAUSE OF CAP
         testing.expect(t, ecs.view_len(view3) == 2)
 
         r = ecs.view__get_record(view3, 0)
@@ -520,13 +520,15 @@ package ode_ecs__tests
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_record(view3, r, positions) == ecs.get_component_by_entity(positions, eid_2))
 
+        // RESTORE CAP
         view1.cap = old_cap
 
         // ADD POS
+        before_error_add_len := ecs.view_len(view1)
         pos, err = ecs.add_component(positions, eid_2)     
         pos.x = 222       
         testing.expect(t,  err == ecs.API_Error.Component_Already_Exist)
-        testing.expect(t, ecs.view_len(view1) == 3)
+        testing.expect(t, ecs.view_len(view1) == before_error_add_len + 1)
 
         // view1 
 
@@ -541,6 +543,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_1))
 
         r = ecs.view__get_record(view1, 2)
+        testing.expect(t, r.eid == eid_2)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_record(view1, r, ais) == ecs.get_component_by_entity(ais, eid_2))
         testing.expect(t, ecs.view__get_component_for_record(view1, r, positions) == ecs.get_component_by_entity(positions, eid_2))

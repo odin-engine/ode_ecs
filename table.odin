@@ -8,6 +8,7 @@ package ode_ecs
 
 // Core
     import "core:mem"
+    import "core:slice"
 
 // ODE
     import oc "ode_core"
@@ -21,10 +22,10 @@ package ode_ecs
         id: table_id, 
         type_info: ^runtime.Type_Info,
 
-        ecs: ^Database, 
+        db: ^Database, 
 
         rid_to_eid: []entity_id,
-        eid_to_rid: []table_record_id,
+        eid_to_ptr: []rawptr,
 
         cap: int,
 
@@ -32,25 +33,30 @@ package ode_ecs
     }
 
     @(private)
-    table_base__init :: proc(self: ^Table_Base, ecs: ^Database, cap: int) -> Error {
-        self.ecs = ecs
+    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int) -> Error {
+        self.db = db
         self.id = DELETED_INDEX
         self.cap = cap
 
-        self.rid_to_eid = make([]entity_id, cap, ecs.allocator) or_return
-        self.eid_to_rid = make([]table_record_id, ecs.id_factory.cap, ecs.allocator) or_return
+        self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
 
-        oc.dense_arr__init(&self.subscribers, VIEWS_CAP, ecs.allocator) or_return
+        // if you need to optimize memory usage, use Tiny_Table if your table cap is less than 11, 
+        // and use Small_Table if your table cap is less than db.id_factory.cap / 2 but greater than 11
+        // in other cases or if you do not care about memory usage, use Table
+        // db.id_factory.cap is database entities cap
+        self.eid_to_ptr = make([]rawptr, db.id_factory.cap, db.allocator) or_return
+
+        oc.dense_arr__init(&self.subscribers, VIEWS_CAP, db.allocator) or_return
 
         return nil
     }
 
     @(private)
     table_base__terminate :: proc(self: ^Table_Base) -> Error {
-        oc.dense_arr__terminate(&self.subscribers, self.ecs.allocator) or_return
+        oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
-        delete(self.rid_to_eid, self.ecs.allocator) or_return
-        delete(self.eid_to_rid, self.ecs.allocator) or_return
+        delete(self.rid_to_eid, self.db.allocator) or_return
+        delete(self.eid_to_ptr, self.db.allocator) or_return
        
         return nil
     }
@@ -68,13 +74,13 @@ package ode_ecs
     table_raw__terminate :: proc(self: ^Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
 
-        db__detach_table(self.ecs, self)
+        db__detach_table(self.db, self)
 
-        if self.records != nil do delete(self.records, self.ecs.allocator) or_return
+        if self.records != nil do delete(self.records, self.db.allocator) or_return
 
         table_base__terminate(self) or_return
 
-        self.ecs = nil 
+        self.db = nil 
         self.id = DELETED_INDEX
         self.state = Object_State.Terminated
 
@@ -83,10 +89,7 @@ package ode_ecs
 
     @(private)
     table_raw__get_component :: proc (self: ^Table_Raw, eid: entity_id) -> rawptr {
-        rid := self.eid_to_rid[eid.ix]
-        #no_bounds_check {
-            return cast(rawptr)&self.records[int(rid) * self.type_info.size]
-        }
+        return self.eid_to_ptr[eid.ix]
     }
 
     @(private)
@@ -95,26 +98,33 @@ package ode_ecs
     }
 
     @(private)
-    table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id) -> (err: Error) {
+    table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
         raw := (^runtime.Raw_Slice)(&self.records)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found 
 
-        target_rid := self.eid_to_rid[target_eid.ix]
+        target := self.eid_to_ptr[target_eid.ix]
 
         // Check if component exists
-        if target_rid == DELETED_INDEX do return oc.Core_Error.Not_Found
+        if target == nil do return oc.Core_Error.Not_Found
         
         T_size := self.type_info.size
         records := raw_data(self.records)
 
-        tail_rid := cast(table_record_id) raw.len - 1
-        tail := &records[cast(int)tail_rid * T_size]
+        tail_rid := raw.len - 1
+        tail_eid := self.rid_to_eid[tail_rid] 
+
+        assert(tail_eid.ix != DELETED_INDEX)
+
+        tail := self.eid_to_ptr[tail_eid.ix]
+        assert(tail != nil)
         
+        target_rid := int(uintptr(target) - uintptr(&self.records[0])) / T_size
+
         // Replace removed component with tail
-        if target_rid == tail_rid {
+        if target == tail {
             // Remove indexes
-            self.eid_to_rid[target_eid.ix] = DELETED_INDEX
+            self.eid_to_ptr[target_eid.ix] = nil
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
             for i := 0; i < oc.dense_arr__len(&self.subscribers); i += 1 {
@@ -127,12 +137,11 @@ package ode_ecs
             assert(tail_eid.ix != DELETED_INDEX)
 
             // DATA COPY
-            dst := &records[cast(int)target_rid * T_size]
-            mem.copy(dst, tail, T_size)
+            mem.copy(target, tail, T_size)
 
             // Update tail indexes
-            self.eid_to_rid[tail_eid.ix] = target_rid
-            self.eid_to_rid[target_eid.ix] = DELETED_INDEX
+            self.eid_to_ptr[tail_eid.ix] = target
+            self.eid_to_ptr[target_eid.ix] = nil
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
@@ -141,7 +150,7 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component(view, self, tail_eid, rawptr(dst))
+                    view__update_component(view, self, tail_eid, rawptr(target))
                 }
             }
         }
@@ -150,8 +159,8 @@ package ode_ecs
         mem.zero(tail, T_size)
         raw.len -= 1
 
-        // Update eid_to_bits in ecs
-        db__remove_component(self.ecs, target_eid, self.id)
+        // Update eid_to_bits in db
+        db__remove_component(self.db, target_eid, self.id)
 
         return
     }
@@ -164,10 +173,8 @@ package ode_ecs
             for i := 0; i < len(self.rid_to_eid); i+=1 do self.rid_to_eid[i].ix = DELETED_INDEX
         }
 
-        if self.eid_to_rid != nil {
-            for i := 0; i < len(self.eid_to_rid); i+=1 do self.eid_to_rid[i] = DELETED_INDEX
-        }
-
+        slice.zero(self.eid_to_ptr)
+       
         if zero_components && self.cap > 0 && self.records != nil {
             raw := (^runtime.Raw_Slice)(&self.records)
             mem.zero(raw_data(self.records), self.type_info.size * raw.len)
@@ -187,22 +194,22 @@ package ode_ecs
         records: []T,     
     }
 
-    table_init :: proc(self: ^Table($T), ecs: ^Database, cap: int, loc := #caller_location) -> Error {
+    table_init :: proc(self: ^Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
-            assert(ecs != nil, loc = loc)
+            assert(db != nil, loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
-            assert(ecs.state == Object_State.Normal, loc = loc) // ecs should be initialized
-            assert(cap <= ecs.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(db.state == Object_State.Normal, loc = loc) // db should be initialized
+            assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 
         self.type_info = type_info_of(typeid_of(T))
 
-        table_base__init(&self.base, ecs, cap) or_return 
+        table_base__init(&self.base, db, cap) or_return 
 
-        self.records = make([]T, cap, ecs.allocator) or_return
+        self.records = make([]T, cap, db.allocator) or_return
         
-        self.id = db__attach_table(ecs, self) or_return
+        self.id = db__attach_table(db, self) or_return
 
         self.state = Object_State.Normal
 
@@ -215,7 +222,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil)
             assert(self.type_info.id == typeid_of(T))
-            assert(self.ecs != nil)
+            assert(self.db != nil)
         }
 
         table_raw__terminate(cast(^Table_Raw) self) or_return
@@ -230,32 +237,33 @@ package ode_ecs
             assert(self.type_info.id == typeid_of(T))
         }
 
-        err = db__is_entity_correct(self.ecs, eid)
+        err = db__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
         raw := (^runtime.Raw_Slice)(&self.records)
 
         if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full 
 
+        component = cast(^T) self.eid_to_ptr[eid.ix]
+
         // Check if component already exist
-        if  self.eid_to_rid[eid.ix] == DELETED_INDEX {
-            // Update eid_to_rid
-            self.eid_to_rid[eid.ix] = cast(table_record_id) raw.len
-
-            // Update rid_to_eid
-            self.rid_to_eid[raw.len] = eid
-
-            // Update eid_to_bits in ecs
-            db__add_component(self.ecs, eid, self.id)
-
+        if component == nil {
             // Get component
             #no_bounds_check {
                 component = &self.records[raw.len]
             }
-            
+                        
+            // Update eid_to_ptr
+            self.eid_to_ptr[eid.ix] = component
+
+            // Update rid_to_eid
+            self.rid_to_eid[raw.len] = eid
+
+            // Update eid_to_bits in db
+            db__add_component(self.db, eid, self.id)
+
             raw.len += 1
         } else {
-            component = &self.records[self.eid_to_rid[eid.ix]]
             err = API_Error.Component_Already_Exist
         }
 
@@ -267,17 +275,17 @@ package ode_ecs
         return 
     }
 
-    remove_component :: proc(self: ^Table($T), eid: entity_id) -> Error {
+    remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Normal)
             assert(self.type_info.id == typeid_of(T))
-            assert(eid < cast(entity_id)self.ecs.id_factory.cap)
+            assert(eid < cast(entity_id)self.db.id_factory.cap)
         }
         
-        db__is_entity_correct(self.ecs, eid) or_return
+        db__is_entity_correct(self.db, eid) or_return
        
-        return table_raw__remove_component(cast(^Table_Raw) self, eid)
+        return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
     }
 
     table_len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
@@ -296,14 +304,10 @@ package ode_ecs
             assert(self.type_info.id == typeid_of(T))
         }
 
-        err := db__is_entity_correct(self.ecs, eid)
+        err := db__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
-        rid := self.eid_to_rid[eid.ix]
-
-        if rid == DELETED_INDEX do return nil
-
-        return &self.records[rid]
+        return cast(^T) self.eid_to_ptr[eid.ix]
     }
 
     @(require_results)
@@ -314,10 +318,10 @@ package ode_ecs
             assert(self.type_info.id == typeid_of(T))
         }
 
-        err := db__is_entity_correct(self.ecs, eid)
+        err := db__is_entity_correct(self.db, eid)
         if err != nil do return false
 
-        return self.eid_to_rid[eid.ix] != DELETED_INDEX
+        return self.eid_to_ptr[eid.ix] != nil
     }
 
     get_entity_from_table :: #force_inline proc "contextless" (self: ^Table($T), #any_int record_index: int) -> entity_id {
@@ -331,8 +335,8 @@ package ode_ecs
             total += size_of(self.rid_to_eid[0]) * len(self.rid_to_eid)
         }
 
-        if self.eid_to_rid != nil {
-            total += size_of(self.eid_to_rid[0]) * len(self.eid_to_rid)
+        if self.eid_to_ptr != nil {
+            total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
         }
 
         // records

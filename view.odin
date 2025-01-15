@@ -26,7 +26,7 @@ package ode_ecs
         tables: oc.Dense_Arr(^Table_Raw), // includes tables, removing table invalidates View
 
         tid_to_cid: []view_column_id,  
-        eid_to_rid: []view_record_id, 
+        eid_to_ptr: []view_record_id, 
         
         records: []byte,  // tail swap, order doesn't matter here
         one_record_size: int, 
@@ -88,9 +88,9 @@ package ode_ecs
         }
 
         //
-        // eid_to_rid
+        // eid_to_ptr
         //
-        self.eid_to_rid = make([]view_record_id, ecs.id_factory.cap, ecs.allocator) or_return
+        self.eid_to_ptr = make([]view_record_id, ecs.id_factory.cap, ecs.allocator) or_return
         
         //
         // records
@@ -128,7 +128,7 @@ package ode_ecs
         }
 
         delete(self.records, self.ecs.allocator) or_return
-        delete(self.eid_to_rid, self.ecs.allocator) or_return
+        delete(self.eid_to_ptr, self.ecs.allocator) or_return
         delete(self.tid_to_cid, self.ecs.allocator) or_return
 
         //
@@ -150,8 +150,8 @@ package ode_ecs
     view_clear :: proc(self: ^View) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
-        if self.eid_to_rid != nil {
-            for i := 0; i < len(self.eid_to_rid); i+=1 do self.eid_to_rid[i] = DELETED_INDEX
+        if self.eid_to_ptr != nil {
+            for i := 0; i < len(self.eid_to_ptr); i+=1 do self.eid_to_ptr[i] = DELETED_INDEX
         }
 
         if len(self.records) > 0 {
@@ -211,8 +211,8 @@ package ode_ecs
             total += size_of(self.tid_to_cid[0]) * len(self.tid_to_cid)
         }
 
-        if self.eid_to_rid != nil {
-            total += size_of(self.eid_to_rid[0]) * len(self.eid_to_rid)
+        if self.eid_to_ptr != nil {
+            total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
         }
 
         if self.records != nil {
@@ -263,9 +263,9 @@ package ode_ecs
 
         // Should never happen because view is capped at table cap
         if raw.len >= self.cap do return API_Error.Cannot_Add_Record_To_View_Container_Is_Full
-        if self.eid_to_rid[eid.ix] != DELETED_INDEX do return oc.Core_Error.Already_Exists
+        if self.eid_to_ptr[eid.ix] != DELETED_INDEX do return oc.Core_Error.Already_Exists
 
-        self.eid_to_rid[eid.ix] = cast(view_record_id)raw.len
+        self.eid_to_ptr[eid.ix] = cast(view_record_id)raw.len
 
         record := view__get_record_private(self, raw.len)
         record.eid = eid
@@ -290,7 +290,7 @@ package ode_ecs
         raw := (^runtime.Raw_Slice)(&self.records)
         if raw.len <= 0 do return // no records
         
-        dest_row_ix :=  int(self.eid_to_rid[eid.ix])
+        dest_row_ix :=  int(self.eid_to_ptr[eid.ix])
         if dest_row_ix < 0 do return // already deleted or this view doesn't match entity
 
         src_row_ix := raw.len - 1
@@ -303,13 +303,13 @@ package ode_ecs
             
             mem.copy(dst_record, src_record, self.one_record_size)
 
-            self.eid_to_rid[src_record.eid.ix] = self.eid_to_rid[eid.ix]
+            self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[eid.ix]
         }
 
         mem.zero(src_record, self.one_record_size)
         src_record.eid.ix = DELETED_INDEX
 
-        self.eid_to_rid[eid.ix] = DELETED_INDEX
+        self.eid_to_ptr[eid.ix] = DELETED_INDEX
         raw.len -= 1 
     }
 
@@ -319,9 +319,9 @@ package ode_ecs
         assert(cid != DELETED_INDEX)
 
         // record must exist
-        if self.eid_to_rid[eid.ix] == DELETED_INDEX do return oc.Core_Error.Not_Found   // it is possible when removal of other component
+        if self.eid_to_ptr[eid.ix] == DELETED_INDEX do return oc.Core_Error.Not_Found   // it is possible when removal of other component
                                                                                         // removed enity from the view      
-        row_ix := int(self.eid_to_rid[eid.ix])
+        row_ix := int(self.eid_to_ptr[eid.ix])
         record := view__get_record_private(self, row_ix)
         #no_bounds_check {
             record.refs[cid] = addr
