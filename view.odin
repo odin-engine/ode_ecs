@@ -22,7 +22,7 @@ package ode_ecs
     View :: struct {
         id: view_id, 
         state: Object_State,
-        ecs: ^Database, 
+        db: ^Database, 
         tables: oc.Dense_Arr(^Table_Raw), // includes tables, removing table invalidates View
 
         tid_to_cid: []view_column_id,  
@@ -39,15 +39,15 @@ package ode_ecs
         suspended: bool,
     }
 
-    view_init :: proc(self: ^View, ecs: ^Database, includes: []^Table_Base) -> Error {
+    view_init :: proc(self: ^View, db: ^Database, includes: []^Table_Base) -> Error {
         when VALIDATIONS {
             assert(self != nil)
-            assert(ecs != nil)
-            assert(ecs.state == Object_State.Normal)
+            assert(db != nil)
+            assert(db.state == Object_State.Normal)
             assert(self.state == Object_State.Not_Initialized)
         }
 
-        self.ecs = ecs
+        self.db = db
 
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
@@ -56,7 +56,7 @@ package ode_ecs
         uniq_tables := slice.unique(includes)
         self.tables_len = len(uniq_tables)
 
-        oc.dense_arr__init(&self.tables, self.tables_len, ecs.allocator) or_return
+        oc.dense_arr__init(&self.tables, self.tables_len, db.allocator) or_return
 
         // max table id
         max_table_id: int = -1
@@ -67,7 +67,7 @@ package ode_ecs
         //
         // tid_to_cid
         //
-        self.tid_to_cid = make([]view_column_id, max_table_id + 1, ecs.allocator) or_return
+        self.tid_to_cid = make([]view_column_id, max_table_id + 1, db.allocator) or_return
         for i := 0; i < len(self.tid_to_cid); i+=1 do self.tid_to_cid[i] = DELETED_INDEX
 
         self.cap = max(int)
@@ -90,7 +90,7 @@ package ode_ecs
         //
         // eid_to_ptr
         //
-        self.eid_to_ptr = make([]view_record_id, ecs.id_factory.cap, ecs.allocator) or_return
+        self.eid_to_ptr = make([]view_record_id, db.id_factory.cap, db.allocator) or_return
         
         //
         // records
@@ -100,7 +100,7 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.records)
 
-        raw.data = mem.alloc(self.records_size, allocator = ecs.allocator) or_return
+        raw.data = mem.alloc(self.records_size, allocator = db.allocator) or_return
         raw.len = 0
 
         self.state = Object_State.Normal
@@ -109,9 +109,9 @@ package ode_ecs
         view_clear(self) or_return
 
         //
-        // Attach to ecs
+        // Attach to db
         //
-        self.id = db__attach_view(ecs, self) or_return
+        self.id = db__attach_view(db, self) or_return
 
         //
         // Subscribe to tables
@@ -124,24 +124,24 @@ package ode_ecs
     view_terminate :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
-            assert(self.ecs != nil)
+            assert(self.db != nil)
         }
 
-        delete(self.records, self.ecs.allocator) or_return
-        delete(self.eid_to_ptr, self.ecs.allocator) or_return
-        delete(self.tid_to_cid, self.ecs.allocator) or_return
+        delete(self.records, self.db.allocator) or_return
+        delete(self.eid_to_ptr, self.db.allocator) or_return
+        delete(self.tid_to_cid, self.db.allocator) or_return
 
         //
         // Unsubscribe from tables
         //
         for table in self.tables.items do table__detach_subscriber(table, self) or_return
 
-        oc.dense_arr__terminate(&self.tables, self.ecs.allocator) or_return
+        oc.dense_arr__terminate(&self.tables, self.db.allocator) or_return
 
         //
-        // Detach from ecs
+        // Detach from db
         //
-        db__detach_view(self.ecs, self)
+        db__detach_view(self.db, self)
 
         self.state = Object_State.Terminated
         return nil
@@ -224,7 +224,7 @@ package ode_ecs
 
     // returns true if entity has components that would match this view
     view_entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
-        return uni_bits__is_subset(&self.bits, &self.ecs.eid_to_bits[eid.ix]) 
+        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) 
     }
 
     suspend :: proc(self: ^View) {
