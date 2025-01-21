@@ -4,6 +4,9 @@
 
 package ode_ecs__tests
 
+// 
+    import "base:runtime"
+
 // Core
     import "core:testing"
     import "core:fmt"
@@ -131,7 +134,7 @@ package ode_ecs__tests
             // testing.expect(t, err == nil)
             // testing.expect(t, pos != nil)
             // testing.expect(t, pos.x == 0 && pos.y == 0)
-            // testing.expect(t, ecs.table_len(&positions) == 1)
+            // testing.expect(t, ecs.tiny_table__len(&positions) == 1)
 
             // pos2, err = ecs.add_component(&positions, eid_2)
             // testing.expect(t, pos2 != nil)

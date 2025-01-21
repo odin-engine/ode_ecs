@@ -51,9 +51,10 @@ package ode_ecs
         using base: TT_Base, 
 
         rid_to_eid: [ROW_CAP]entity_id,
-        eid_to_ptr: oc.Toa_Map(ROW_CAP * 2, rawptr),
+        eid_to_ptr: oc.Toa_Map(ROW_CAP * 2, ^T),
         subscribers: [VIEWS_CAP]^View,
         rows: [ROW_CAP]T,
+        len: int,
     }
 
     tiny_table__init :: proc(self: ^Tiny_Table($ROW_CAP, $VIEWS_CAP, $T), db: ^Database, loc := #caller_location) -> Error {
@@ -85,9 +86,43 @@ package ode_ecs
         err = db__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        return nil, nil
+        if self.len >= ROW_CAP do return nil, oc.Core_Error.Container_Is_Full 
+
+        // component = cast(^T) self.eid_to_ptr[eid.ix]
+        component = oc.toa_map__get(&self.eid_to_ptr, eid.ix)
+
+        // // Check if component already exist
+        // if component == nil {
+        //     // Get component
+        //     #no_bounds_check {
+        //         component = &self.rows[raw.len]
+        //     }
+                        
+        //     // Update eid_to_ptr
+        //     self.eid_to_ptr[eid.ix] = component
+
+        //     // Update rid_to_eid
+        //     self.rid_to_eid[raw.len] = eid
+
+        //     // Update eid_to_bits in db
+        //     db__add_component(self.db, eid, self.id)
+
+        //     raw.len += 1
+        // } else {
+        //     err = API_Error.Component_Already_Exist
+        // }
+
+        // // Notify subscribed views
+        // for view in self.subscribers.items {
+        //     if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        // }
+
+        return 
     }
 
+    tiny_table__len :: #force_inline proc "contextless" (self: ^Tiny_Table($ROW_CAP, $VIEWS_CAP, $T)) -> int {
+        return ROW_CAP
+    }
      
 ///////////////////////////////////////////////////////////////////////////////
 // TT_Raw
