@@ -67,7 +67,7 @@ package ode_ecs
     @(private)
     Table_Raw :: struct {
         using base: Table_Base,
-        records: []byte,
+        rows: []byte,
     }
 
     @(private)
@@ -76,7 +76,7 @@ package ode_ecs
 
         db__detach_table(self.db, self)
 
-        if self.records != nil do delete(self.records, self.db.allocator) or_return
+        if self.rows != nil do delete(self.rows, self.db.allocator) or_return
 
         table_base__terminate(self) or_return
 
@@ -94,12 +94,12 @@ package ode_ecs
 
     @(private)
     table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
-        return (^runtime.Raw_Slice)(&self.records).len
+        return (^runtime.Raw_Slice)(&self.rows).len
     }
 
     @(private)
     table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found 
 
@@ -109,7 +109,7 @@ package ode_ecs
         if target == nil do return oc.Core_Error.Not_Found
         
         T_size := self.type_info.size
-        records := raw_data(self.records)
+        rows := raw_data(self.rows)
 
         tail_rid := raw.len - 1
         tail_eid := self.rid_to_eid[tail_rid] 
@@ -119,7 +119,7 @@ package ode_ecs
         tail := self.eid_to_ptr[tail_eid.ix]
         assert(tail != nil)
         
-        target_rid := int(uintptr(target) - uintptr(&self.records[0])) / T_size
+        target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
 
         // Replace removed component with tail
         if target == tail {
@@ -175,11 +175,11 @@ package ode_ecs
 
         slice.zero(self.eid_to_ptr)
        
-        if zero_components && self.cap > 0 && self.records != nil {
-            raw := (^runtime.Raw_Slice)(&self.records)
-            mem.zero(raw_data(self.records), self.type_info.size * raw.len)
+        if zero_components && self.cap > 0 && self.rows != nil {
+            raw := (^runtime.Raw_Slice)(&self.rows)
+            mem.zero(raw_data(self.rows), self.type_info.size * raw.len)
         }
-        (^runtime.Raw_Slice)(&self.records).len = 0
+        (^runtime.Raw_Slice)(&self.rows).len = 0
 
         return nil
     }
@@ -191,7 +191,7 @@ package ode_ecs
     Table :: struct($T: typeid) {
         using base: Table_Base,
         // table_record_id => component
-        records: []T,     
+        rows: []T,     
     }
 
     table_init :: proc(self: ^Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
@@ -207,7 +207,7 @@ package ode_ecs
 
         table_base__init(&self.base, db, cap) or_return 
 
-        self.records = make([]T, cap, db.allocator) or_return
+        self.rows = make([]T, cap, db.allocator) or_return
         
         self.id = db__attach_table(db, self) or_return
 
@@ -230,17 +230,11 @@ package ode_ecs
         return nil
     }
 
-    add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
-        when VALIDATIONS {
-            assert(self != nil)
-            assert(self.state == Object_State.Normal)
-            assert(self.type_info.id == typeid_of(T))
-        }
-
+    table__add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         err = db__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full 
 
@@ -250,7 +244,7 @@ package ode_ecs
         if component == nil {
             // Get component
             #no_bounds_check {
-                component = &self.records[raw.len]
+                component = &self.rows[raw.len]
             }
                         
             // Update eid_to_ptr
@@ -276,20 +270,13 @@ package ode_ecs
     }
 
     remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {
-        when VALIDATIONS {
-            assert(self != nil)
-            assert(self.state == Object_State.Normal)
-            assert(self.type_info.id == typeid_of(T))
-            assert(eid < cast(entity_id)self.db.id_factory.cap)
-        }
-        
         db__is_entity_correct(self.db, eid) or_return
        
         return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
     }
 
     table_len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
-        return (^runtime.Raw_Slice)(&self.records).len
+        return (^runtime.Raw_Slice)(&self.rows).len
     }
 
     table_cap :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
@@ -298,12 +285,6 @@ package ode_ecs
 
     @(require_results)
     get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> ^T {
-        when VALIDATIONS {
-            assert(self != nil)
-            assert(eid.ix >= 0)
-            assert(self.type_info.id == typeid_of(T))
-        }
-
         err := db__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
@@ -339,7 +320,7 @@ package ode_ecs
             total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
         }
 
-        // records
+        // rows
         total += self.type_info.size * self.cap
 
         total += oc.dense_arr__memory_usage(&self.subscribers)

@@ -277,7 +277,7 @@ main :: proc() {
         // Approach 1
         time.stopwatch_start(&sw)
 
-            for &en, index in all_enemies.records {
+            for &en, index in all_enemies.rows {
 
                 if en.dead {
                     en.id += 1
@@ -296,15 +296,15 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &en, index in dead_enemies.records {
+            for &en, index in dead_enemies.rows {
                 en.id += 1
             }
 
-            for &en, index in frenzy_enemies.records {
+            for &en, index in frenzy_enemies.rows {
                 en.id += 2
             }
 
-            for &en, index in normal_enemies.records {
+            for &en, index in normal_enemies.rows {
                 en.id += 3
             }
 
@@ -320,7 +320,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &en, index in all_enemies_with_payload.records {
+            for &en, index in all_enemies_with_payload.rows {
 
                 if en.dead {
                     en.id += 1
@@ -339,15 +339,15 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &en, index in dead_enemies_with_payload.records {
+            for &en, index in dead_enemies_with_payload.rows {
                 en.id += 1
             }
 
-            for &en, index in frenzy_enemies_with_payload.records {
+            for &en, index in frenzy_enemies_with_payload.rows {
                 en.id += 2
             }
 
-            for &en, index in normal_enemies_with_payload.records {
+            for &en, index in normal_enemies_with_payload.rows {
                 en.id += 3
             }
 

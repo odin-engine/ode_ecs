@@ -53,6 +53,11 @@ package ode_ecs
         get_entity_by_iterator,
     }
 
+    add_component       :: proc {
+        table__add_component,
+        tiny_table__add_component,
+    }
+
     entities_count      :: entities_len
  
     memory_usage        :: proc {

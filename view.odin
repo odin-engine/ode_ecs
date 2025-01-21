@@ -28,7 +28,7 @@ package ode_ecs
         tid_to_cid: []view_column_id,  
         eid_to_ptr: []view_record_id, 
         
-        records: []byte,  // tail swap, order doesn't matter here
+        rows: []byte,  // tail swap, order doesn't matter here
         one_record_size: int, 
         records_size: int,
         tables_len: int, 
@@ -93,12 +93,12 @@ package ode_ecs
         self.eid_to_ptr = make([]view_record_id, db.id_factory.cap, db.allocator) or_return
         
         //
-        // records
+        // rows
         //
         self.one_record_size = size_of(View_Record) + (self.tables_len - 1) * size_of(rawptr)  // -1 because one is already in struct
         self.records_size = self.cap * self.one_record_size
 
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
 
         raw.data = mem.alloc(self.records_size, allocator = db.allocator) or_return
         raw.len = 0
@@ -127,7 +127,7 @@ package ode_ecs
             assert(self.db != nil)
         }
 
-        delete(self.records, self.db.allocator) or_return
+        delete(self.rows, self.db.allocator) or_return
         delete(self.eid_to_ptr, self.db.allocator) or_return
         delete(self.tid_to_cid, self.db.allocator) or_return
 
@@ -154,9 +154,9 @@ package ode_ecs
             for i := 0; i < len(self.eid_to_ptr); i+=1 do self.eid_to_ptr[i] = DELETED_INDEX
         }
 
-        if len(self.records) > 0 {
-            mem.zero((^runtime.Raw_Slice)(&self.records).data, len(self.records) * self.one_record_size)
-            (^runtime.Raw_Slice)(&self.records).len = 0
+        if len(self.rows) > 0 {
+            mem.zero((^runtime.Raw_Slice)(&self.rows).data, len(self.rows) * self.one_record_size)
+            (^runtime.Raw_Slice)(&self.rows).len = 0
         }
 
         return nil
@@ -197,7 +197,7 @@ package ode_ecs
     }
     
     view_len :: #force_inline proc "contextless" (self: ^View) -> int {
-        return (^runtime.Raw_Slice)(&self.records).len
+        return (^runtime.Raw_Slice)(&self.rows).len
     }
 
     view_cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
@@ -215,8 +215,8 @@ package ode_ecs
             total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
         }
 
-        if self.records != nil {
-            total += size_of(self.records[0]) * self.cap
+        if self.rows != nil {
+            total += size_of(self.rows[0]) * self.cap
         }
 
         return total
@@ -259,7 +259,7 @@ package ode_ecs
 
     @(private)
     view__add_record :: proc(self: ^View, eid: entity_id) -> Error {
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
 
         // Should never happen because view is capped at table cap
         if raw.len >= self.cap do return API_Error.Cannot_Add_Record_To_View_Container_Is_Full
@@ -287,8 +287,8 @@ package ode_ecs
 
     @(private)
     view__remove_record :: proc(self: ^View, eid: entity_id) {
-        raw := (^runtime.Raw_Slice)(&self.records)
-        if raw.len <= 0 do return // no records
+        raw := (^runtime.Raw_Slice)(&self.rows)
+        if raw.len <= 0 do return // no rows
         
         dest_row_ix :=  int(self.eid_to_ptr[eid.ix])
         if dest_row_ix < 0 do return // already deleted or this view doesn't match entity
@@ -333,7 +333,7 @@ package ode_ecs
     @(private)
     view__get_record_private :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Record { 
         #no_bounds_check {
-            return (^View_Record)(&self.records[index * self.one_record_size])
+            return (^View_Record)(&self.rows[index * self.one_record_size])
         }
     }
 

@@ -22,6 +22,8 @@ package ode_ecs
         id_factory: oc.Ix_Gen_Factory,
         
         tables: oc.Sparce_Arr(Table_Base),
+        tiny_tables: oc.Sparce_Arr(TT_Base),
+
         views: oc.Sparce_Arr(View), 
 
         eid_to_bits: []Uni_Bits, 
@@ -41,6 +43,7 @@ package ode_ecs
 
         oc.ix_gen_factory__init(&self.id_factory, entities_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
+        oc.sparse_arr__init(&self.tiny_tables, TABLES_CAP, self.allocator) or_return
         oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
@@ -57,21 +60,27 @@ package ode_ecs
 
         if self.eid_to_bits != nil do delete(self.eid_to_bits, self.allocator) or_return
 
-        view: ^View
+        // Views
         for view in self.views.items {
             if view == nil do continue 
             if view.state == Object_State.Normal do view_terminate(view) or_return
         }
-
         oc.sparse_arr__terminate(&self.views, self.allocator) or_return
 
-        table: ^Table_Base
+        // Tiny tables
+        for tiny_table in self.tiny_tables.items {
+            if tiny_table == nil do continue 
+            if tiny_table.state == Object_State.Normal do tt_base__terminate(tiny_table) or_return
+        }
+        oc.sparse_arr__terminate(&self.tiny_tables, self.allocator) or_return
+
+        // Tables
         for table in self.tables.items {
             if table == nil do continue 
             if table.state == Object_State.Normal do table_raw__terminate(cast(^Table_Raw)table) or_return
         }
-        
-        oc.sparse_arr__terminate(&self.tables, self.allocator) or_return
+        oc.sparse_arr__terminate(&self.tables, self.allocator) or_return 
+
         oc.ix_gen_factory__terminate(&self.id_factory, self.allocator) or_return
 
         self.state = Object_State.Terminated
@@ -219,3 +228,21 @@ package ode_ecs
         if is_expired(self, eid) do return API_Error.Entity_Id_Expired
         return nil
     }
+
+    //
+    // Tiny_Table
+    //
+
+    @(private)
+    db__attach_tiny_table :: proc(self: ^Database, table: ^TT_Base) -> (table_id, Error) {
+        id, err := oc.sparse_arr__add(&self.tiny_tables, table)
+        if err != oc.Core_Error.None do return DELETED_INDEX, err
+
+        return cast(table_id) id, nil
+    }
+
+    @(private)
+    db__detach_tiny_table :: proc(self: ^Database, table: ^TT_Base) {
+        oc.sparse_arr__remove_by_index(&self.tiny_tables, cast(int) table.id)
+    }
+

@@ -285,8 +285,8 @@ package ode_ecs__tests
             ai2.IQ = 42
 
             // Remove components
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.records[0])
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.records[1])
+            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.rows[0])
+            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[1])
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
             testing.expect(t, ecs.table_len(&positions) == 2)
@@ -300,7 +300,7 @@ package ode_ecs__tests
             testing.expect(t, pos2.y == 0)
 
             testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.records[0])
+            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[0])
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 1)
@@ -450,15 +450,15 @@ package ode_ecs__tests
 
         #no_bounds_check {
             // Direct memory check 
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).eid.ix == ecs.DELETED_INDEX)
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).eid.gen == 0)
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).refs[0] == nil)
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0])).refs[1] == nil)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0])).eid.ix == ecs.DELETED_INDEX)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0])).eid.gen == 0)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0])).refs[0] == nil)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0])).refs[1] == nil)
 
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).eid.ix == ecs.DELETED_INDEX)
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).eid.gen == 0)
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).refs[0] == nil)
-            testing.expect(t, ((^ecs.View_Record)(&view1.records[0 + view1.one_record_size])).refs[1] == nil)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0 + view1.one_record_size])).eid.ix == ecs.DELETED_INDEX)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0 + view1.one_record_size])).eid.gen == 0)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0 + view1.one_record_size])).refs[0] == nil)
+            testing.expect(t, ((^ecs.View_Record)(&view1.rows[0 + view1.one_record_size])).refs[1] == nil)
         }
 
         err = ecs.remove_component(ais, eid_2)

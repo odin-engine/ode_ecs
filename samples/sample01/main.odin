@@ -136,7 +136,7 @@ main :: proc() {
         }
 
         iterate_over_table :: proc (table: ^ecs.Table(AI)) {
-            for &ai in table.records {
+            for &ai in table.rows {
                 // Doing some calculations on components
                 ai.neurons_count += 1 
             }
@@ -220,7 +220,7 @@ main :: proc() {
         
         s = oc.add_thousand_separator(ecs.view_len(&physical), sep=',', allocator=allocator)
         s2 := oc.add_thousand_separator(ecs.view_len(&physical) * 2, sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v records, %v components)", "Iterate over view:", f64(nanos1)/1_000_000.0, s, s2)
+        fmt.printfln("%-30s %.2f ms (%v rows, %v components)", "Iterate over view:", f64(nanos1)/1_000_000.0, s, s2)
         delete(s, allocator)
         delete(s2, allocator)
 

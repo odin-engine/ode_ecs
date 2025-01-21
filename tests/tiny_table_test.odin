@@ -20,9 +20,66 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny_Table
 
+    @(test)
+    tiny_table__aattaching_detaching_tables__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+
+            // Log into console when panic happens
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            
+            ecs_1: ecs.Database
+            ais: ecs.Tiny_Table(5, 5, AI)
+            ais2: ecs.Tiny_Table(5, 5, AI)
+            positions: ecs.Tiny_Table(5, 5, Position)
+            pos2: ecs.Tiny_Table(5, 5, Position)
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&ecs_1)
+
+            testing.expect(t, ecs.init(&ecs_1, entities_cap=0, allocator=allocator) == ecs.API_Error.Entities_Cap_Should_Be_Greater_Than_Zero)
+            testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
+
+            testing.expect(t, ecs.tiny_table__init(&ais, &ecs_1) == nil)
+            testing.expect(t, ais.id == 0)
+
+            testing.expect(t, ecs.tiny_table__init(&ais2, &ecs_1) == nil)
+            defer ecs.tiny_table__terminate(&positions)
+            testing.expect(t, ecs.tiny_table__init(&positions, &ecs_1) == nil)
+
+            testing.expect(t, ais.id == 0)
+            testing.expect(t, positions.id == 2)
+
+            ecs.tiny_table__terminate(&ais2)
+
+            testing.expect(t, ais2.id == ecs.DELETED_INDEX)
+            testing.expect(t, ecs_1.tiny_tables.items[1] == nil)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tiny_tables) == 3)
+            testing.expect(t, ecs_1.tiny_tables.has_nil_item == true)
+
+            defer ecs.tiny_table__terminate(&pos2)
+            testing.expect(t, ecs.tiny_table__init(&pos2, &ecs_1) == nil)
+            testing.expect(t, pos2.id == 1)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tiny_tables) == 3)
+            testing.expect(t, ecs_1.tiny_tables.has_nil_item == false)
+
+            ecs.tiny_table__terminate(&ais)
+
+            testing.expect(t, ais.id == ecs.DELETED_INDEX)
+            testing.expect(t, ecs_1.tiny_tables.items[0] == nil) 
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tiny_tables) == 3)
+            testing.expect(t, ecs_1.tiny_tables.has_nil_item == true)
+    }
 
     @(test)
-    tt_adding_removing_components__test :: proc(t: ^testing.T) {
+    tiny_table__adding_removing_components__test :: proc(t: ^testing.T) {
         //
         // Prepare
         //
@@ -34,18 +91,18 @@ package ode_ecs__tests
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
             
             ecs_1: ecs.Database
-            ais: ecs.Table(AI)
-            ais_2: ecs.Table(AI)
-            positions: ecs.Table(Position)
+            ais: ecs.Tiny_Table(5, 5, AI)
+            ais_2: ecs.Tiny_Table(5, 5, AI)
+            positions: ecs.Tiny_Table(5, 5, Position)
 
             defer ecs.terminate(&ecs_1)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            defer ecs.table_terminate(&ais)
-            testing.expect(t, ecs.table_init(&ais, &ecs_1, 10) == nil)
+            defer ecs.tiny_table__terminate(&ais)
+            testing.expect(t, ecs.tiny_table__init(&ais, &ecs_1) == nil)
             
-            defer ecs.table_terminate(&positions)
-            testing.expect(t, ecs.table_init(&positions, &ecs_1, 10) == nil)
+            defer ecs.tiny_table__terminate(&positions)
+            testing.expect(t, ecs.tiny_table__init(&positions, &ecs_1) == nil)
 
             eid_1, eid_2: ecs.entity_id
             err: ecs.Error
@@ -62,13 +119,13 @@ package ode_ecs__tests
         // Test
         //
 
-            // pos, pos2: ^Position
-            // ai, ai2: ^AI
+            pos, pos2: ^Position
+            ai, ai2: ^AI
 
-            // // Boundaries check
-            // pos, err = ecs.add_component(&positions, ecs.entity_id{ix = 99999})
-            // testing.expect(t, pos == nil)
-            // testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
+            // Boundaries check
+            pos, err = ecs.add_component(&positions, ecs.entity_id{ix = 99999})
+            testing.expect(t, pos == nil)
+            testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
 
             // pos, err = ecs.add_component(&positions, eid_1)
             // testing.expect(t, err == nil)

@@ -184,7 +184,7 @@ main :: proc() {
         }
 
         iterate_over_ai_table :: proc (table: ^ecs.Table(AI)) {
-            for &ai, index in table.records {
+            for &ai, index in table.rows {
                 // Doing some calculations on components
                 ai.neurons_count += index
             }
@@ -292,15 +292,15 @@ main :: proc() {
         fmt.printfln("%-30s %v MB", "Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte)
         fmt.println("-----------------------------------------------------------")
         s = oc.add_thousand_separator(ecs.table_len(&ais), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v records)", "Iterating over `ais` table:", f64(avg_table)/1_000_000.0, s)
+        fmt.printfln("%-30s %.2f ms (%v rows)", "Iterating over `ais` table:", f64(avg_table)/1_000_000.0, s)
         delete(s, allocator)
 
         s = oc.add_thousand_separator(step_1_view_len, sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v records)", "Iterating over view:", f64(avg_view)/1_000_000.0, s)
+        fmt.printfln("%-30s %.2f ms (%v rows)", "Iterating over view:", f64(avg_view)/1_000_000.0, s)
         delete(s, allocator)
 
         s = oc.add_thousand_separator(arch__len(&arch), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v records)", "Iterating over archetype:", f64(avg_arch)/1_000_000.0, s)
+        fmt.printfln("%-30s %.2f ms (%v rows)", "Iterating over archetype:", f64(avg_arch)/1_000_000.0, s)
         delete(s, allocator)
 
         d: f64
@@ -408,7 +408,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
     }
 
     Arch :: struct {
-        records: []byte,
+        rows: []byte,
         one_record_size: int, 
         records_size: int, 
         cap: int,
@@ -436,7 +436,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
 
         self.one_record_size = shift
 
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
 
         raw.data = mem.alloc(self.one_record_size * cap, allocator=allocator) or_return
         raw.len = 0
@@ -445,7 +445,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
     }
 
     arch__terminate :: proc(self: ^Arch,  allocator := context.allocator) {
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
         mem.free(raw.data, allocator)
         delete_map(self.id_to_info)
         raw.data = nil
@@ -453,7 +453,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
     }
 
     arch__add_components :: proc(self: ^Arch) -> int {
-        raw := (^runtime.Raw_Slice)(&self.records)
+        raw := (^runtime.Raw_Slice)(&self.rows)
         i := raw.len 
         raw.len += 1
         return i
@@ -465,12 +465,12 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
         ci := self.id_to_info[T]
          
         #no_bounds_check {
-            return (^T)(&self.records[base + ci.shift])
+            return (^T)(&self.rows[base + ci.shift])
         }
     }
 
     arch__len :: proc (self: ^Arch) -> int {
-        return len(self.records)
+        return len(self.rows)
     }
 
     // Arch_Iterator, to cache during iteration and hopefully speed things up
@@ -485,7 +485,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
         self.arch = arch
         self.record_shift = -arch.one_record_size
         self.one_record_size = arch.one_record_size
-        self.records_len = len(arch.records) * self.one_record_size
+        self.records_len = len(arch.rows) * self.one_record_size
     }   
 
     arch_iterator__next :: proc(self: ^Arch_Iterator) -> bool {
@@ -499,7 +499,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
         ci := self.arch.id_to_info[T]
          
         #no_bounds_check {
-            return (^T)(&self.arch.records[self.record_shift + ci.shift])
+            return (^T)(&self.arch.rows[self.record_shift + ci.shift])
         }
     }
 

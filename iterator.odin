@@ -35,7 +35,7 @@ package ode_ecs
         self.one_record_size = self.view.one_record_size
         self.raw_index = -self.one_record_size
 
-        self.records_size = len(self.view.records) * self.one_record_size
+        self.records_size = len(self.view.rows) * self.one_record_size
 
         return nil
     }
@@ -46,7 +46,7 @@ package ode_ecs
 
         if self.raw_index < self.records_size {
             #no_bounds_check {
-                self.record = (^View_Record)(&self.view.records[self.raw_index])
+                self.record = (^View_Record)(&self.view.rows[self.raw_index])
             }
             return true 
 

@@ -101,7 +101,7 @@ Now you can add a `Position` component to the `robot` entity:
 To iterate over components in a table, you can do this:  
 
 ```odin
-    for &pos in positions.records {
+    for &pos in positions.rows {
         fmt.println(pos)
     }
 ```  
@@ -110,18 +110,18 @@ Or this:
 
 ```odin
     for i := 0; i < ecs.table_len(positions); i += 1 {
-        pos = &positions.records[i]
+        pos = &positions.rows[i]
         fmt.println(pos)
     }
 ```  
 
->**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in `positions.records`.  
+>**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in `positions.rows`.  
 
 You can get the `entity_id` by index during iteration over components:  
 
 ```odin
     eid: ecs.entity_id
-    for &pos, index in positions.records {
+    for &pos, index in positions.rows {
         eid = ecs.get_entity(&positions, index)
         fmt.println(eid, pos)
     }
@@ -132,7 +132,7 @@ Using an entity, you can access its other components:
 ```odin
     eid: ecs.entity_id
     ai: ^AI // AI component
-    for &pos, index in positions.records {
+    for &pos, index in positions.rows {
         eid = ecs.get_entity(&positions, index)
         ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: Table(AI)`
         fmt.println(eid, pos, ai)
