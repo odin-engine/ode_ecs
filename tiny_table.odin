@@ -13,29 +13,28 @@ package ode_ecs
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
-// TT_Base (Tiny Table Base)
+// Tiny_Table_Base 
 
     @(private)
-    TT_Base :: struct {
-        state: Object_State,       
-        id: table_id, 
-        db: ^Database,
+    Tiny_Table_Base :: struct {
+        using shared: Shared_Table,
         type_info: ^runtime.Type_Info,
     }
 
     @(private)
-    tt_base__init :: proc(self: ^TT_Base, db: ^Database) -> Error {
-        self.db = db
-        self.id = db__attach_tiny_table(db, self) or_return
+    tiny_table_base__init :: proc(self: ^Tiny_Table_Base, db: ^Database) -> Error {
+        shared_table__init(&self.shared, Table_Type.Tiny_Table, db)
+
+        self.id = db__attach_table(db, self) or_return
         self.state = Object_State.Normal
 
         return nil
     }
 
     @(private)
-    tt_base__terminate :: proc(self: ^TT_Base) ->Error {
+    tiny_table_base__terminate :: proc(self: ^Tiny_Table_Base) ->Error {
 
-        db__detach_tiny_table(self.db, self)
+        db__detach_table(self.db, self)
 
         self.state = Object_State.Terminated
         self.id = DELETED_INDEX
@@ -48,7 +47,7 @@ package ode_ecs
 // Tiny_Table
 
     Tiny_Table :: struct($ROW_CAP: int, $VIEWS_CAP: int, $T: typeid) where ROW_CAP < 11 && VIEWS_CAP < 11 {
-        using base: TT_Base, 
+        using base: Tiny_Table_Base, 
 
         rid_to_eid: [ROW_CAP]entity_id,
         eid_to_ptr: oc.Toa_Map(ROW_CAP * 2, ^T),
@@ -65,7 +64,7 @@ package ode_ecs
             assert(db.state == Object_State.Normal, loc = loc) // db should be initialized
         }
 
-        tt_base__init(cast(^TT_Base) self, db) or_return
+        tiny_table_base__init(cast(^Tiny_Table_Base) self, db) or_return
 
         return nil
     }
@@ -77,7 +76,7 @@ package ode_ecs
             assert(self.db.state == Object_State.Normal, loc = loc) // db should be Normal
         }
 
-        tt_base__terminate(cast(^TT_Base) self) or_return
+        tiny_table_base__terminate(cast(^Tiny_Table_Base) self) or_return
 
         return nil
     }
@@ -88,26 +87,23 @@ package ode_ecs
 
         if self.len >= ROW_CAP do return nil, oc.Core_Error.Container_Is_Full 
 
-        // component = cast(^T) self.eid_to_ptr[eid.ix]
         component = oc.toa_map__get(&self.eid_to_ptr, eid.ix)
 
-        // // Check if component already exist
+        // Check if component already exist
         // if component == nil {
         //     // Get component
-        //     #no_bounds_check {
-        //         component = &self.rows[raw.len]
-        //     }
-                        
+        //     component = &self.rows[self.len]
+            
         //     // Update eid_to_ptr
-        //     self.eid_to_ptr[eid.ix] = component
+        //     oc.toa_map__add(&self.eid_to_ptr, eid.ix, component)
 
         //     // Update rid_to_eid
-        //     self.rid_to_eid[raw.len] = eid
+        //     self.rid_to_eid[self.len] = eid
 
         //     // Update eid_to_bits in db
         //     db__add_component(self.db, eid, self.id)
 
-        //     raw.len += 1
+        //     self.len += 1
         // } else {
         //     err = API_Error.Component_Already_Exist
         // }

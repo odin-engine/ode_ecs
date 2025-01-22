@@ -16,14 +16,12 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Table_Base
 
+    // Base for Table
     @(private)
     Table_Base :: struct {
-        state: Object_State,
-        id: table_id, 
+        using shared: Shared_Table,
+
         type_info: ^runtime.Type_Info,
-
-        db: ^Database, 
-
         rid_to_eid: []entity_id,
         eid_to_ptr: []rawptr,
 
@@ -34,8 +32,8 @@ package ode_ecs
 
     @(private)
     table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int) -> Error {
-        self.db = db
-        self.id = DELETED_INDEX
+        shared_table__init(&self.shared, Table_Type.Table, db)
+
         self.cap = cap
 
         self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return

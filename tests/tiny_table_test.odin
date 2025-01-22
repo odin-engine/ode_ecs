@@ -63,22 +63,22 @@ package ode_ecs__tests
             ecs.tiny_table__terminate(&ais2)
 
             testing.expect(t, ais2.id == ecs.DELETED_INDEX)
-            testing.expect(t, ecs_1.tiny_tables.items[1] == nil)
-            testing.expect(t, oc.sparse_arr__len(&ecs_1.tiny_tables) == 3)
-            testing.expect(t, ecs_1.tiny_tables.has_nil_item == true)
+            testing.expect(t, ecs_1.tables.items[1] == nil)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
+            testing.expect(t, ecs_1.tables.has_nil_item == true)
 
             defer ecs.tiny_table__terminate(&pos2)
             testing.expect(t, ecs.tiny_table__init(&pos2, &ecs_1) == nil)
             testing.expect(t, pos2.id == 1)
-            testing.expect(t, oc.sparse_arr__len(&ecs_1.tiny_tables) == 3)
-            testing.expect(t, ecs_1.tiny_tables.has_nil_item == false)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
+            testing.expect(t, ecs_1.tables.has_nil_item == false)
 
             ecs.tiny_table__terminate(&ais)
 
             testing.expect(t, ais.id == ecs.DELETED_INDEX)
-            testing.expect(t, ecs_1.tiny_tables.items[0] == nil) 
-            testing.expect(t, oc.sparse_arr__len(&ecs_1.tiny_tables) == 3)
-            testing.expect(t, ecs_1.tiny_tables.has_nil_item == true)
+            testing.expect(t, ecs_1.tables.items[0] == nil) 
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
+            testing.expect(t, ecs_1.tables.has_nil_item == true)
     }
 
     @(test)
