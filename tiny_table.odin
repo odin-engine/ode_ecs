@@ -90,33 +90,43 @@ package ode_ecs
         component = oc.toa_map__get(&self.eid_to_ptr, eid.ix)
 
         // Check if component already exist
-        // if component == nil {
-        //     // Get component
-        //     component = &self.rows[self.len]
+        if component == nil {
+            // Get component
+            component = &self.rows[self.len]
             
-        //     // Update eid_to_ptr
-        //     oc.toa_map__add(&self.eid_to_ptr, eid.ix, component)
+            // Update eid_to_ptr
+            oc.toa_map__add(&self.eid_to_ptr, eid.ix, component)
 
-        //     // Update rid_to_eid
-        //     self.rid_to_eid[self.len] = eid
+            // Update rid_to_eid
+            self.rid_to_eid[self.len] = eid
 
-        //     // Update eid_to_bits in db
-        //     db__add_component(self.db, eid, self.id)
+            // Update eid_to_bits in db
+            db__add_component(self.db, eid, self.id)
 
-        //     self.len += 1
-        // } else {
-        //     err = API_Error.Component_Already_Exist
-        // }
+            self.len += 1
+        } else {
+            err = API_Error.Component_Already_Exist
+        }
 
-        // // Notify subscribed views
-        // for view in self.subscribers.items {
-        //     if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
-        // }
+        // Notify subscribed views
+        for i:=0; i<VIEWS_CAP; i+=1 {
+            view := self.subscribers[i]
+            if view == nil do break
+            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
 
         return 
     }
 
+    tiny_table__remove_component :: proc(self: ^Tiny_Table($ROW_CAP, $VIEWS_CAP, $T), eid: entity_id) -> Error {
+        return nil
+    }
+
     tiny_table__len :: #force_inline proc "contextless" (self: ^Tiny_Table($ROW_CAP, $VIEWS_CAP, $T)) -> int {
+        return self.len
+    }
+
+    tiny_table__cap :: #force_inline proc "contextless" (self: ^Tiny_Table($ROW_CAP, $VIEWS_CAP, $T)) -> int {
         return ROW_CAP
     }
      

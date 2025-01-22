@@ -267,17 +267,17 @@ package ode_ecs
         return 
     }
 
-    remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {
+    table__remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {
         db__is_entity_correct(self.db, eid) or_return
        
         return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
     }
 
-    table_len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
+    table__len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
 
-    table_cap :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
+    table__cap :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
         return self.cap
     }
 

@@ -58,6 +58,21 @@ package ode_ecs
         tiny_table__add_component,
     }
 
+    remove_component    :: proc {
+        table__remove_component,
+        tiny_table__remove_component,
+    }
+
+    table_len           :: proc {
+        table__len,
+        tiny_table__len,
+    }
+
+    table_cap           :: proc {
+        table__cap,
+        tiny_table__cap, 
+    }
+
     entities_count      :: entities_len
  
     memory_usage        :: proc {

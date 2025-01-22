@@ -130,47 +130,47 @@ package ode_ecs__tests
             testing.expect(t, pos == nil)
             testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
 
-            // pos, err = ecs.add_component(&positions, eid_1)
-            // testing.expect(t, err == nil)
-            // testing.expect(t, pos != nil)
-            // testing.expect(t, pos.x == 0 && pos.y == 0)
-            // testing.expect(t, ecs.tiny_table__len(&positions) == 1)
+            pos, err = ecs.add_component(&positions, eid_1)
+            testing.expect(t, err == nil)
+            testing.expect(t, pos != nil)
+            testing.expect(t, pos.x == 0 && pos.y == 0)
+            testing.expect(t, ecs.tiny_table__len(&positions) == 1)
 
-            // pos2, err = ecs.add_component(&positions, eid_2)
-            // testing.expect(t, pos2 != nil)
-            // testing.expect(t, pos2.x == 0 && pos2.y == 0)
-            // testing.expect(t, err == nil)
-            // testing.expect(t, ecs.table_len(&positions) == 2)
+            pos2, err = ecs.add_component(&positions, eid_2)
+            testing.expect(t, pos2 != nil)
+            testing.expect(t, pos2.x == 0 && pos2.y == 0)
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.table_len(&positions) == 2)
 
-            // ai, err = ecs.add_component(&ais, eid_1)
-            // testing.expect(t, ai != nil)
-            // testing.expect(t, ai.IQ == 0)
-            // testing.expect(t, err == nil)
-            // testing.expect(t, ecs.table_len(&ais) == 1)
+            ai, err = ecs.add_component(&ais, eid_1)
+            testing.expect(t, ai != nil)
+            testing.expect(t, ai.IQ == 0)
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.table_len(&ais) == 1)
 
-            // ai2, err = ecs.add_component(&ais, eid_2)
-            // testing.expect(t, ai2 != nil)
-            // testing.expect(t, ai2.IQ == 0)
-            // testing.expect(t, err == nil)
-            // testing.expect(t, ecs.table_len(&ais) == 2)
+            ai2, err = ecs.add_component(&ais, eid_2)
+            testing.expect(t, ai2 != nil)
+            testing.expect(t, ai2.IQ == 0)
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.table_len(&ais) == 2)
 
-            // pos.x = 44
-            // pos.y = 77
+            pos.x = 44
+            pos.y = 77
 
-            // pos2.x = 55
-            // pos2.y = 88
+            pos2.x = 55
+            pos2.y = 88
 
-            // ai.IQ = 66
-            // ai2.IQ = 42
+            ai.IQ = 66
+            ai2.IQ = 42
 
-            // // Remove components
-            // testing.expect(t, positions.eid_to_ptr[eid_1.ix] == 0)
-            // testing.expect(t, positions.eid_to_ptr[eid_2.ix] == 1)
-            // testing.expect(t, positions.rid_to_eid[0] == eid_1)
-            // testing.expect(t, positions.rid_to_eid[1] == eid_2)
-            // testing.expect(t, ecs.table_len(&positions) == 2)
+            // Remove components
+            testing.expect(t, oc.toa_map__get(&positions.eid_to_ptr, eid_1.ix) == &positions.rows[0])
+            testing.expect(t, oc.toa_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[1])
+            testing.expect(t, positions.rid_to_eid[0] == eid_1)
+            testing.expect(t, positions.rid_to_eid[1] == eid_2)
+            testing.expect(t, ecs.table_len(&positions) == 2)
 
-            // testing.expect(t, ecs.remove_component(&positions, eid_1) == nil)
+            testing.expect(t, ecs.remove_component(&positions, eid_1) == nil)
 
             // testing.expect(t, pos.x == 55)
             // testing.expect(t, pos.y == 88)
