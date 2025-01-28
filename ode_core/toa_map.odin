@@ -10,6 +10,7 @@ package ode_core
     import "core:log"
     import "core:mem"
     import "core:testing"
+    import "core:slice"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny Open Addressing Map (tiny one array map, int to $V). V expected to be a pointer.
@@ -54,7 +55,7 @@ package ode_core
         return p.value
     } 
 
-    toa_map__add :: proc(self: ^Toa_Map($CAP, $V), key: int, value: V) -> Error {
+    toa_map__add :: proc(self: ^Toa_Map($CAP, $V), key: int, value: V) -> Core_Error {
         p := toa_map__find_item(self, key)
 
         if p == nil do return Core_Error.Container_Is_Full
@@ -65,7 +66,7 @@ package ode_core
         return nil
     }
 
-    toa_map__remove :: proc(self: ^Toa_Map($CAP, $V), key: int) -> Error {
+    toa_map__remove :: proc(self: ^Toa_Map($CAP, $V), key: int) -> Core_Error {
         p := toa_map__find_item(self, key)
 
         if p == nil do return Core_Error.Not_Found
@@ -74,6 +75,10 @@ package ode_core
         p.value = nil
 
         return nil
+    }
+    
+    toa_map__clear :: proc(self: ^Toa_Map($CAP, $V)) {
+        slice.zero(self.items[:CAP])
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -130,7 +135,6 @@ package ode_core
 
         testing.expect(t, toa_map__add(&map1, 55, &v2) == nil)
 
-        
         item = toa_map__find_item(&map1, 55)
 
         testing.expect(t, item != nil)
@@ -152,4 +156,11 @@ package ode_core
         testing.expect(t, toa_map__get(&map1, 66) == nil)
         testing.expect(t, toa_map__get(&map1, 55) == &v2)
         testing.expect(t, toa_map__get(&map1, 1) == &v2)
+
+        toa_map__clear(&map1)
+
+        testing.expect(t, toa_map__get(&map1, 44) == nil)
+        testing.expect(t, toa_map__get(&map1, 66) == nil)
+        testing.expect(t, toa_map__get(&map1, 55) == nil)
+        testing.expect(t, toa_map__get(&map1, 1) == nil)
     }

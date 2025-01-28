@@ -36,21 +36,29 @@ package ode_ecs
 
     DELETED_INDEX :: oc.DELETED_INDEX
 
+    //
+    // Tiny_Table
+    //
+
+        TINY_TABLE__ROW_CAP :: 8
+        TINY_TABLE__VIEWS_CAP :: 8
+
 ///////////////////////////////////////////////////////////////////////////////
 // Proc groups and aliases
 //
 
     clear               :: proc {  // only data clear
-        db_clear,                    
-        table_clear,
-        view_clear,
+        db__clear,                    
+        table__clear,
+        view__clear,
         table_raw__clear,
+        tiny_table__clear,
     }
 
     get_entity          :: proc {
-        get_entity_from_db,
-        get_entity_from_table,
-        get_entity_by_iterator,
+        db__get_entity,
+        table__get_entity_by_row_number,
+        iterator__get_entity,
     }
 
     add_component       :: proc {
@@ -61,6 +69,33 @@ package ode_ecs
     remove_component    :: proc {
         table__remove_component,
         tiny_table__remove_component,
+    }
+
+    get_component       :: proc {
+        table__get_component_by_entity,
+        iterator__get_component_for_table, 
+        iterator__get_component_for_tiny_table,
+        tiny_table__get_component_by_entity,
+    }
+
+    has_component       :: proc {
+        table__has_component,
+        tiny_table__has_component,
+    }
+
+    copy_component      :: proc {
+        table__copy_component,
+        tiny_table__copy_component,
+    }
+
+    move_component      :: proc {
+        table__move_component,
+        tiny_table__move_component,
+    }
+
+    get_entity_by_row_number :: proc {
+        table__get_entity_by_row_number, 
+        tiny_table__get_entity_by_row_number,
     }
 
     table_len           :: proc {
@@ -76,16 +111,12 @@ package ode_ecs
     entities_count      :: entities_len
  
     memory_usage        :: proc {
-        db_memory_usage,
-        table_memory_usage,
-        view_memory_usage,
+        db__memory_usage,
+        table__memory_usage,
+        view__memory_usage,
+        tiny_table__memory_usage,
     }
 
-    get_component       :: proc {
-        get_component_by_entity,
-        get_component_by_iterator, 
-    }
-    
 ///////////////////////////////////////////////////////////////////////////////
 // Basic types
 

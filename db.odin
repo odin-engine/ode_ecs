@@ -80,7 +80,7 @@ package ode_ecs
         return nil
     }
 
-    db_clear :: proc(self: ^Database) -> Error {
+    db__clear :: proc(self: ^Database) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.eid_to_bits != nil)
@@ -92,13 +92,13 @@ package ode_ecs
 
         for view in self.views.items {
             if view != nil {
-                view_clear(view) or_return
+                view__clear(view) or_return
             }
         }
 
         for table in self.tables.items {
             if table != nil {
-                table_raw__clear(cast(^Table_Raw)table) or_return 
+                shared_table__clear(table) or_return 
             }
         } 
 
@@ -133,7 +133,7 @@ package ode_ecs
             if table == nil do continue
             if int(table.id) not_in bits  do continue
 
-            table_raw__remove_component(cast(^Table_Raw)table, eid) or_return
+            shared_table__remove_component(table, eid) or_return
         } 
 
         // clean bit_sets
@@ -145,7 +145,7 @@ package ode_ecs
     }
 
     @(require_results)
-    get_entity_from_db :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
+    db__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
         return oc.ix_gen_factory__get_id(&self.id_factory, index, loc)
     }
 
@@ -160,7 +160,7 @@ package ode_ecs
         return oc.ix_gen_factory__is_expired(&self.id_factory, eid)
     }
 
-    db_memory_usage :: proc (self: ^Database) -> int {
+    db__memory_usage :: proc (self: ^Database) -> int {
         total := size_of(self^)
 
         total += oc.ix_gen_factory__memory_usage(&self.id_factory)
@@ -169,7 +169,7 @@ package ode_ecs
         }
 
         for view in self.views.items {
-            if view != nil do total += view_memory_usage(view)
+            if view != nil do total += view__memory_usage(view)
         }
 
         return total

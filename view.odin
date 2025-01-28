@@ -23,7 +23,7 @@ package ode_ecs
         id: view_id, 
         state: Object_State,
         db: ^Database, 
-        tables: oc.Dense_Arr(^Table_Raw), // includes tables, removing table invalidates View
+        tables: oc.Dense_Arr(^Shared_Table), // includes tables, removing table invalidates View
 
         tid_to_cid: []view_column_id,  
         eid_to_ptr: []view_record_id, 
@@ -39,7 +39,7 @@ package ode_ecs
         suspended: bool,
     }
 
-    view_init :: proc(self: ^View, db: ^Database, includes: []^Table_Base) -> Error {
+    view__init :: proc(self: ^View, db: ^Database, includes: []^Shared_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(db != nil)
@@ -76,10 +76,10 @@ package ode_ecs
                 assert(table.state == Object_State.Normal)
             }
 
-            oc.dense_arr__add(&self.tables, cast(^Table_Raw) table)
+            oc.dense_arr__add(&self.tables, cast(^Shared_Table) table)
 
-            if table.cap < self.cap {
-                self.cap = table.cap
+            if shared_table__cap(table) < self.cap {
+                self.cap = shared_table__cap(table)
             }
 
             self.tid_to_cid[table.id] = cast(view_column_id)index 
@@ -106,7 +106,7 @@ package ode_ecs
         self.state = Object_State.Normal
 
         // Clear 
-        view_clear(self) or_return
+        view__clear(self) or_return
 
         //
         // Attach to db
@@ -116,12 +116,13 @@ package ode_ecs
         //
         // Subscribe to tables
         //
-        for table in uniq_tables do table__attach_subscriber(table, self)
+        for table in uniq_tables do shared_table__attach_subscriber(table, self)
 
         return nil
     }
+    view_init :: view__init
 
-    view_terminate :: proc(self: ^View) -> Error {
+    view__terminate :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.db != nil)
@@ -134,7 +135,7 @@ package ode_ecs
         //
         // Unsubscribe from tables
         //
-        for table in self.tables.items do table__detach_subscriber(table, self) or_return
+        for table in self.tables.items do shared_table__detach_subscriber(table, self) or_return
 
         oc.dense_arr__terminate(&self.tables, self.db.allocator) or_return
 
@@ -146,8 +147,9 @@ package ode_ecs
         self.state = Object_State.Terminated
         return nil
     }
+    view_terminate :: view__terminate
 
-    view_clear :: proc(self: ^View) -> Error {
+    view__clear :: proc(self: ^View) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
         if self.eid_to_ptr != nil {
@@ -168,23 +170,23 @@ package ode_ecs
             assert(self.tables.items != nil)
         }
         
-        view_clear(self) or_return 
+        view__clear(self) or_return 
 
         min_records_count: int = max(int)
-        min_table, table: ^Table_Raw
+        min_table, table: ^Shared_Table
         for table in self.tables.items {
-            if table_raw__len(table) < min_records_count {
+            if shared_table__len(table) < min_records_count {
                 min_table = table
-                min_records_count = table_raw__len(table)
+                min_records_count = shared_table__len(table)
             }
         }
 
         eid: entity_id
         min_table_col_ix := self.tid_to_cid[min_table.id]
-        assert(self.cap >= table_raw__len(min_table))
+        assert(self.cap >= shared_table__len(min_table))
 
-        for i:= 0; i < table_raw__len(min_table); i+=1 {
-            eid = min_table.rid_to_eid[i]
+        for i:= 0; i < shared_table__len(min_table); i+=1 {
+            eid = shared_table__get_entity_by_row_number(min_table, i)
             assert(eid.ix >= 0)
 
             // check if view bits is subset of entity bits
@@ -196,13 +198,15 @@ package ode_ecs
         return nil
     }
     
-    view_len :: #force_inline proc "contextless" (self: ^View) -> int {
+    view__len :: #force_inline proc "contextless" (self: ^View) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
+    view_len :: view__len
 
-    view_cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
+    view__cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
+    view_cap :: view__cap
 
-    view_memory_usage :: proc (self: ^View) -> int { 
+    view__memory_usage :: proc (self: ^View) -> int { 
         total := size_of(self^)
 
         total += oc.dense_arr__memory_usage(&self.tables)
@@ -223,9 +227,10 @@ package ode_ecs
     }
 
     // returns true if entity has components that would match this view
-    view_entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
+    view__entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
         return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) 
     }
+    view_entity_match :: view__entity_match
 
     suspend :: proc(self: ^View) {
         when VALIDATIONS {
@@ -248,7 +253,13 @@ package ode_ecs
         return view__get_record_private(self, index)
     }
 
-    view__get_component_for_record :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Table($T)) -> ^T {
+    view__get_component_for_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Table($T)) -> ^T {
+        #no_bounds_check {
+            return (^T)(rec.refs[self.tid_to_cid[table.id]])
+        }
+    }
+
+    view__get_component_for_tiny_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Tiny_Table($T)) -> ^T {
         #no_bounds_check {
             return (^T)(rec.refs[self.tid_to_cid[table.id]])
         }
@@ -270,13 +281,13 @@ package ode_ecs
         record := view__get_record_private(self, raw.len)
         record.eid = eid
 
-        table: ^Table_Raw
+        table: ^Shared_Table
         cid: view_column_id
         rid: table_record_id
         for table in self.tables.items {
             cid = self.tid_to_cid[table.id]
             #no_bounds_check {
-                record.refs[cid] = table_raw__get_component(table, eid)
+                record.refs[cid] = shared_table__get_component(table, eid)
             }
         }
 
@@ -314,7 +325,7 @@ package ode_ecs
     }
 
     @(private)
-    view__update_component :: proc(self: ^View, table: ^Table_Raw, eid: entity_id, addr: rawptr) -> Error  {
+    view__update_component :: proc(self: ^View, table: ^Shared_Table, eid: entity_id, addr: rawptr) -> Error  {
         cid := self.tid_to_cid[table.id]
         assert(cid != DELETED_INDEX)
 

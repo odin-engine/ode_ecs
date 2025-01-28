@@ -76,7 +76,11 @@ package ode_ecs_sample4
         UI_Position :: struct {
             x, y: int,              // coordinates relative to parent Element
             parent: ^UI_Position, 
-            children: ecs.Table(UI_Position),
+
+            // We cannot use Tiny_Table on stack, because Tiny_Table has rows 
+            // of UI_Position on stack and compiler gets into a self reference cycle
+            // So instead we can use pointer to Tiny_Table, and hold Tiny_Tables in separate array
+            children: ^ecs.Tiny_Table(UI_Position), 
         }
 
         ui_position__init :: proc (self: ^UI_Position, parent: ^UI_Position, x, y: int) {
@@ -88,12 +92,12 @@ package ode_ecs_sample4
         ui_position__add_child :: proc(self: ^UI_Position, db: ^ecs.Database, eid: ecs.entity_id) -> (child: ^UI_Position) {
 
             // lazy init
-            if self.children.state == ecs.Object_State.Not_Initialized {
-                err := ecs.table_init(&self.children, db, 10)
-                if err != nil do report_error(err)
-            }
+            // if self.children.state == ecs.Object_State.Not_Initialized {
+            //     err := ecs.tiny_table__init(&self.children, db)
+            //     if err != nil do report_error(err)
+            // }
         
-            ecs.add_component(&self.children, eid)
+            // ecs.add_component(&self.children, eid)
         
             return nil
         }
@@ -152,7 +156,7 @@ main :: proc() {
         err = ecs.init(&db, 100, allocator) 
         if err != nil { report_error(err); return }
         
-        ui_position__init(&root, nil, 0, 0)
+        // ui_position__init(&root, nil, 0, 0)
 
     //
     // Systems
@@ -162,7 +166,7 @@ main :: proc() {
     //
     // Results
     //
-        fmt.println("EEEEEEEEEEEEEE")
+    fmt.printfln("%-30s %v bytes", "Tiny_Table memory usage:", ecs.memory_usage(root.children))
 
         //print_elements(&root)
 }

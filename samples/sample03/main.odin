@@ -283,7 +283,6 @@ main :: proc() {
         fmt.printfln("%-30s %s", "Entities count:", s)
         delete(s, allocator)
         
-
         fmt.printfln("%-30s %v bytes", "Position component size:", size_of(Position))
         fmt.printfln("%-30s %v bytes", "Physical component size:", size_of(Physical))
         fmt.printfln("%-30s %v bytes", "AI component size:", size_of(AI))
@@ -396,7 +395,6 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
         ecs.destroy_entity(&db, eid)
     }
 }
-
 
 //////////////////////////////////////////////////////////////////////////////////
 // Experimental "realistic" implementation of Archetype.

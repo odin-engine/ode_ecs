@@ -56,12 +56,18 @@ package ode_ecs
         }
     }
 
-    get_component_by_iterator :: #force_inline proc "contextless" (table: ^Table($T), it: ^Iterator) -> ^T #no_bounds_check {
+    iterator__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), it: ^Iterator) -> ^T #no_bounds_check {
         #no_bounds_check {
             return (^T)(it.record.refs[it.view.tid_to_cid[table.id]])
         }
     }
 
-    get_entity_by_iterator :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {
+    iterator__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
+        #no_bounds_check {
+            return (^T)(it.record.refs[it.view.tid_to_cid[table.id]])
+        }
+    }
+
+    iterator__get_entity :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {
         return self.record.eid
     }

@@ -59,6 +59,53 @@ package ode_ecs
         return nil
     }
 
+    @(private)
+    table_base__cap :: proc(self: ^Table_Base) -> int {
+        return self.cap
+    }
+
+    @(private)
+    table_base__attach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        _, err := oc.dense_arr__add(&self.subscribers, view)
+        return err
+    }
+
+    @(private)
+    table_base__detach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        err := oc.dense_arr__remove_by_value(&self.subscribers, view)
+        return err
+    }
+
+    @(private)
+    table_base__memory_usage :: proc (self: ^Table_Base) -> int {    
+        total := size_of(self^)
+
+        if self.rid_to_eid != nil {
+            total += size_of(self.rid_to_eid[0]) * len(self.rid_to_eid)
+        }
+
+        if self.eid_to_ptr != nil {
+            total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
+        }
+
+        // rows
+        total += self.type_info.size * self.cap
+
+        total += oc.dense_arr__memory_usage(&self.subscribers)
+
+        return total
+    }
+
+    @(private)
+    table_base__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Table_Base, #any_int row_number: int) -> entity_id {
+        return self.rid_to_eid[row_number]
+    }
+
+    @(private)
+    table_base__get_component_by_entity :: proc (self: ^Table_Raw, eid: entity_id) -> rawptr {
+        return self.eid_to_ptr[eid.ix]
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Table_Raw
 
@@ -83,16 +130,6 @@ package ode_ecs
         self.state = Object_State.Terminated
 
         return nil
-    }
-
-    @(private)
-    table_raw__get_component :: proc (self: ^Table_Raw, eid: entity_id) -> rawptr {
-        return self.eid_to_ptr[eid.ix]
-    }
-
-    @(private)
-    table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
-        return (^runtime.Raw_Slice)(&self.rows).len
     }
 
     @(private)
@@ -125,9 +162,8 @@ package ode_ecs
             self.eid_to_ptr[target_eid.ix] = nil
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
-            for i := 0; i < oc.dense_arr__len(&self.subscribers); i += 1 {
-                view := self.subscribers.items[i]
-                if view != nil do view__remove_record(view, target_eid)
+            for view in self.subscribers.items {
+                if !view.suspended do view__remove_record(view, target_eid)
             }
         }
         else {
@@ -163,6 +199,10 @@ package ode_ecs
         return
     }
 
+    table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
+        return (^runtime.Raw_Slice)(&self.rows).len
+    }
+
     // clear data, nothing else
     table_raw__clear :: proc (self: ^Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
@@ -192,7 +232,7 @@ package ode_ecs
         rows: []T,     
     }
 
-    table_init :: proc(self: ^Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
+    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(db != nil, loc = loc)
@@ -215,8 +255,9 @@ package ode_ecs
 
         return nil
     }
+    table_init :: table__init
 
-    table_terminate :: proc(self: ^Table($T)) -> Error {
+    table__terminate :: proc(self: ^Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.type_info.id == typeid_of(T))
@@ -227,6 +268,7 @@ package ode_ecs
 
         return nil
     }
+    table_terminate :: table__terminate
 
     table__add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         err = db__is_entity_correct(self.db, eid)
@@ -274,15 +316,15 @@ package ode_ecs
     }
 
     table__len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
-        return (^runtime.Raw_Slice)(&self.rows).len
+        return table_raw__len(cast(^Table_Raw) self)
     }
 
     table__cap :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
-        return self.cap
+        return table_base__cap(self)
     }
 
     @(require_results)
-    get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> ^T {
+    table__get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> ^T {
         err := db__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
@@ -290,7 +332,7 @@ package ode_ecs
     }
 
     @(require_results)
-    has_component :: proc (self: ^Table($T), eid: entity_id) -> bool {
+    table__has_component :: proc (self: ^Table($T), eid: entity_id) -> bool {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
@@ -303,35 +345,20 @@ package ode_ecs
         return self.eid_to_ptr[eid.ix] != nil
     }
 
-    get_entity_from_table :: #force_inline proc "contextless" (self: ^Table($T), #any_int record_index: int) -> entity_id {
-        return self.rid_to_eid[record_index]
+    table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Table($T), #any_int row_number: int) -> entity_id {
+        return table_base__get_entity_by_row_number(self, row_number)
     }
 
-    table_memory_usage :: proc (self: ^Table_Base) -> int {    
-        total := size_of(self^)
-
-        if self.rid_to_eid != nil {
-            total += size_of(self.rid_to_eid[0]) * len(self.rid_to_eid)
-        }
-
-        if self.eid_to_ptr != nil {
-            total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
-        }
-
-        // rows
-        total += self.type_info.size * self.cap
-
-        total += oc.dense_arr__memory_usage(&self.subscribers)
-
-        return total
+    table__memory_usage :: proc (self: ^Table($T)) -> int {    
+       return table_base__memory_usage(cast(^Table_Base) self)
     }
  
     // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
-    copy_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
-        src_component = get_component_by_entity(src, eid)
+    table__copy_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
+        src_component = table__get_component_by_entity(src, eid)
         if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
 
-        dest_component = get_component_by_entity(dest, eid) // if it exists we will overwrite data
+        dest_component = table__get_component_by_entity(dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
             dest_component = add_component(dest, eid) or_return 
         }
@@ -343,7 +370,7 @@ package ode_ecs
     }
 
     // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
-    move_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
+    table__move_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
         dest_component, _ = copy_component(dest, src, eid) or_return
 
         remove_component(src, eid) or_return
@@ -351,26 +378,11 @@ package ode_ecs
         return dest_component, nil
     }
 
-    table_clear :: proc(self: ^Table($T)) {
+    table__clear :: proc(self: ^Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
         }
-        table_raw__clear((^Table_Raw)(self), true)
+        table_raw__clear((^Table_Raw)(self), true) or_return
+
+        return nil
     }
-
-///////////////////////////////////////////////////////////////////////////////
-// Private
-
-    @(private)
-    table__attach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
-        _, err := oc.dense_arr__add(&self.subscribers, view)
-        return err
-    }
-
-    @(private)
-    table__detach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
-        err := oc.dense_arr__remove_by_value(&self.subscribers, view)
-        return err
-    }
-
-
