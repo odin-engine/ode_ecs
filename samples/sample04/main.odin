@@ -4,7 +4,7 @@
     NOTE: Work In Progress (WIP)
 
     YOU CAN BUILD ANYTHING WITH ODE_ECS!
-    The reason for this is that ecs.Table($T) itself can be a component or part of any copmonent.
+    The reason for this is that ODE_ESC tables itself can be a component or part of any copmonent.
     It means that you can build any data structure you want. 
 */
 
@@ -105,6 +105,12 @@ package ode_ecs_sample4
         ui_position__print :: proc(root: ^UI_Position) {
         
         }
+
+    //
+    // 100 Tiny_Tables 
+    //
+
+
     
 // 
 // Globals
@@ -166,7 +172,10 @@ main :: proc() {
     //
     // Results
     //
-    fmt.printfln("%-30s %v bytes", "Tiny_Table memory usage:", ecs.memory_usage(root.children))
+
+    tt: ecs.Tiny_Table(UI_Position)
+    ecs.tiny_table__init(&tt, &db)
+    fmt.printfln("%-30s %v bytes", "Tiny_Table memory usage:", ecs.memory_usage(&tt))
 
         //print_elements(&root)
 }

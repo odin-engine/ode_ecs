@@ -28,7 +28,7 @@ package ode_ecs
         eid_to_bits: []Uni_Bits, 
     }
 
-    init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator) -> Error {
+    database__init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
@@ -51,7 +51,7 @@ package ode_ecs
         return nil
     }
 
-    terminate :: proc(self: ^Database) -> Error {
+    database__terminate :: proc(self: ^Database) -> Error {
         when VALIDATIONS {
             assert(self != nil)
         }
@@ -80,7 +80,7 @@ package ode_ecs
         return nil
     }
 
-    db__clear :: proc(self: ^Database) -> Error {
+    database__clear :: proc(self: ^Database) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.eid_to_bits != nil)
@@ -108,7 +108,7 @@ package ode_ecs
     }
 
     @(require_results)
-    create_entity :: proc(self: ^Database) -> (entity_id, Error) {
+    database__create_entity :: proc(self: ^Database) -> (entity_id, Error) {
         when VALIDATIONS {
             assert(self != nil)
         }
@@ -116,13 +116,13 @@ package ode_ecs
         return oc.ix_gen_factory__new_id(&self.id_factory)
     }
 
-    destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
+    database__destroy_entity :: proc(self: ^Database, eid: entity_id) -> Error  {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
         }
         
-        db__is_entity_correct(self, eid) or_return
+        database__is_entity_correct(self, eid) or_return
 
         err: Error = nil 
 
@@ -145,22 +145,22 @@ package ode_ecs
     }
 
     @(require_results)
-    db__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
+    database__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
         return oc.ix_gen_factory__get_id(&self.id_factory, index, loc)
     }
 
     @(require_results)
-    entities_len :: #force_inline proc "contextless" (self: ^Database) -> int {
+    database__entities_len :: #force_inline proc "contextless" (self: ^Database) -> int {
         return oc.ix_gen_factory__len(&self.id_factory)
     }
 
     @(require_results)
-    is_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
+    database__is_entity_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
         // Happens when eid.gen do not match. It means eid expired (was deleted)
         return oc.ix_gen_factory__is_expired(&self.id_factory, eid)
     }
 
-    db__memory_usage :: proc (self: ^Database) -> int {
+    database__memory_usage :: proc (self: ^Database) -> int {
         total := size_of(self^)
 
         total += oc.ix_gen_factory__memory_usage(&self.id_factory)
@@ -180,7 +180,7 @@ package ode_ecs
 
     // Returns index of table in self.tables
     @(private)
-    db__attach_table :: proc(self: ^Database, table: ^Shared_Table) -> (table_id, Error) {
+    database__attach_table :: proc(self: ^Database, table: ^Shared_Table) -> (table_id, Error) {
         id, err := oc.sparse_arr__add(&self.tables, table)
         if err != oc.Core_Error.None do return DELETED_INDEX, err
 
@@ -188,12 +188,12 @@ package ode_ecs
     }
 
     @(private)
-    db__detach_table :: proc(self: ^Database, table: ^Shared_Table) {
+    database__detach_table :: proc(self: ^Database, table: ^Shared_Table) {
         oc.sparse_arr__remove_by_index(&self.tables, cast(int) table.id)
     }
 
     @(private)
-    db__attach_view :: proc(self: ^Database, view: ^View) -> (view_id, Error) {
+    database__attach_view :: proc(self: ^Database, view: ^View) -> (view_id, Error) {
         id, err := oc.sparse_arr__add(&self.views, view)
         if err != oc.Core_Error.None do return DELETED_INDEX, err
 
@@ -201,23 +201,23 @@ package ode_ecs
     }
 
     @(private)
-    db__detach_view :: proc(self: ^Database, view: ^View) {
+    database__detach_view :: proc(self: ^Database, view: ^View) {
         oc.sparse_arr__remove_by_index(&self.views, cast(int) view.id)
     }
 
     @(private)
-    db__add_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) {
+    database__add_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) {
         uni_bits__add(&self.eid_to_bits[eid.ix], table_id)
     }
 
     @(private)
-    db__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) {
+    database__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) {
         uni_bits__remove(&self.eid_to_bits[eid.ix], table_id)
     }
 
     @(private)
-    db__is_entity_correct :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> Error {
+    database__is_entity_correct :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> Error {
         if eid.ix < 0 || eid.ix >= self.id_factory.cap do return API_Error.Entity_Id_Out_of_Bounds
-        if is_expired(self, eid) do return API_Error.Entity_Id_Expired
+        if database__is_entity_expired(self, eid) do return API_Error.Entity_Id_Expired
         return nil
     }

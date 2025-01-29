@@ -19,7 +19,7 @@ package ode_ecs
     // increase.
     VALIDATIONS :: #config(ecs_validations, true)
    
-    BIT_SET_VALUES_CAP :: 128
+    BIT_SET_VALUES_CAP :: 128 // don't change this unless Odin changed how many bits can be stored in bit_set
 
     // Like in other ECSs we use bit_set to store info about what components an entity has.
     // By default one bit_set can store info about 128 types of components, 
@@ -34,88 +34,123 @@ package ode_ecs
     // Maximum number of views
     VIEWS_CAP :: #config(ecs_views_cap, TABLES_CAP)
 
+    // -1 by default, just to see if index is not used or incorrect
     DELETED_INDEX :: oc.DELETED_INDEX
 
     //
     // Tiny_Table
     //
 
-        TINY_TABLE__ROW_CAP :: 8
-        TINY_TABLE__VIEWS_CAP :: 8
+    // You can change this if you want but remember that rows are not dynamically allocated for Tiny_Table and
+    // are just a part of Tiny_Table struct.
+    TINY_TABLE__ROW_CAP :: 8        // Tiny_Table can contain maximum TINY_TABLE__ROW_CAP number of components
+    TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table 
 
 ///////////////////////////////////////////////////////////////////////////////
-// Proc groups and aliases
+// Aliases
 //
 
-    clear               :: proc {  // only data clear
-        db__clear,                    
-        table__clear,
-        view__clear,
-        table_raw__clear,
-        tiny_table__clear,
-    }
+    //
+    // Proc groups
+    // 
 
-    get_entity          :: proc {
-        db__get_entity,
-        table__get_entity_by_row_number,
-        iterator__get_entity,
-    }
+        clear               :: proc {  // only data clear
+            database__clear,                    
+            table__clear,
+            view__clear,
+            table_raw__clear,
+            tiny_table__clear,
+        }
 
-    add_component       :: proc {
-        table__add_component,
-        tiny_table__add_component,
-    }
+        get_entity          :: proc {
+            database__get_entity,
+            table__get_entity_by_row_number,
+            iterator__get_entity,
+        }
 
-    remove_component    :: proc {
-        table__remove_component,
-        tiny_table__remove_component,
-    }
+        add_component       :: proc {
+            table__add_component,
+            tiny_table__add_component,
+        }
 
-    get_component       :: proc {
-        table__get_component_by_entity,
-        iterator__get_component_for_table, 
-        iterator__get_component_for_tiny_table,
-        tiny_table__get_component_by_entity,
-    }
+        remove_component    :: proc {
+            table__remove_component,
+            tiny_table__remove_component,
+        }
 
-    has_component       :: proc {
-        table__has_component,
-        tiny_table__has_component,
-    }
+        get_component       :: proc {
+            table__get_component_by_entity,
+            iterator__get_component_for_table, 
+            iterator__get_component_for_tiny_table,
+            tiny_table__get_component_by_entity,
+        }
 
-    copy_component      :: proc {
-        table__copy_component,
-        tiny_table__copy_component,
-    }
+        has_component       :: proc {
+            table__has_component,
+            tiny_table__has_component,
+        }
 
-    move_component      :: proc {
-        table__move_component,
-        tiny_table__move_component,
-    }
+        copy_component      :: proc {
+            table__copy_component,
+            tiny_table__copy_component,
+        }
 
-    get_entity_by_row_number :: proc {
-        table__get_entity_by_row_number, 
-        tiny_table__get_entity_by_row_number,
-    }
+        move_component      :: proc {
+            table__move_component,
+            tiny_table__move_component,
+        }
 
-    table_len           :: proc {
-        table__len,
-        tiny_table__len,
-    }
+        get_entity_by_row_number :: proc {
+            table__get_entity_by_row_number, 
+            tiny_table__get_entity_by_row_number,
+        }
 
-    table_cap           :: proc {
-        table__cap,
-        tiny_table__cap, 
-    }
+        table_len           :: proc {
+            table__len,
+            tiny_table__len,
+        }
 
-    entities_count      :: entities_len
- 
-    memory_usage        :: proc {
-        db__memory_usage,
-        table__memory_usage,
-        view__memory_usage,
-        tiny_table__memory_usage,
-    }
+        table_cap           :: proc {
+            table__cap,
+            tiny_table__cap, 
+        }
+
+        memory_usage        :: proc {
+            database__memory_usage,
+            table__memory_usage,
+            view__memory_usage,
+            tiny_table__memory_usage,
+        }
+
+    //
+    // Database
+    //
+        init                :: database__init
+        terminate           :: database__terminate
+        entities_len        :: database__entities_len
+        entities_count      :: database__entities_len 
+        create_entity       :: database__create_entity
+        destroy_entity      :: database__destroy_entity
+        is_entity_expired   :: database__is_entity_expired
+
+    //
+    // View
+    //
+        view_init           :: view__init
+        view_terminate      :: view__terminate
+        view_len            :: view__len
+        view_cap            :: view__cap
+        rebuild             :: view__rebuild
+        view_entity_match   :: view__entity_match
+        suspend             :: view__suspend
+        resume              :: view__resume
+
+    //
+    // Table 
+    //
+        table_init          :: table__init
+        table_terminate     :: table__terminate
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Basic types

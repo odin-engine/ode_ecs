@@ -200,10 +200,10 @@ main :: proc() {
         choose_state: []EnemyState = { .Normal, .Dead, .Frenzy } 
 
         for i:=0; i < NUMBER_OF_ENTITIES; i+=1 {
-            eid1, err = ecs.create_entity(&db1)
+            eid1, err = ecs.database__create_entity(&db1)
             if err != nil { report_error(err); return }
 
-            eid2, err = ecs.create_entity(&db2)
+            eid2, err = ecs.database__create_entity(&db2)
             if err != nil { report_error(err); return }
 
             enemy1, err = ecs.add_component(&all_enemies, eid1)
@@ -212,10 +212,10 @@ main :: proc() {
 
             // With payload:
 
-            eid1_with_payload, err = ecs.create_entity(&db1_with_payload)
+            eid1_with_payload, err = ecs.database__create_entity(&db1_with_payload)
             if err != nil { report_error(err); return }
 
-            eid2_with_payload, err = ecs.create_entity(&db2_with_payload)
+            eid2_with_payload, err = ecs.database__create_entity(&db2_with_payload)
             if err != nil { report_error(err); return }
 
             enemy1_with_payload, err = ecs.add_component(&all_enemies_with_payload, eid1_with_payload)

@@ -110,11 +110,11 @@ package ode_ecs__tests
             eid_1, eid_2: ecs.entity_id
             err: ecs.Error
 
-            eid_1, err = ecs.create_entity(&ecs_1)
+            eid_1, err = ecs.database__create_entity(&ecs_1)
             testing.expect(t, eid_1.ix == 0)
             testing.expect(t, err == nil)
 
-            eid_2, err = ecs.create_entity(&ecs_1)
+            eid_2, err = ecs.database__create_entity(&ecs_1)
             testing.expect(t, eid_2.ix == 1)
             testing.expect(t, err == nil)
 
@@ -589,15 +589,15 @@ package ode_ecs__tests
         pos: ^Position
         ai: ^AI
 
-        eid_1, err = ecs.create_entity(ecs_1)
+        eid_1, err = ecs.database__create_entity(ecs_1)
         testing.expect(t, eid_1.ix == 0)
         testing.expect(t, err == nil)
 
-        eid_2, err = ecs.create_entity(ecs_1)
+        eid_2, err = ecs.database__create_entity(ecs_1)
         testing.expect(t, eid_2.ix == 1)
         testing.expect(t, err == nil)
 
-        eid_3, err = ecs.create_entity(ecs_1)
+        eid_3, err = ecs.database__create_entity(ecs_1)
         testing.expect(t, eid_3.ix == 2)
         testing.expect(t, err == nil)
 

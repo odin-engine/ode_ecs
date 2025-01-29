@@ -111,7 +111,7 @@ package ode_ecs
         //
         // Attach to db
         //
-        self.id = db__attach_view(db, self) or_return
+        self.id = database__attach_view(db, self) or_return
 
         //
         // Subscribe to tables
@@ -120,8 +120,7 @@ package ode_ecs
 
         return nil
     }
-    view_init :: view__init
-
+    
     view__terminate :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -142,12 +141,11 @@ package ode_ecs
         //
         // Detach from db
         //
-        db__detach_view(self.db, self)
+        database__detach_view(self.db, self)
 
         self.state = Object_State.Terminated
         return nil
     }
-    view_terminate :: view__terminate
 
     view__clear :: proc(self: ^View) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
@@ -164,7 +162,7 @@ package ode_ecs
         return nil
     }
 
-    rebuild :: proc(self: ^View) -> Error {
+    view__rebuild :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.tables.items != nil)
@@ -201,10 +199,8 @@ package ode_ecs
     view__len :: #force_inline proc "contextless" (self: ^View) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
-    view_len :: view__len
-
+   
     view__cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
-    view_cap :: view__cap
 
     view__memory_usage :: proc (self: ^View) -> int { 
         total := size_of(self^)
@@ -230,9 +226,8 @@ package ode_ecs
     view__entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
         return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) 
     }
-    view_entity_match :: view__entity_match
 
-    suspend :: proc(self: ^View) {
+    view__suspend :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
         }
@@ -240,7 +235,7 @@ package ode_ecs
         self.suspended = true
     }
 
-    resume :: proc(self: ^View) {
+    view__resume :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
         }

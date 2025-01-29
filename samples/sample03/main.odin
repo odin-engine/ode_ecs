@@ -271,7 +271,6 @@ main :: proc() {
             _, _, _, tt.arch[j] = time.precise_clock_from_stopwatch(sw)
     }
 
-
     //
     // Print results
     //
@@ -279,7 +278,7 @@ main :: proc() {
         avg_view := tt__avg_view(&tt)
         avg_arch := tt__avg_arch(&tt)
 
-        s:= oc.add_thousand_separator(ecs.entities_len(&db), sep=',', allocator=allocator)
+        s:= oc.add_thousand_separator(ecs.database__entities_len(&db), sep=',', allocator=allocator)
         fmt.printfln("%-30s %s", "Entities count:", s)
         delete(s, allocator)
         
@@ -326,7 +325,7 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
     eid: ecs.entity_id
     eid_components_count: int
     for i:=0; i < number_of_components_to_create; i+=1 {
-        eid, err = ecs.create_entity(&db)
+        eid, err = ecs.database__create_entity(&db)
         if err != nil { report_error(err); return }
 
         // Randomly chose what components combo we want for entity
@@ -392,7 +391,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
 
     for i:=start_ix; i < end_ix; i+=1 {
         eid := ecs.get_entity(&db, i)
-        ecs.destroy_entity(&db, eid)
+        ecs.database__destroy_entity(&db, eid)
     }
 }
 

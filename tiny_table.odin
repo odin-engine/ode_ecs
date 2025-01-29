@@ -8,6 +8,7 @@ package ode_ecs
 
 // Core
     import "core:mem"
+    import "core:log"
 
 // ODE
     import oc "ode_core"
@@ -30,7 +31,7 @@ package ode_ecs
     tiny_table_base__init :: proc(self: ^Tiny_Table_Base, db: ^Database) -> Error {
         shared_table__init(&self.shared, Table_Type.Tiny_Table, db)
 
-        self.id = db__attach_table(db, self) or_return
+        self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
 
         return nil
@@ -39,7 +40,7 @@ package ode_ecs
     @(private)
     tiny_table_base__terminate :: proc(self: ^Tiny_Table_Base) ->Error {
 
-        db__detach_table(self.db, self)
+        database__detach_table(self.db, self)
 
         self.state = Object_State.Terminated
         self.id = DELETED_INDEX
@@ -87,8 +88,8 @@ package ode_ecs
     }
 
     tiny_table_base__memory_usage :: proc (self: ^Tiny_Table_Base) -> int { 
-        if self == nil do return 0
-        return size_of(Tiny_Table_Base) + self.type_info.size * TINY_TABLE__ROW_CAP
+        if self == nil || self.type_info == nil do return DELETED_INDEX
+        return size_of(self^) + self.type_info.size * TINY_TABLE__ROW_CAP
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -161,7 +162,7 @@ package ode_ecs
         self.len -= 1
 
         // Update eid_to_bits in db
-        db__remove_component(self.db, target_eid, self.id)
+        database__remove_component(self.db, target_eid, self.id)
 
         return
     }
@@ -217,7 +218,7 @@ package ode_ecs
     }
 
     tiny_table__add_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
-        err = db__is_entity_correct(self.db, eid)
+        err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
         if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full 
@@ -237,7 +238,7 @@ package ode_ecs
             self.rid_to_eid[self.len] = eid
 
             // Update eid_to_bits in db
-            db__add_component(self.db, eid, self.id)
+            database__add_component(self.db, eid, self.id)
 
             self.len += 1
         } else {
@@ -254,14 +255,14 @@ package ode_ecs
     }
 
     tiny_table__remove_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (err: Error) {
-        db__is_entity_correct(self.db, eid) or_return
+        database__is_entity_correct(self.db, eid) or_return
 
         return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
     }
 
     @(require_results)
     tiny_table__get_component_by_entity :: proc (self: ^Tiny_Table($T), eid: entity_id) -> ^T {
-        err := db__is_entity_correct(self.db, eid)
+        err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
         return cast(^T) tiny_table_base__get_component_by_entity(self, eid)
@@ -283,7 +284,7 @@ package ode_ecs
             assert(self.type_info.id == typeid_of(T))
         }
 
-        err := db__is_entity_correct(self.db, eid)
+        err := database__is_entity_correct(self.db, eid)
         if err != nil do return false
 
         return oc.toa_map__get(&self.eid_to_ptr, eid.ix) != nil

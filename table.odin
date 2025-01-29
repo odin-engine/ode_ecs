@@ -119,7 +119,7 @@ package ode_ecs
     table_raw__terminate :: proc(self: ^Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
 
-        db__detach_table(self.db, self)
+        database__detach_table(self.db, self)
 
         if self.rows != nil do delete(self.rows, self.db.allocator) or_return
 
@@ -194,7 +194,7 @@ package ode_ecs
         raw.len -= 1
 
         // Update eid_to_bits in db
-        db__remove_component(self.db, target_eid, self.id)
+        database__remove_component(self.db, target_eid, self.id)
 
         return
     }
@@ -247,7 +247,7 @@ package ode_ecs
 
         self.rows = make([]T, cap, db.allocator) or_return
         
-        self.id = db__attach_table(db, self) or_return
+        self.id = database__attach_table(db, self) or_return
 
         self.state = Object_State.Normal
 
@@ -255,7 +255,6 @@ package ode_ecs
 
         return nil
     }
-    table_init :: table__init
 
     table__terminate :: proc(self: ^Table($T)) -> Error {
         when VALIDATIONS {
@@ -268,10 +267,9 @@ package ode_ecs
 
         return nil
     }
-    table_terminate :: table__terminate
-
+    
     table__add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
-        err = db__is_entity_correct(self.db, eid)
+        err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -294,7 +292,7 @@ package ode_ecs
             self.rid_to_eid[raw.len] = eid
 
             // Update eid_to_bits in db
-            db__add_component(self.db, eid, self.id)
+            database__add_component(self.db, eid, self.id)
 
             raw.len += 1
         } else {
@@ -310,7 +308,7 @@ package ode_ecs
     }
 
     table__remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {
-        db__is_entity_correct(self.db, eid) or_return
+        database__is_entity_correct(self.db, eid) or_return
        
         return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
     }
@@ -325,7 +323,7 @@ package ode_ecs
 
     @(require_results)
     table__get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> ^T {
-        err := db__is_entity_correct(self.db, eid)
+        err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
         return cast(^T) self.eid_to_ptr[eid.ix]
@@ -339,7 +337,7 @@ package ode_ecs
             assert(self.type_info.id == typeid_of(T))
         }
 
-        err := db__is_entity_correct(self.db, eid)
+        err := database__is_entity_correct(self.db, eid)
         if err != nil do return false
 
         return self.eid_to_ptr[eid.ix] != nil
