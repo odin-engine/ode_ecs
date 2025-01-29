@@ -102,7 +102,7 @@ package ode_ecs
     }
 
     @(private)
-    table_base__get_component_by_entity :: proc (self: ^Table_Raw, eid: entity_id) -> rawptr {
+    table_base__get_component_by_entity :: proc (self: ^Table_Base, eid: entity_id) -> rawptr {
         return self.eid_to_ptr[eid.ix]
     }
 

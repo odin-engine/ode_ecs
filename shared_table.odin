@@ -37,6 +37,7 @@ package ode_ecs
                 table_raw__terminate(cast(^Table_Raw)self) or_return
             case Table_Type.Tiny_Table:
             case Table_Type.Small_Table:
+                small_table_raw__terminate(cast(^Small_Table_Raw)self) or_return
         }
 
         self.state = Object_State.Invalid
@@ -56,6 +57,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 return tiny_table_base__memory_usage(cast(^Tiny_Table_Base) self)
             case Table_Type.Small_Table:
+                return small_table_base__memory_usage(cast(^Small_Table_Base) self)
         } 
 
         assert(false) // should not happen
@@ -71,6 +73,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 return tiny_table_base__len(cast(^Tiny_Table_Base) self)
             case Table_Type.Small_Table:
+                return small_table_raw__len(cast(^Small_Table_Raw)self)
         } 
 
         assert(false) // should not happen
@@ -86,6 +89,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 return tiny_table__cap(self)
             case Table_Type.Small_Table:
+                return small_table_base__cap(cast(^Small_Table_Base)self)
         } 
 
         assert(false) // should not happen
@@ -101,6 +105,7 @@ package ode_ecs
             case Table_Type.Tiny_Table: 
                 return tiny_table_base__get_entity_by_row_number(cast(^Tiny_Table_Base) self, row_number)
             case Table_Type.Small_Table:
+                return small_table_base__get_entity_by_row_number(cast(^Small_Table_Base) self, row_number)
         } 
 
         assert(false) // should not happen
@@ -112,10 +117,11 @@ package ode_ecs
             case Table_Type.Unknown:
                 assert(false) // should not happen
             case Table_Type.Table:
-                return table_base__get_component_by_entity(cast(^Table_Raw) self, eid)
+                return table_base__get_component_by_entity(cast(^Table_Base) self, eid)
             case Table_Type.Tiny_Table: 
                 return tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Raw) self, eid)
             case Table_Type.Small_Table:
+                return small_table_base__get_component_by_entity(cast(^Small_Table_Base) self, eid)
         } 
 
         assert(false) // should not happen
@@ -131,6 +137,7 @@ package ode_ecs
             case Table_Type.Tiny_Table: 
                 return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
             case Table_Type.Small_Table:
+                return small_table_raw__remove_component(cast(^Small_Table_Raw) self, eid)
         } 
 
         assert(false) // should not happen
@@ -146,6 +153,7 @@ package ode_ecs
             case Table_Type.Tiny_Table: 
                 return tiny_table_raw__clear(cast(^Tiny_Table_Raw) self)
             case Table_Type.Small_Table:
+                return small_table_raw__clear(cast(^Small_Table_Raw) self)
         } 
 
         return API_Error.Unexpected_Error
@@ -164,6 +172,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 return tiny_table_base__attach_subscriber(cast(^Tiny_Table_Base)self, view)
             case Table_Type.Small_Table:
+                return small_table_base__attach_subscriber(cast(^Small_Table_Base)self, view)
         } 
 
         return API_Error.Unexpected_Error
@@ -179,6 +188,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 return tiny_table_base__detach_subscriber(cast(^Tiny_Table_Base)self, view)
             case Table_Type.Small_Table:
+                return small_table_base__detach_subscriber(cast(^Small_Table_Base)self, view)
         } 
 
         return API_Error.Unexpected_Error

@@ -107,7 +107,7 @@ package ode_ecs_sample4
         }
 
     //
-    // 100 Tiny_Tables 
+    // Tiny_Tables 
     //
 
 
@@ -175,7 +175,7 @@ main :: proc() {
 
     tt: ecs.Tiny_Table(UI_Position)
     ecs.tiny_table__init(&tt, &db)
-    fmt.printfln("%-30s %v bytes", "Tiny_Table memory usage:", ecs.memory_usage(&tt))
+    fmt.printfln("%-30s %v bytes", "Tiny_Table(UI_Position) memory usage:", ecs.memory_usage(&tt))
 
         //print_elements(&root)
 }

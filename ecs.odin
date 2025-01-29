@@ -19,7 +19,7 @@ package ode_ecs
     // increase.
     VALIDATIONS :: #config(ecs_validations, true)
    
-    BIT_SET_VALUES_CAP :: 128 // don't change this unless Odin changed how many bits can be stored in bit_set
+    BIT_SET_VALUES_CAP :: 128 // don't change this unless Odin changes how many bits can be stored in a bit_set
 
     // Like in other ECSs we use bit_set to store info about what components an entity has.
     // By default one bit_set can store info about 128 types of components, 
@@ -41,10 +41,10 @@ package ode_ecs
     // Tiny_Table
     //
 
-    // You can change this if you want but remember that rows are not dynamically allocated for Tiny_Table and
-    // are just a part of Tiny_Table struct.
-    TINY_TABLE__ROW_CAP :: 8        // Tiny_Table can contain maximum TINY_TABLE__ROW_CAP number of components
-    TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table 
+        // You can change this if you want but remember that rows are not dynamically allocated for Tiny_Table and
+        // are just a part of Tiny_Table struct.
+        TINY_TABLE__ROW_CAP :: 8        // Tiny_Table can contain maximum TINY_TABLE__ROW_CAP number of components
+        TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases
@@ -57,6 +57,7 @@ package ode_ecs
         clear               :: proc {  // only data clear
             database__clear,                    
             table__clear,
+            small_table__clear,
             view__clear,
             table_raw__clear,
             tiny_table__clear,
@@ -65,59 +66,71 @@ package ode_ecs
         get_entity          :: proc {
             database__get_entity,
             table__get_entity_by_row_number,
+            small_table__get_entity_by_row_number,
             iterator__get_entity,
         }
 
         add_component       :: proc {
             table__add_component,
+            small_table__add_component,
             tiny_table__add_component,
         }
 
         remove_component    :: proc {
             table__remove_component,
+            small_table__remove_component,
             tiny_table__remove_component,
         }
 
         get_component       :: proc {
             table__get_component_by_entity,
+            small_table__get_component_by_entity,
             iterator__get_component_for_table, 
+            iterator__get_component_for_small_table, 
             iterator__get_component_for_tiny_table,
             tiny_table__get_component_by_entity,
         }
 
         has_component       :: proc {
             table__has_component,
+            small_table__has_component,
             tiny_table__has_component,
         }
 
         copy_component      :: proc {
             table__copy_component,
+            small_table__copy_component,
             tiny_table__copy_component,
         }
 
         move_component      :: proc {
             table__move_component,
+            small_table__move_component,
             tiny_table__move_component,
         }
 
         get_entity_by_row_number :: proc {
             table__get_entity_by_row_number, 
+            small_table__get_entity_by_row_number, 
             tiny_table__get_entity_by_row_number,
         }
 
         table_len           :: proc {
             table__len,
+            small_table__len,
             tiny_table__len,
         }
 
         table_cap           :: proc {
             table__cap,
+            small_table__cap,
             tiny_table__cap, 
         }
 
         memory_usage        :: proc {
             database__memory_usage,
             table__memory_usage,
+            small_table__memory_usage,
             view__memory_usage,
             tiny_table__memory_usage,
         }
@@ -127,8 +140,7 @@ package ode_ecs
     //
         init                :: database__init
         terminate           :: database__terminate
-        entities_len        :: database__entities_len
-        entities_count      :: database__entities_len 
+        entities_len        :: database__entities_len 
         create_entity       :: database__create_entity
         destroy_entity      :: database__destroy_entity
         is_entity_expired   :: database__is_entity_expired
