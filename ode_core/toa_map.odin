@@ -13,9 +13,12 @@ package ode_core
     import "core:slice"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tiny Open Addressing Map (tiny one array map, int to $V). V expected to be a pointer.
+// Tiny Open Addressing Map (tiny one array map, index to $V). 
+// index expected to be POSITIVE int
+// V expected to be a pointer.
 
     Toa_Map_Item :: struct($V: typeid) {
+        // oix: int, ?
         key: int,
         value: V,
     }
@@ -24,27 +27,51 @@ package ode_core
         items: [CAP]Toa_Map_Item(V),
     }
 
-    // Returns pointer to item with key or pointer to next empty item
-    toa_map__find_item :: proc(self: ^Toa_Map($CAP, $V), key: int) -> ^Toa_Map_Item(V) {
-        ix := key % CAP
-        p := &self.items[ix]
-  
-        if p.key == key || p.value == nil do return p
+    @(private)
+    toa_map__find_item_from_ix :: proc(self: ^Toa_Map($CAP, $V), key: int, ix: int) -> (^Toa_Map_Item(V), int) {
+        pi: int = ix
+        p: ^Toa_Map_Item(V)
+        for i:=0; i<CAP; i+=1 { 
+            p = &self.items[pi]
+            if p.key == key || p.value == nil do return p, pi
 
-        pi: int
-        for i:=1; i<CAP; i+=1 { 
-            pi = ix + i
+            pi += 1
             if pi >= CAP {
                 pi = 0
-                ix = 0
-                i = 0
             }
-            
-            p = &self.items[pi]
-            if p.key == key || p.value == nil do return p
         }
 
-        return nil
+        return nil, DELETED_INDEX
+    }
+
+    @(private)
+    toa_map__hash :: #force_inline proc "contextless" (self: ^Toa_Map($CAP, $V), key: int) -> int {
+        return key % CAP
+    }
+
+    // Returns pointer to item with key or pointer to next empty item
+    toa_map__find_item :: proc(self: ^Toa_Map($CAP, $V), key: int) -> ^Toa_Map_Item(V) {
+        ix := toa_map__hash(self, key)
+        // p := &self.items[ix]
+  
+        // if p.key == key || p.value == nil do return p
+
+        // pi: int = ix
+        // for i:=1; i<CAP; i+=1 { 
+        //     pi += 1
+        //     if pi >= CAP {
+        //         pi = 0
+        //     }
+            
+        //     p = &self.items[pi]
+        //     if p.key == key || p.value == nil do return p
+        // }
+
+        // return nil
+
+        p, _ := toa_map__find_item_from_ix(self, key, ix)
+
+        return p
     }
 
     toa_map__get :: proc(self: ^Toa_Map($CAP, $V), key: int) -> V {
@@ -56,6 +83,8 @@ package ode_core
     } 
 
     toa_map__add :: proc(self: ^Toa_Map($CAP, $V), key: int, value: V) -> Core_Error {
+        assert(value != nil)
+
         p := toa_map__find_item(self, key)
 
         if p == nil do return Core_Error.Container_Is_Full
@@ -67,12 +96,40 @@ package ode_core
     }
 
     toa_map__remove :: proc(self: ^Toa_Map($CAP, $V), key: int) -> Core_Error {
-        p := toa_map__find_item(self, key)
+
+        ix := toa_map__hash(self, key)
+
+        p, fix := toa_map__find_item_from_ix(self, key, ix)
 
         if p == nil do return Core_Error.Not_Found
 
         p.key = 0
         p.value = nil
+
+        // shift to left
+        pi: int = fix
+        previ: int
+        nix: int
+        for i:=0; i<CAP; i+=1 { 
+            previ = pi
+            pi += 1
+            if pi >= CAP {
+                pi = 0
+            }
+            
+            p = &self.items[pi]
+            if p.value == nil do break
+
+            nix = toa_map__hash(self, p.key)
+            if nix == ix {
+                self.items[previ] = p^
+                p.key = 0
+                p.value = nil
+            }
+            else {
+                break
+            }
+        }
 
         return nil
     }
@@ -163,4 +220,19 @@ package ode_core
         testing.expect(t, toa_map__get(&map1, 66) == nil)
         testing.expect(t, toa_map__get(&map1, 55) == nil)
         testing.expect(t, toa_map__get(&map1, 1) == nil)
+
+        map2: Toa_Map(4, ^int) 
+        testing.expect(t, toa_map__add(&map2, 4, &v1) == nil)
+        testing.expect(t, toa_map__add(&map2, 8, &v2) == nil)
+        testing.expect(t, toa_map__add(&map2, 12, &v3) == nil)
+
+        testing.expect(t, toa_map__get(&map2, 12) == &v3)
+        testing.expect(t, toa_map__get(&map2, 8) == &v2)
+        testing.expect(t, toa_map__get(&map2, 4) == &v1)
+
+        //log.error(map2.items)
+        testing.expect(t, toa_map__remove(&map2, 8) == nil)
+        //log.error(map2.items)
+        testing.expect(t, toa_map__get(&map2, 4) == &v1)
+        testing.expect(t, toa_map__get(&map2, 12) == &v3)
     }
