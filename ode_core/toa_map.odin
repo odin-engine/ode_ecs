@@ -28,7 +28,7 @@ package ode_core
     }
 
     @(private)
-    toa_map__find_item_from_ix :: proc(self: ^Toa_Map($CAP, $V), key: int, ix: int) -> (^Toa_Map_Item(V), int) {
+    toa_map__find_item_from_hash :: proc(self: ^Toa_Map($CAP, $V), key: int, ix: int) -> (^Toa_Map_Item(V), int) {
         pi: int = ix
         p: ^Toa_Map_Item(V)
         for i:=0; i<CAP; i+=1 { 
@@ -52,24 +52,7 @@ package ode_core
     // Returns pointer to item with key or pointer to next empty item
     toa_map__find_item :: proc(self: ^Toa_Map($CAP, $V), key: int) -> ^Toa_Map_Item(V) {
         ix := toa_map__hash(self, key)
-        // p := &self.items[ix]
-  
-        // if p.key == key || p.value == nil do return p
-
-        // pi: int = ix
-        // for i:=1; i<CAP; i+=1 { 
-        //     pi += 1
-        //     if pi >= CAP {
-        //         pi = 0
-        //     }
-            
-        //     p = &self.items[pi]
-        //     if p.key == key || p.value == nil do return p
-        // }
-
-        // return nil
-
-        p, _ := toa_map__find_item_from_ix(self, key, ix)
+        p, _ := toa_map__find_item_from_hash(self, key, ix)
 
         return p
     }
@@ -80,6 +63,19 @@ package ode_core
         if p == nil do return nil
 
         return p.value
+    } 
+
+    toa_map__find_item_with_index :: proc(self: ^Toa_Map($CAP, $V), key: int) -> (^Toa_Map_Item(V), int) {
+        ix := toa_map__hash(self, key)
+        return toa_map__find_item_from_hash(self, key, ix)
+    }
+
+    toa_map__get_with_index :: proc(self: ^Toa_Map($CAP, $V), key: int) -> (V, int) {
+        p, i := toa_map__find_item_with_index(self, key)
+
+        if p == nil do return nil, DELETED_INDEX
+
+        return p.value, i
     } 
 
     toa_map__add :: proc(self: ^Toa_Map($CAP, $V), key: int, value: V) -> Core_Error {
@@ -97,37 +93,60 @@ package ode_core
 
     toa_map__remove :: proc(self: ^Toa_Map($CAP, $V), key: int) -> Core_Error {
 
-        ix := toa_map__hash(self, key)
+        hash := toa_map__hash(self, key)
 
-        p, fix := toa_map__find_item_from_ix(self, key, ix)
+        p, f_ix := toa_map__find_item_from_hash(self, key, hash)
 
         if p == nil do return Core_Error.Not_Found
 
         p.key = 0
         p.value = nil
 
-        // shift to left
-        pi: int = fix
-        previ: int
-        nix: int
+        n_ix: int = f_ix
+        prev_ix: int 
+        n_hash: int = hash
+
+        // Shift to left same hash items
         for i:=0; i<CAP; i+=1 { 
-            previ = pi
-            pi += 1
-            if pi >= CAP {
-                pi = 0
+            prev_ix = n_ix
+            n_ix += 1
+            if n_ix >= CAP {
+                n_ix = 0
             }
             
-            p = &self.items[pi]
+            p = &self.items[n_ix]
             if p.value == nil do break
 
-            nix = toa_map__hash(self, p.key)
-            if nix == ix {
-                self.items[previ] = p^
+            n_hash = toa_map__hash(self, p.key)
+            if n_hash == hash { // same hash items
+                self.items[prev_ix] = p^
                 p.key = 0
                 p.value = nil
             }
             else {
                 break
+            }
+        }
+
+        // Shift to left items with hash < current array index, it means they were suppoused to be on left
+        for i:=0; i<CAP; i+=1 { 
+            p = &self.items[n_ix]
+            if p.value == nil do break
+
+            n_hash = toa_map__hash(self, p.key)
+            if n_hash < n_ix { // hash < current array index
+                self.items[prev_ix] = p^
+                p.key = 0
+                p.value = nil
+            }
+            else {
+                break
+            }
+
+            prev_ix = n_ix
+            n_ix += 1
+            if n_ix >= CAP {
+                n_ix = 0
             }
         }
 
@@ -154,6 +173,11 @@ package ode_core
         v1: int = 33
         v2: int = 55
         v3: int = 66
+        v4: int = 77
+
+        //
+        // map1
+        //
 
         map1: Toa_Map(2, ^int) 
 
@@ -221,18 +245,56 @@ package ode_core
         testing.expect(t, toa_map__get(&map1, 55) == nil)
         testing.expect(t, toa_map__get(&map1, 1) == nil)
 
+        //
+        // map2 
+        // 
+
         map2: Toa_Map(4, ^int) 
         testing.expect(t, toa_map__add(&map2, 4, &v1) == nil)
         testing.expect(t, toa_map__add(&map2, 8, &v2) == nil)
         testing.expect(t, toa_map__add(&map2, 12, &v3) == nil)
+        testing.expect(t, toa_map__add(&map2, 2, &v4) == nil)
 
-        testing.expect(t, toa_map__get(&map2, 12) == &v3)
+        v,i := toa_map__get_with_index(&map2, 12)
+        testing.expect(t, v == &v3)
+        testing.expect(t, i == 2)
+
         testing.expect(t, toa_map__get(&map2, 8) == &v2)
         testing.expect(t, toa_map__get(&map2, 4) == &v1)
+         
+        v,i = toa_map__get_with_index(&map2, 2)
+        testing.expect(t, v == &v4)
+        testing.expect(t, i == 3)
 
-        //log.error(map2.items)
-        testing.expect(t, toa_map__remove(&map2, 8) == nil)
-        //log.error(map2.items)
-        testing.expect(t, toa_map__get(&map2, 4) == &v1)
-        testing.expect(t, toa_map__get(&map2, 12) == &v3)
+        testing.expect(t, toa_map__remove(&map2, 8) == nil) // remove
+        testing.expect(t, toa_map__get(&map2, 8) == nil)
+
+        v,i = toa_map__get_with_index(&map2, 4)
+        testing.expect(t, v == &v1)
+        testing.expect(t, i == 0)
+
+        v,i = toa_map__get_with_index(&map2, 12)
+        testing.expect(t, v == &v3)
+        testing.expect(t, i == 1)
+
+        v,i = toa_map__get_with_index(&map2, 2)
+        testing.expect(t, v == &v4)
+        testing.expect(t, i == 2)
+
+        testing.expect(t, toa_map__remove(&map2, 4) == nil) // remove
+        testing.expect(t, toa_map__get(&map2, 4) == nil)
+
+        v,i = toa_map__get_with_index(&map2, 12)
+        testing.expect(t, v == &v3)
+        testing.expect(t, i == 0)
+
+        testing.expect(t, map2.items[1].key == 0)
+        testing.expect(t, map2.items[1].value == nil)
+
+        v,i = toa_map__get_with_index(&map2, 2)
+        testing.expect(t, v == &v4)
+        testing.expect(t, i == 2)
+
+        testing.expect(t, map2.items[3].key == 0)
+        testing.expect(t, map2.items[3].value == nil)
     }
