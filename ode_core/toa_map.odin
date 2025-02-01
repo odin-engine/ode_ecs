@@ -18,7 +18,6 @@ package ode_core
 // V expected to be a pointer.
 
     Toa_Map_Item :: struct($V: typeid) {
-        // oix: int, ?
         key: int,
         value: V,
     }
@@ -106,6 +105,9 @@ package ode_core
         prev_ix: int 
         n_hash: int = hash
 
+        temp: [CAP]Toa_Map_Item(V)
+        temp_len: int = 0
+
         // Shift to left same hash items
         for i:=0; i<CAP; i+=1 { 
             prev_ix = n_ix
@@ -118,36 +120,47 @@ package ode_core
             if p.value == nil do break
 
             n_hash = toa_map__hash(self, p.key)
-            if n_hash == hash { // same hash items
-                self.items[prev_ix] = p^
+            //if n_hash == hash { // same hash items
+                //self.items[prev_ix] = p^
+                temp[temp_len] = p^
+                temp_len += 1
+
                 p.key = 0
                 p.value = nil
-            }
-            else {
-                break
-            }
+            // }
+            // else {
+            //     break
+            // }
         }
 
         // Shift to left items with hash < current array index, it means they were suppoused to be on left
-        for i:=0; i<CAP; i+=1 { 
-            p = &self.items[n_ix]
-            if p.value == nil do break
+        // for i:=0; i<CAP; i+=1 { 
+        //     p = &self.items[n_ix]
+        //     if p.value == nil do break
 
-            n_hash = toa_map__hash(self, p.key)
-            if n_hash < n_ix { // hash < current array index
-                self.items[prev_ix] = p^
-                p.key = 0
-                p.value = nil
-            }
-            else {
-                break
-            }
+        //     n_hash = toa_map__hash(self, p.key)
+        //     if n_hash < n_ix { // hash < current array index
+        //         /// self.items[prev_ix] = p^
+        //         temp[temp_len] = p^
+        //         temp_len += 1
+                
+        //         p.key = 0
+        //         p.value = nil
+        //     }
+        //     else {
+        //         break
+        //     }
 
-            prev_ix = n_ix
-            n_ix += 1
-            if n_ix >= CAP {
-                n_ix = 0
-            }
+        //     prev_ix = n_ix
+        //     n_ix += 1
+        //     if n_ix >= CAP {
+        //         n_ix = 0
+        //     }
+        // }
+
+        // readd 
+        for i:=0; i < temp_len; i+=1 {
+            toa_map__add(self, temp[i].key, temp[i].value)
         }
 
         return nil
@@ -271,11 +284,9 @@ package ode_core
 
         v,i = toa_map__get_with_index(&map2, 4)
         testing.expect(t, v == &v1)
-        testing.expect(t, i == 0)
 
         v,i = toa_map__get_with_index(&map2, 12)
         testing.expect(t, v == &v3)
-        testing.expect(t, i == 1)
 
         v,i = toa_map__get_with_index(&map2, 2)
         testing.expect(t, v == &v4)
@@ -297,4 +308,17 @@ package ode_core
 
         testing.expect(t, map2.items[3].key == 0)
         testing.expect(t, map2.items[3].value == nil)
+
+        testing.expect(t, toa_map__add(&map2, 8, &v2) == nil)
+        testing.expect(t, toa_map__add(&map2, 4, &v1) == nil)
+
+        v,i = toa_map__get_with_index(&map2, 4)
+        testing.expect(t, v == &v1)
+        testing.expect(t, i == 3)
+
+        testing.expect(t, toa_map__remove(&map2, 8) == nil) // remove
+        testing.expect(t, toa_map__remove(&map2, 12) == nil) // remove
+
+        v,i = toa_map__get_with_index(&map2, 4)
+        testing.expect(t, v == &v1)
     }
