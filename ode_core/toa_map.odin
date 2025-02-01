@@ -102,15 +102,12 @@ package ode_core
         p.value = nil
 
         n_ix: int = f_ix
-        prev_ix: int 
-        n_hash: int = hash
 
         temp: [CAP]Toa_Map_Item(V)
         temp_len: int = 0
 
         // Shift to left same hash items
         for i:=0; i<CAP; i+=1 { 
-            prev_ix = n_ix
             n_ix += 1
             if n_ix >= CAP {
                 n_ix = 0
@@ -119,44 +116,12 @@ package ode_core
             p = &self.items[n_ix]
             if p.value == nil do break
 
-            n_hash = toa_map__hash(self, p.key)
-            //if n_hash == hash { // same hash items
-                //self.items[prev_ix] = p^
-                temp[temp_len] = p^
-                temp_len += 1
+            temp[temp_len] = p^
+            temp_len += 1
 
-                p.key = 0
-                p.value = nil
-            // }
-            // else {
-            //     break
-            // }
+            p.key = 0
+            p.value = nil
         }
-
-        // Shift to left items with hash < current array index, it means they were suppoused to be on left
-        // for i:=0; i<CAP; i+=1 { 
-        //     p = &self.items[n_ix]
-        //     if p.value == nil do break
-
-        //     n_hash = toa_map__hash(self, p.key)
-        //     if n_hash < n_ix { // hash < current array index
-        //         /// self.items[prev_ix] = p^
-        //         temp[temp_len] = p^
-        //         temp_len += 1
-                
-        //         p.key = 0
-        //         p.value = nil
-        //     }
-        //     else {
-        //         break
-        //     }
-
-        //     prev_ix = n_ix
-        //     n_ix += 1
-        //     if n_ix >= CAP {
-        //         n_ix = 0
-        //     }
-        // }
 
         // readd 
         for i:=0; i < temp_len; i+=1 {

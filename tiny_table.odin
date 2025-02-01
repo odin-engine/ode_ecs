@@ -22,7 +22,7 @@ package ode_ecs
 
         type_info: ^runtime.Type_Info,
         rid_to_eid: [TINY_TABLE__ROW_CAP]entity_id,
-        eid_to_ptr: oc.Toa_Map(TINY_TABLE__ROW_CAP * 2, rawptr),
+        eid_to_ptr: oc.Toa_Map(TINY_TABLE__ROW_CAP * 3, rawptr),
         subscribers: [TINY_TABLE__VIEWS_CAP]^View,
         len: int,
     }
