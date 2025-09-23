@@ -85,7 +85,7 @@ If you have a `Position` component, you can create a table like this:
 To create an entity, you can do this:  
 
 ```odin
-    robot, _ = ecs.create_entity(&ecs)
+    robot, _ = ecs.create_entity(&my_ecs)
 ```  
 
 Now you can add a `Position` component to the `robot` entity:  

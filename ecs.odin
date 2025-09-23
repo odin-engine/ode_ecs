@@ -45,6 +45,7 @@ package ode_ecs
         // are just a part of Tiny_Table struct.
         TINY_TABLE__ROW_CAP :: 8        // Tiny_Table can contain maximum TINY_TABLE__ROW_CAP number of components
         TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table 
+        TINY_TABLE__MAP_CAP :: 32       // Should be power of 2
 
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases
@@ -57,7 +58,7 @@ package ode_ecs
         clear               :: proc {  // only data clear
             database__clear,                    
             table__clear,
-            small_table__clear,
+            compact_table__clear,
             view__clear,
             table_raw__clear,
             tiny_table__clear,
@@ -66,25 +67,25 @@ package ode_ecs
         get_entity          :: proc {
             database__get_entity,
             table__get_entity_by_row_number,
-            small_table__get_entity_by_row_number,
+            compact_table__get_entity_by_row_number,
             iterator__get_entity,
         }
 
         add_component       :: proc {
             table__add_component,
-            small_table__add_component,
+            compact_table__add_component,
             tiny_table__add_component,
         }
 
         remove_component    :: proc {
             table__remove_component,
-            small_table__remove_component,
+            compact_table__remove_component,
             tiny_table__remove_component,
         }
 
         get_component       :: proc {
             table__get_component_by_entity,
-            small_table__get_component_by_entity,
+            compact_table__get_component_by_entity,
             iterator__get_component_for_table, 
             iterator__get_component_for_small_table, 
             iterator__get_component_for_tiny_table,
@@ -93,44 +94,44 @@ package ode_ecs
 
         has_component       :: proc {
             table__has_component,
-            small_table__has_component,
+            compact_table__has_component,
             tiny_table__has_component,
         }
 
         copy_component      :: proc {
             table__copy_component,
-            small_table__copy_component,
+            compact_table__copy_component,
             tiny_table__copy_component,
         }
 
         move_component      :: proc {
             table__move_component,
-            small_table__move_component,
+            compact_table__move_component,
             tiny_table__move_component,
         }
 
         get_entity_by_row_number :: proc {
             table__get_entity_by_row_number, 
-            small_table__get_entity_by_row_number, 
+            compact_table__get_entity_by_row_number, 
             tiny_table__get_entity_by_row_number,
         }
 
         table_len           :: proc {
             table__len,
-            small_table__len,
+            compact_table__len,
             tiny_table__len,
         }
 
         table_cap           :: proc {
             table__cap,
-            small_table__cap,
+            compact_table__cap,
             tiny_table__cap, 
         }
 
         memory_usage        :: proc {
             database__memory_usage,
             table__memory_usage,
-            small_table__memory_usage,
+            compact_table__memory_usage,
             view__memory_usage,
             tiny_table__memory_usage,
         }
@@ -205,5 +206,6 @@ package ode_ecs
         Error :: union #shared_nil {
             API_Error,
             oc.Core_Error,
+            oc.Error, 
             runtime.Allocator_Error
         }

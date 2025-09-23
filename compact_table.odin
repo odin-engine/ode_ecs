@@ -9,21 +9,23 @@ package ode_ecs
 // Core
     import "core:mem"
     import "core:slice"
+    import "core:math"
 
 // ODE
     import oc "ode_core"
+    import oc_maps "ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Small_Table_Base
+// Compact_Table_Base
 
-    // Base for Small_Table
+    // Base for Compact_Table
     @(private)
-    Small_Table_Base :: struct {
+    Compact_Table_Base :: struct {
         using shared: Shared_Table,
 
         type_info: ^runtime.Type_Info,
         rid_to_eid: []entity_id,
-        eid_to_ptr: []rawptr,
+        eid_to_ptr: oc_maps.Rh_Map(rawptr),
 
         cap: int,
 
@@ -31,14 +33,15 @@ package ode_ecs
     }
 
     @(private)
-    small_table_base__init :: proc(self: ^Small_Table_Base, db: ^Database, cap: int) -> Error {
-        shared_table__init(&self.shared, Table_Type.Small_Table, db)
+    compact_table_base__init :: proc(self: ^Compact_Table_Base, db: ^Database, cap: int) -> Error {
+        shared_table__init(&self.shared, Table_Type.Compact_Table, db)
 
         self.cap = cap
 
-        self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
+        self.rid_to_eid = make([]entity_id, self.cap, db.allocator) or_return
 
-        self.eid_to_ptr = make([]rawptr, db.id_factory.cap, db.allocator) or_return
+        // load factor 0.5 and make it power of two
+        oc_maps.rh_map__init(&self.eid_to_ptr, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
         oc.dense_arr__init(&self.subscribers, VIEWS_CAP, db.allocator) or_return
 
@@ -46,43 +49,41 @@ package ode_ecs
     }
 
     @(private)
-    small_table_base__terminate :: proc(self: ^Small_Table_Base) -> Error {
+    compact_table_base__terminate :: proc(self: ^Compact_Table_Base) -> Error {
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
         delete(self.rid_to_eid, self.db.allocator) or_return
-        delete(self.eid_to_ptr, self.db.allocator) or_return
+        oc_maps.rh_map__terminate(&self.eid_to_ptr, self.db.allocator) or_return
        
         return nil
     }
 
     @(private)
-    small_table_base__cap :: proc(self: ^Small_Table_Base) -> int {
+    compact_table_base__cap :: proc(self: ^Compact_Table_Base) -> int {
         return self.cap
     }
 
     @(private)
-    small_table_base__attach_subscriber :: proc(self: ^Small_Table_Base, view: ^View) -> Error {
+    compact_table_base__attach_subscriber :: proc(self: ^Compact_Table_Base, view: ^View) -> Error {
         _, err := oc.dense_arr__add(&self.subscribers, view)
         return err
     }
 
     @(private)
-    small_table_base__detach_subscriber :: proc(self: ^Small_Table_Base, view: ^View) -> Error {
+    compact_table_base__detach_subscriber :: proc(self: ^Compact_Table_Base, view: ^View) -> Error {
         err := oc.dense_arr__remove_by_value(&self.subscribers, view)
         return err
     }
 
     @(private)
-    small_table_base__memory_usage :: proc (self: ^Small_Table_Base) -> int {    
+    compact_table_base__memory_usage :: proc (self: ^Compact_Table_Base) -> int {    
         total := size_of(self^)
 
         if self.rid_to_eid != nil {
             total += size_of(self.rid_to_eid[0]) * len(self.rid_to_eid)
         }
 
-        if self.eid_to_ptr != nil {
-            total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
-        }
+        total += oc_maps.rh_map__memory_usage(&self.eid_to_ptr)
 
         // rows
         total += self.type_info.size * self.cap
@@ -93,33 +94,33 @@ package ode_ecs
     }
 
     @(private)
-    small_table_base__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Small_Table_Base, #any_int row_number: int) -> entity_id {
+    compact_table_base__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Compact_Table_Base, #any_int row_number: int) -> entity_id {
         return self.rid_to_eid[row_number]
     }
 
     @(private)
-    small_table_base__get_component_by_entity :: proc (self: ^Small_Table_Base, eid: entity_id) -> rawptr {
-        return self.eid_to_ptr[eid.ix]
+    compact_table_base__get_component_by_entity :: proc (self: ^Compact_Table_Base, eid: entity_id) -> rawptr {
+        return oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Small_Table_Raw
+// Compact_Table_Raw
 
     @(private)
-    Small_Table_Raw :: struct {
-        using base: Small_Table_Base,
+    Compact_Table_Raw :: struct {
+        using base: Compact_Table_Base,
         rows: []byte,
     }
 
     @(private)
-    small_table_raw__terminate :: proc(self: ^Small_Table_Raw) -> Error {
+    compact_table_raw__terminate :: proc(self: ^Compact_Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
 
         database__detach_table(self.db, self)
 
         if self.rows != nil do delete(self.rows, self.db.allocator) or_return
 
-        small_table_base__terminate(self) or_return
+        compact_table_base__terminate(self) or_return
 
         self.db = nil 
         self.id = DELETED_INDEX
@@ -129,13 +130,13 @@ package ode_ecs
     }
 
     @(private)
-    small_table_raw__remove_component :: proc(self: ^Small_Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
+    compact_table_raw__remove_component :: proc(self: ^Compact_Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found 
 
-        target := self.eid_to_ptr[target_eid.ix]
-
+        target := oc_maps.rh_map__get(&self.eid_to_ptr, target_eid.ix) 
+        
         // Check if component exists
         if target == nil do return oc.Core_Error.Not_Found
         
@@ -147,7 +148,7 @@ package ode_ecs
 
         assert(tail_eid.ix != DELETED_INDEX)
 
-        tail := self.eid_to_ptr[tail_eid.ix]
+        tail := oc_maps.rh_map__get(&self.eid_to_ptr, tail_eid.ix)
         assert(tail != nil)
         
         target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
@@ -155,7 +156,8 @@ package ode_ecs
         // Replace removed component with tail
         if target == tail {
             // Remove indexes
-            self.eid_to_ptr[target_eid.ix] = nil
+            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
             for view in self.subscribers.items {
@@ -170,8 +172,8 @@ package ode_ecs
             mem.copy(target, tail, T_size)
 
             // Update tail indexes
-            self.eid_to_ptr[tail_eid.ix] = target
-            self.eid_to_ptr[target_eid.ix] = nil
+            oc_maps.rh_map__update(&self.eid_to_ptr, tail_eid.ix, target)
+            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
@@ -195,19 +197,19 @@ package ode_ecs
         return
     }
 
-    small_table_raw__len :: #force_inline proc "contextless" (self: ^Small_Table_Raw) -> int {
+    compact_table_raw__len :: #force_inline proc "contextless" (self: ^Compact_Table_Raw) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
 
     // clear data, nothing else
-    small_table_raw__clear :: proc (self: ^Small_Table_Raw, zero_components := true) -> Error {
+    compact_table_raw__clear :: proc (self: ^Compact_Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
         if self.rid_to_eid != nil {
             for i := 0; i < len(self.rid_to_eid); i+=1 do self.rid_to_eid[i].ix = DELETED_INDEX
         }
 
-        slice.zero(self.eid_to_ptr)
+        oc_maps.rh_map__clear(&self.eid_to_ptr)
        
         if zero_components && self.cap > 0 && self.rows != nil {
             raw := (^runtime.Raw_Slice)(&self.rows)
@@ -219,16 +221,16 @@ package ode_ecs
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Small_Table
+// Compact_Table
 
     // Components table
-    Small_Table :: struct($T: typeid) {
-        using base: Small_Table_Base,
+    Compact_Table :: struct($T: typeid) {
+        using base: Compact_Table_Base,
         // table_record_id => component
         rows: []T,     
     }
 
-    small_table__init :: proc(self: ^Small_Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
+    compact_table__init :: proc(self: ^Compact_Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(db != nil, loc = loc)
@@ -239,7 +241,7 @@ package ode_ecs
 
         self.type_info = type_info_of(typeid_of(T))
 
-        small_table_base__init(&self.base, db, cap) or_return 
+        compact_table_base__init(&self.base, db, cap) or_return 
 
         self.rows = make([]T, cap, db.allocator) or_return
         
@@ -247,24 +249,24 @@ package ode_ecs
 
         self.state = Object_State.Normal
 
-        small_table_raw__clear(cast(^Small_Table_Raw)self) or_return 
+        compact_table_raw__clear(cast(^Compact_Table_Raw)self) or_return 
 
         return nil
     }
 
-    small_table__terminate :: proc(self: ^Small_Table($T)) -> Error {
+    compact_table__terminate :: proc(self: ^Compact_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.type_info.id == typeid_of(T))
             assert(self.db != nil)
         }
 
-        small_table_raw__terminate(cast(^Small_Table_Raw) self) or_return
+        compact_table_raw__terminate(cast(^Compact_Table_Raw) self) or_return
 
         return nil
     }
     
-    small_table__add_component :: proc(self: ^Small_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
+    compact_table__add_component :: proc(self: ^Compact_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
@@ -272,7 +274,7 @@ package ode_ecs
 
         if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full 
 
-        component = cast(^T) self.eid_to_ptr[eid.ix]
+        component = cast(^T) oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
 
         // Check if component already exist
         if component == nil {
@@ -281,8 +283,8 @@ package ode_ecs
                 component = &self.rows[raw.len]
             }
                         
-            // Update eid_to_ptr
-            self.eid_to_ptr[eid.ix] = component
+            // Add eid_to_ptr
+            oc_maps.rh_map__add(&self.eid_to_ptr, eid.ix, component) or_return
 
             // Update rid_to_eid
             self.rid_to_eid[raw.len] = eid
@@ -303,30 +305,30 @@ package ode_ecs
         return 
     }
 
-    small_table__remove_component :: proc(self: ^Small_Table($T), eid: entity_id, loc:= #caller_location) -> Error {
+    compact_table__remove_component :: proc(self: ^Compact_Table($T), eid: entity_id, loc:= #caller_location) -> Error {
         database__is_entity_correct(self.db, eid) or_return
        
-        return small_table_raw__remove_component(cast(^Small_Table_Raw) self, eid, loc)
+        return compact_table_raw__remove_component(cast(^Compact_Table_Raw) self, eid, loc)
     }
 
-    small_table__len :: #force_inline proc "contextless" (self: ^Small_Table($T)) -> int {
-        return small_table_raw__len(cast(^Small_Table_Raw) self)
+    compact_table__len :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> int {
+        return compact_table_raw__len(cast(^Compact_Table_Raw) self)
     }
 
-    small_table__cap :: #force_inline proc "contextless" (self: ^Small_Table($T)) -> int {
-        return small_table_base__cap(self)
+    compact_table__cap :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> int {
+        return compact_table_base__cap(self)
     }
 
     @(require_results)
-    small_table__get_component_by_entity :: proc (self: ^Small_Table($T), eid: entity_id) -> ^T {
+    compact_table__get_component_by_entity :: proc (self: ^Compact_Table($T), eid: entity_id) -> ^T {
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
-        return cast(^T) self.eid_to_ptr[eid.ix]
+        return cast(^T) oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
     }
 
     @(require_results)
-    small_table__has_component :: proc (self: ^Small_Table($T), eid: entity_id) -> bool {
+    compact_table__has_component :: proc (self: ^Compact_Table($T), eid: entity_id) -> bool {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
@@ -336,23 +338,23 @@ package ode_ecs
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return false
 
-        return self.eid_to_ptr[eid.ix] != nil
+        return oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix) != nil
     }
 
-    small_table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Small_Table($T), #any_int row_number: int) -> entity_id {
-        return small_table_base__get_entity_by_row_number(self, row_number)
+    compact_table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Compact_Table($T), #any_int row_number: int) -> entity_id {
+        return compact_table_base__get_entity_by_row_number(self, row_number)
     }
 
-    small_table__memory_usage :: proc (self: ^Small_Table($T)) -> int {    
-       return small_table_base__memory_usage(cast(^Small_Table_Base) self)
+    compact_table__memory_usage :: proc (self: ^Compact_Table($T)) -> int {    
+       return compact_table_base__memory_usage(cast(^Compact_Table_Base) self)
     }
  
     // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
-    small_table__copy_component :: proc(dest: ^Small_Table($T), src: ^Small_Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
-        src_component = small_table__get_component_by_entity(src, eid)
+    compact_table__copy_component :: proc(dest: ^Compact_Table($T), src: ^Compact_Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
+        src_component = compact_table__get_component_by_entity(src, eid)
         if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
 
-        dest_component = small_table__get_component_by_entity(dest, eid) // if it exists we will overwrite data
+        dest_component = compact_table__get_component_by_entity(dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
             dest_component = add_component(dest, eid) or_return 
         }
@@ -364,7 +366,7 @@ package ode_ecs
     }
 
     // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
-    small_table__move_component :: proc(dest: ^Small_Table($T), src: ^Small_Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
+    compact_table__move_component :: proc(dest: ^Compact_Table($T), src: ^Compact_Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
         dest_component, _ = copy_component(dest, src, eid) or_return
 
         remove_component(src, eid) or_return
@@ -372,11 +374,11 @@ package ode_ecs
         return dest_component, nil
     }
 
-    small_table__clear :: proc(self: ^Small_Table($T)) -> Error {
+    compact_table__clear :: proc(self: ^Compact_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
         }
-        small_table_raw__clear((^Small_Table_Raw)(self), true) or_return
+        compact_table_raw__clear((^Compact_Table_Raw)(self), true) or_return
 
         return nil
     }

@@ -15,12 +15,13 @@ package ode_ecs__tests
 // ODE
     import ecs ".."
     import oc "../ode_core"
+    import oc_maps "../ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Database
 
     @(test)
-    small_table__attaching_detaching_tables__test :: proc(t: ^testing.T) {
+    compact_table__attaching_detaching_tables__test :: proc(t: ^testing.T) {
         //
         // Prepare
         //
@@ -33,10 +34,10 @@ package ode_ecs__tests
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
             
             ecs_1: ecs.Database
-            ais: ecs.Small_Table(AI)
-            ais_table2: ecs.Small_Table(AI)
-            positions: ecs.Small_Table(Position)
-            pos_table2: ecs.Small_Table(Position)
+            ais: ecs.Compact_Table(AI)
+            ais_table2: ecs.Compact_Table(AI)
+            positions: ecs.Compact_Table(Position)
+            pos_table2: ecs.Compact_Table(Position)
 
         //
         // Test
@@ -46,30 +47,30 @@ package ode_ecs__tests
             testing.expect(t, ecs.init(&ecs_1, entities_cap=0, allocator=allocator) == ecs.API_Error.Entities_Cap_Should_Be_Greater_Than_Zero)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            testing.expect(t, ecs.small_table__init(&ais, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.compact_table__init(&ais, &ecs_1, 10) == nil)
             testing.expect(t, ais.id == 0)
 
-            testing.expect(t, ecs.small_table__init(&ais_table2, &ecs_1, 10) == nil)
-            defer ecs.small_table__terminate(&positions)
-            testing.expect(t, ecs.small_table__init(&positions, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.compact_table__init(&ais_table2, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&positions)
+            testing.expect(t, ecs.compact_table__init(&positions, &ecs_1, 10) == nil)
 
             testing.expect(t, ais.id == 0)
             testing.expect(t, positions.id == 2)
 
-            ecs.small_table__terminate(&ais_table2)
+            ecs.compact_table__terminate(&ais_table2)
 
             testing.expect(t, ais_table2.id == ecs.DELETED_INDEX)
             testing.expect(t, ecs_1.tables.items[1] == nil)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
             testing.expect(t, ecs_1.tables.has_nil_item == true)
 
-            defer ecs.small_table__terminate(&pos_table2)
-            testing.expect(t, ecs.small_table__init(&pos_table2, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&pos_table2)
+            testing.expect(t, ecs.compact_table__init(&pos_table2, &ecs_1, 10) == nil)
             testing.expect(t, pos_table2.id == 1)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
             testing.expect(t, ecs_1.tables.has_nil_item == false)
 
-            ecs.small_table__terminate(&ais)
+            ecs.compact_table__terminate(&ais)
 
             testing.expect(t, ais.id == ecs.DELETED_INDEX)
             testing.expect(t, ecs_1.tables.items[0] == nil) 
@@ -78,7 +79,7 @@ package ode_ecs__tests
     }
 
     @(test)
-    small_table__attaching_detaching_views__test :: proc(t: ^testing.T) {
+    compact_table__attaching_detaching_views__test :: proc(t: ^testing.T) {
         //
         // Prepare
         //
@@ -90,8 +91,8 @@ package ode_ecs__tests
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
             
             ecs_1: ecs.Database
-            ais: ecs.Small_Table(AI)
-            positions: ecs.Small_Table(Position)
+            ais: ecs.Compact_Table(AI)
+            positions: ecs.Compact_Table(Position)
             view1: ecs.View
             view2: ecs.View
 
@@ -101,11 +102,11 @@ package ode_ecs__tests
             defer ecs.terminate(&ecs_1)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            defer ecs.small_table__terminate(&ais)
-            testing.expect(t, ecs.small_table__init(&ais, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&ais)
+            testing.expect(t, ecs.compact_table__init(&ais, &ecs_1, 10) == nil)
             
-            defer ecs.small_table__terminate(&positions)
-            testing.expect(t, ecs.small_table__init(&positions, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&positions)
+            testing.expect(t, ecs.compact_table__init(&positions, &ecs_1, 10) == nil)
 
             testing.expect(t, ecs.view_init(&view1, &ecs_1, {&ais, &positions}) == nil)
 
@@ -140,7 +141,7 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Entity
     @(test)
-    small_table__creating_destroying_entities__test :: proc(t: ^testing.T) {
+    compact_table__creating_destroying_entities__test :: proc(t: ^testing.T) {
         //
         // Prepare
         //
@@ -188,10 +189,10 @@ package ode_ecs__tests
             testing.expect(t, ecs_1.id_factory.created_count == 2)
     }
 ///////////////////////////////////////////////////////////////////////////////
-// Small_Table
+// Compact_Table
 
     @(test)
-    small_table__adding_removing_components__test :: proc(t: ^testing.T) {
+    compact_table__adding_removing_components__test :: proc(t: ^testing.T) {
         //
         // Prepare
         //
@@ -203,18 +204,18 @@ package ode_ecs__tests
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
             
             ecs_1: ecs.Database
-            ais: ecs.Small_Table(AI)
-            ais_2: ecs.Small_Table(AI)
-            positions: ecs.Small_Table(Position)
+            ais: ecs.Compact_Table(AI)
+            ais_2: ecs.Compact_Table(AI)
+            positions: ecs.Compact_Table(Position)
 
             defer ecs.terminate(&ecs_1)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
 
-            defer ecs.small_table__terminate(&ais)
-            testing.expect(t, ecs.small_table__init(&ais, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&ais)
+            testing.expect(t, ecs.compact_table__init(&ais, &ecs_1, 10) == nil)
             
-            defer ecs.small_table__terminate(&positions)
-            testing.expect(t, ecs.small_table__init(&positions, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&positions)
+            testing.expect(t, ecs.compact_table__init(&positions, &ecs_1, 10) == nil)
 
             eid_1, eid_2: ecs.entity_id
             err: ecs.Error
@@ -243,25 +244,25 @@ package ode_ecs__tests
             testing.expect(t, err == nil)
             testing.expect(t, pos != nil)
             testing.expect(t, pos.x == 0 && pos.y == 0)
-            testing.expect(t, ecs.small_table__len(&positions) == 1)
+            testing.expect(t, ecs.compact_table__len(&positions) == 1)
 
             pos2, err = ecs.add_component(&positions, eid_2)
             testing.expect(t, pos2 != nil)
             testing.expect(t, pos2.x == 0 && pos2.y == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs.small_table__len(&positions) == 2)
+            testing.expect(t, ecs.compact_table__len(&positions) == 2)
 
             ai, err = ecs.add_component(&ais, eid_1)
             testing.expect(t, ai != nil)
             testing.expect(t, ai.IQ == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs.small_table__len(&ais) == 1)
+            testing.expect(t, ecs.compact_table__len(&ais) == 1)
 
             ai2, err = ecs.add_component(&ais, eid_2)
             testing.expect(t, ai2 != nil)
             testing.expect(t, ai2.IQ == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs.small_table__len(&ais) == 2)
+            testing.expect(t, ecs.compact_table__len(&ais) == 2)
 
             pos.x = 44
             pos.y = 77
@@ -273,11 +274,13 @@ package ode_ecs__tests
             ai2.IQ = 42
 
             // Remove components
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.rows[0])
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[1])
+            //testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.rows[0])
+            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_1.ix) == &positions.rows[0])
+            //testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[1])
+            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[1])
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
-            testing.expect(t, ecs.small_table__len(&positions) == 2)
+            testing.expect(t, ecs.compact_table__len(&positions) == 2)
 
             testing.expect(t, ecs.remove_component(&positions, eid_1) == nil)
 
@@ -287,25 +290,29 @@ package ode_ecs__tests
             testing.expect(t, pos2.x == 0)
             testing.expect(t, pos2.y == 0)
 
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[0])
+            //testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
+            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
+            //testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[0])
+            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[0])  
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
-            testing.expect(t, ecs.small_table__len(&positions) == 1)
+            testing.expect(t, ecs.compact_table__len(&positions) == 1)
 
             testing.expect(t, ecs.remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
             testing.expect(t, ecs.remove_component(&positions, eid_2) == nil)
 
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == nil)
+            //testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
+            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
+            //testing.expect(t, positions.eid_to_ptr[eid_2.ix] == nil)
+            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_2.ix) == nil)
             testing.expect(t, positions.rid_to_eid[0].ix == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
-            testing.expect(t, ecs.small_table__len(&positions) == 0)
+            testing.expect(t, ecs.compact_table__len(&positions) == 0)
 
             testing.expect(t, ecs.remove_component(&positions, eid_2) == oc.Core_Error.Not_Found)
 
             // Get Component
-            testing.expect(t, ecs.small_table__len(&ais) == 2)
+            testing.expect(t, ecs.compact_table__len(&ais) == 2)
 
             a : ^AI
    
@@ -327,8 +334,8 @@ package ode_ecs__tests
             // Copy component 
             //
 
-            defer ecs.small_table__terminate(&ais_2)
-            testing.expect(t, ecs.small_table__init(&ais_2, &ecs_1, 10) == nil)
+            defer ecs.compact_table__terminate(&ais_2)
+            testing.expect(t, ecs.compact_table__init(&ais_2, &ecs_1, 10) == nil)
 
             a, _, err = ecs.copy_component(&ais_2, &ais, eid_2)
             testing.expect(t, err == nil)
@@ -356,11 +363,11 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // View
 
-    small_table__views_testing :: proc(
+    compact_table__views_testing :: proc(
         t: ^testing.T,
         ecs_1: ^ecs.Database,
-        ais: ^ecs.Small_Table(AI),
-        positions: ^ecs.Small_Table(Position),
+        ais: ^ecs.Compact_Table(AI),
+        positions: ^ecs.Compact_Table(Position),
         view1: ^ecs.View,
         view2: ^ecs.View,
         view3: ^ecs.View,
@@ -378,13 +385,13 @@ package ode_ecs__tests
  
         r := ecs.view__get_record(view1, 0)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
         r = ecs.view__get_record(view1, 1)
         testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
 
         // ADD POS 1
         pos, err = ecs.add_component(positions, eid_3)
@@ -400,8 +407,8 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view1, 2)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
 
         ecs.remove_component(ais, eid_1) 
         testing.expect(t, ecs.view_len(view1) == 2)
@@ -409,15 +416,15 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view1, 0)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
         r = ecs.view__get_record(view1, 1)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
         
         // ais.eid_to_ptr[eid_3.ix] was changed because ais component was removed
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
 
         err = ecs.remove_component(ais, eid_1)
         testing.expect(t, err == oc.Core_Error.Not_Found) 
@@ -428,8 +435,8 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view1, 0)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
         testing.expect(t, ecs.view__get_record(view1, 1) == nil)
 
@@ -466,8 +473,8 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view1, 0)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
 
         ai, err = ecs.add_component(ais, eid_2)
         ai.IQ = 22
@@ -481,13 +488,13 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view1, 0)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
 
         r = ecs.view__get_record(view1, 1)
         testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
 
         // FORCE CAP = 2
         old_cap := view1.cap
@@ -502,11 +509,11 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view3, 0)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view3, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_3))
 
         r = ecs.view__get_record(view3, 1)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view3, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_2))
 
         // RESTORE CAP
         view1.cap = old_cap
@@ -522,29 +529,29 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view1, 0)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
 
         r = ecs.view__get_record(view1, 1)
         testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
 
         r = ecs.view__get_record(view1, 2)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_small_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
         // view3
         
         r = ecs.view__get_record(view3, 0)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view3, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_3))
 
         r = ecs.view__get_record(view3, 1)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view3, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_2))
 
         it: ecs.Iterator
         ecs.iterator_init(&it, view1)
@@ -611,16 +618,16 @@ package ode_ecs__tests
 
         r = ecs.view__get_record(view2, 0)
         testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_small_table(view2, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_small_table(view2, r, positions) == ecs.get_component(positions, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, positions) == ecs.get_component(positions, eid_3))
         r = ecs.view__get_record(view2, 1)
         testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_small_table(view2, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_small_table(view2, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, ais) == ecs.get_component(ais, eid_1))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, positions) == ecs.get_component(positions, eid_1))
         r = ecs.view__get_record(view2, 2)
         testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_small_table(view2, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_small_table(view2, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, ais) == ecs.get_component(ais, eid_2))
+        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, positions) == ecs.get_component(positions, eid_2))
 
         testing.expect(t, ecs.iterator_init(&it, view2) == nil)
 
@@ -687,11 +694,11 @@ package ode_ecs__tests
         }
     }
 
-    small_table__create_entities_and_components :: proc (
+    compact_table__create_entities_and_components :: proc (
         t: ^testing.T, 
         ecs_1: ^ecs.Database, 
-        positions: ^ecs.Small_Table(Position), 
-        ais: ^ecs.Small_Table(AI)
+        positions: ^ecs.Compact_Table(Position), 
+        ais: ^ecs.Compact_Table(AI)
     ) -> (eid_1, eid_2, eid_3: ecs.entity_id) {
         
         err: ecs.Error
@@ -730,7 +737,7 @@ package ode_ecs__tests
 
 
     @(test)
-    small_table__views_subscribing_for_updates__test :: proc(t: ^testing.T) {
+    compact_table__views_subscribing_for_updates__test :: proc(t: ^testing.T) {
         //
         // Prepare
         //
@@ -742,8 +749,8 @@ package ode_ecs__tests
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
             
             ecs_1: ecs.Database
-            ais: ecs.Small_Table(AI)
-            positions: ecs.Small_Table(Position)
+            ais: ecs.Compact_Table(AI)
+            positions: ecs.Compact_Table(Position)
             view1: ecs.View
             view2: ecs.View
             view3: ecs.View
@@ -752,8 +759,8 @@ package ode_ecs__tests
             defer ecs.terminate(&ecs_1)
 
             testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
-            testing.expect(t, ecs.small_table__init(&ais, &ecs_1, 8) == nil)
-            testing.expect(t, ecs.small_table__init(&positions, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.compact_table__init(&ais, &ecs_1, 8) == nil)
+            testing.expect(t, ecs.compact_table__init(&positions, &ecs_1, 10) == nil)
 
         //
         // Test
@@ -765,7 +772,7 @@ package ode_ecs__tests
 
         // Create some entities and components
     
-        eid_1, eid_2, eid_3 = small_table__create_entities_and_components(t, &ecs_1, &positions, &ais)
+        eid_1, eid_2, eid_3 = compact_table__create_entities_and_components(t, &ecs_1, &positions, &ais)
 
         // Init views
 
@@ -783,7 +790,7 @@ package ode_ecs__tests
 
         testing.expect(t, view3.cap == 10)
 
-        small_table__views_testing(t, &ecs_1, &ais, &positions, &view1, &view2, &view3, eid_1, eid_2, eid_3)
+        compact_table__views_testing(t, &ecs_1, &ais, &positions, &view1, &view2, &view3, eid_1, eid_2, eid_3)
 
         testing.expect(t, view1.cap == 8)
 
@@ -800,7 +807,7 @@ package ode_ecs__tests
         ecs.suspend(&view2)
         ecs.suspend(&view3)
 
-        eid_1, eid_2, eid_3 = small_table__create_entities_and_components(t, &ecs_1, &positions, &ais)
+        eid_1, eid_2, eid_3 = compact_table__create_entities_and_components(t, &ecs_1, &positions, &ais)
 
         ecs.resume(&view1)
         ecs.resume(&view2)
@@ -820,7 +827,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(&view3) == 0)
         testing.expect(t, view3.cap == 10)
 
-        small_table__views_testing(t, &ecs_1, &ais, &positions, &view1, &view2, &view3, eid_1, eid_2, eid_3)
+        compact_table__views_testing(t, &ecs_1, &ais, &positions, &view1, &view2, &view3, eid_1, eid_2, eid_3)
 
         view1.state = ecs.Object_State.Terminated
         testing.expect(t, ecs.clear(&ecs_1) == ecs.API_Error.Object_Invalid)

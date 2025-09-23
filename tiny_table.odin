@@ -12,6 +12,7 @@ package ode_ecs
 
 // ODE
     import oc "ode_core"
+    import oc_maps "ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny_Table_Base 
@@ -22,7 +23,7 @@ package ode_ecs
 
         type_info: ^runtime.Type_Info,
         rid_to_eid: [TINY_TABLE__ROW_CAP]entity_id,
-        eid_to_ptr: oc.Toa_Map(TINY_TABLE__ROW_CAP * 3, rawptr),
+        eid_to_ptr: oc_maps.Tt_Map(TINY_TABLE__MAP_CAP, rawptr),
         subscribers: [TINY_TABLE__VIEWS_CAP]^View,
         len: int,
     }
@@ -84,7 +85,7 @@ package ode_ecs
     }
 
     tiny_table_base__get_component_by_entity :: proc (self: ^Tiny_Table_Base, eid: entity_id) -> rawptr {
-        return oc.toa_map__get(&self.eid_to_ptr, eid.ix)
+        return oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
     }
 
     tiny_table_base__memory_usage :: proc (self: ^Tiny_Table_Base) -> int { 
@@ -105,7 +106,7 @@ package ode_ecs
     tiny_table_raw__remove_component :: proc(self: ^Tiny_Table_Raw, target_eid: entity_id) -> (err: Error) {
         if self.len <= 0 do return oc.Core_Error.Not_Found 
 
-        target := oc.toa_map__get(&self.eid_to_ptr,  target_eid.ix)
+        target := oc_maps.tt_map__get(&self.eid_to_ptr,  target_eid.ix)
 
         // Check if component exists
         if target == nil do return oc.Core_Error.Not_Found
@@ -117,7 +118,7 @@ package ode_ecs
 
         assert(tail_eid.ix != DELETED_INDEX)
 
-        tail :=oc.toa_map__get(&self.eid_to_ptr, tail_eid.ix)
+        tail :=oc_maps.tt_map__get(&self.eid_to_ptr, tail_eid.ix)
         assert(tail != nil)
         
         target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
@@ -125,7 +126,7 @@ package ode_ecs
         // Replace removed component with tail
         if target == tail {
             // Remove indexes
-            oc.toa_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
@@ -141,8 +142,8 @@ package ode_ecs
             mem.copy(target, tail, T_size)
 
             // Update tail indexes
-            oc.toa_map__add(&self.eid_to_ptr, tail_eid.ix, target)
-            oc.toa_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.tt_map__add(&self.eid_to_ptr, tail_eid.ix, target)
+            oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
@@ -173,7 +174,7 @@ package ode_ecs
 
         for i := 0; i < TINY_TABLE__ROW_CAP; i+=1 do self.rid_to_eid[i].ix = DELETED_INDEX
 
-        oc.toa_map__clear(&self.eid_to_ptr)
+        oc_maps.tt_map__clear(&self.eid_to_ptr)
         
         if zero_components {
             mem.zero(&self.rows, self.type_info.size * self.len)
@@ -223,7 +224,7 @@ package ode_ecs
 
         if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full 
 
-        component = cast(^T) oc.toa_map__get(&self.eid_to_ptr, eid.ix)
+        component = cast(^T) oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
 
         // Check if component already exist
         if component == nil {
@@ -231,7 +232,7 @@ package ode_ecs
             component = &self.rows[self.len]
             
             // Update eid_to_ptr
-            err = oc.toa_map__add(&self.eid_to_ptr, eid.ix, cast(rawptr) component)
+            err = oc_maps.tt_map__add(&self.eid_to_ptr, eid.ix, cast(rawptr) component)
             if err != nil do return nil, err
 
             // Update rid_to_eid
@@ -287,7 +288,7 @@ package ode_ecs
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return false
 
-        return oc.toa_map__get(&self.eid_to_ptr, eid.ix) != nil
+        return oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix) != nil
     }
 
     tiny_table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Tiny_Table($T), #any_int row_number: int) -> entity_id {
