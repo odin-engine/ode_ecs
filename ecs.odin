@@ -201,6 +201,7 @@ package ode_ecs
             Entity_Id_Expired, // generations do not match
             Cannot_Add_Record_To_View_Container_Is_Full,
             Object_Invalid,
+            Component_Size_Cannot_Be_Zero,
         }
 
         Error :: union #shared_nil {

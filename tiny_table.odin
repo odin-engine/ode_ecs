@@ -200,6 +200,8 @@ package ode_ecs
             assert(db.state == Object_State.Normal, loc = loc) // db should be initialized
         }
 
+        if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero
+
         self.type_info = type_info_of(typeid_of(T))
         tiny_table_base__init(cast(^Tiny_Table_Base) self, db) or_return
 

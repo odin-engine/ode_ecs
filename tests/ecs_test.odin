@@ -27,6 +27,9 @@ package ode_ecs__tests
         IQ: f32,
         neurons_count: int
     }
+
+    Empty :: struct {
+    }
     
 ///////////////////////////////////////////////////////////////////////////////
 // Database
@@ -201,6 +204,31 @@ package ode_ecs__tests
     }
 ///////////////////////////////////////////////////////////////////////////////
 // Table
+ 
+     @(test)
+    table__empty_component__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+
+            // Log into console when panic happens
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            
+            ecs_1: ecs.Database
+            empty_table: ecs.Table(Empty)
+
+        //
+        // Test
+        //
+            testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
+            defer ecs.terminate(&ecs_1)
+
+            testing.expect(t, ecs.table__init(&empty_table, &ecs_1, 10) == ecs.API_Error.Component_Size_Cannot_Be_Zero)
+    }
 
     @(test)
     adding_removing_components__test :: proc(t: ^testing.T) {

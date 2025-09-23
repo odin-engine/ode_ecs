@@ -239,6 +239,8 @@ package ode_ecs
             assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 
+        if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero
+
         self.type_info = type_info_of(typeid_of(T))
 
         compact_table_base__init(&self.base, db, cap) or_return 
