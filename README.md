@@ -19,10 +19,6 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 - An example demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
 
-# Documentation
-- [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
-(more documentation incoming)
-
 # How to install
 
 Use `git clone` to clone this repository into your project, and then `import ecs "ode_ecs"`: 
@@ -64,7 +60,7 @@ You can have as many ECS databases in your game as you want:
     ecs.init(&ecs2, entities_cap=200)
 ```  
 
-The other two main objects in ODE_ECS are tables and views.  
+The other two main types of objects in ODE_ECS are tables and views.  
 
 ---
 
@@ -110,8 +106,8 @@ Or this:
 
 ```odin
     for i := 0; i < ecs.table_len(positions); i += 1 {
-        pos = &positions.rows[i]
-        fmt.println(pos)
+        pos := &positions.rows[i]
+        fmt.println(pos^)
     }
 ```  
 
@@ -241,3 +237,7 @@ By default, the maximum number of component types is 128. However, you can have 
 ```  
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
+
+# Documentation
+- [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
+- [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)

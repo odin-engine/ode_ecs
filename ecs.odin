@@ -68,6 +68,7 @@ package ode_ecs
             database__get_entity,
             table__get_entity_by_row_number,
             compact_table__get_entity_by_row_number,
+            tiny_table_base__get_entity_by_row_number,
             iterator__get_entity,
         }
 

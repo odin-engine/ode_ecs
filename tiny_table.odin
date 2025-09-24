@@ -79,7 +79,6 @@ package ode_ecs
         return self.len
     }
 
-    @(private)
     tiny_table_base__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Tiny_Table_Base, #any_int row_number: int) -> entity_id {
         return self.rid_to_eid[row_number]
     }
@@ -204,6 +203,7 @@ package ode_ecs
 
         self.type_info = type_info_of(typeid_of(T))
         tiny_table_base__init(cast(^Tiny_Table_Base) self, db) or_return
+        tiny_table_raw__clear(cast(^Tiny_Table_Raw) self, false) or_return
 
         return nil
     }

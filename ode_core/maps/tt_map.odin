@@ -138,7 +138,11 @@ package maps
     }
     
     tt_map__clear :: proc(self: ^Tt_Map($CAP, $V)) {
-        slice.zero(self.items[:CAP])
+        //slice.zero(self.items[:CAP])
+        for i:=0; i<CAP; i+=1 { 
+            self.items[i].key = oc.DELETED_INDEX
+            self.items[i].value = nil
+        }
     }
 
     tt_map__memory_usage :: proc(self: ^Tt_Map($CAP, $V)) -> int {

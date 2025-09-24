@@ -1,11 +1,7 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    NOTE: Work In Progress (WIP)
-
-    YOU CAN BUILD ANYTHING WITH ODE_ECS!
-    The reason for this is that ODE_ESC tables itself can be a component or part of any copmonent.
-    It means that you can build any data structure you want. 
+    Memory and speed comparision of Table and Compact_Table.
 */
 
 package ode_ecs_sample4
@@ -32,18 +28,6 @@ package ode_ecs_sample4
 // 
 
     //
-    // UI_Button
-    //
-
-        UI_Button :: struct {
-            text: string,
-        }
-
-        ui_button__print :: proc(self: ^UI_Button) {
-            fmt.print("button", self.text)
-        }
-
-    //
     // UI_Panel
     //
 
@@ -58,55 +42,6 @@ package ode_ecs_sample4
         }
 
     //
-    // UI_Text
-    // 
-
-        UI_Text :: struct {
-            text: string
-        }
-
-        ui_text__print :: proc(self: ^UI_Text) {
-            fmt.printf("text: %s ", self.text)
-        }
-    
-    //
-    // UI_Position
-    //
-
-        UI_Position :: struct {
-            x, y: int,              // coordinates relative to parent Element
-            parent: ^UI_Position, 
-
-            // We cannot use Tiny_Table on stack, because Tiny_Table has rows 
-            // of UI_Position on stack and compiler gets into a self reference cycle
-            // So instead we can use pointer to Tiny_Table, and hold Tiny_Tables in separate array
-            children: ^ecs.Tiny_Table(UI_Position), 
-        }
-
-        ui_position__init :: proc (self: ^UI_Position, parent: ^UI_Position, x, y: int) {
-            self.parent = parent
-            self.x = x
-            self.y = y
-        }
-
-        ui_position__add_child :: proc(self: ^UI_Position, db: ^ecs.Database, eid: ecs.entity_id) -> (child: ^UI_Position) {
-
-            // lazy init
-            // if self.children.state == ecs.Object_State.Not_Initialized {
-            //     err := ecs.tiny_table__init(&self.children, db)
-            //     if err != nil do report_error(err)
-            // }
-        
-            // ecs.add_component(&self.children, eid)
-        
-            return nil
-        }
-        
-        ui_position__print :: proc(root: ^UI_Position) {
-        
-        }
-
-    //
     // Tiny_Tables 
     //
 
@@ -117,6 +52,9 @@ package ode_ecs_sample4
 // 
     // ECS Database
     db: ecs.Database
+
+    table: ecs.Table(UI_Panel)
+    compact_table: ecs.Compact_Table(UI_Panel)
 
 //
 // This example includes simple error handing.
@@ -149,8 +87,7 @@ main :: proc() {
         // Simple error handling
         //
         err: ecs.Error
-        
-        root: UI_Position
+    
     //
     // Init 
     //
@@ -159,10 +96,16 @@ main :: proc() {
             err = ecs.terminate(&db) 
             if err != nil do report_error(err)
         }
-        err = ecs.init(&db, 100, allocator) 
+        
+        err = ecs.init(&db, 100_000, allocator) // Maximum 100K entities
         if err != nil { report_error(err); return }
         
-        // ui_position__init(&root, nil, 0, 0)
+        // Init tables
+        err = ecs.table_init(&table, &db, 1_000) // Maximum 1K components
+        if err != nil { report_error(err); return }
+
+        err = ecs.compact_table__init(&compact_table, &db, 1_000) // Maximum 1K components
+        if err != nil { report_error(err); return }
 
     //
     // Systems
@@ -173,12 +116,14 @@ main :: proc() {
     // Results
     //
 
-    tt: ecs.Tiny_Table(UI_Position)
-    ecs.tiny_table__init(&tt, &db)
-    fmt.printfln("%-30s %v bytes", "Tiny_Table(UI_Position) memory usage:", ecs.memory_usage(&tt))
-    fmt.printfln("%-30s %v", "is_power_of_2(64):", math.is_power_of_two(64))
-    fmt.printfln("%-30s %v", "is_power_of_2(63):", math.is_power_of_two(63))
-    fmt.printfln("%-30s %v", "is_power_of_2(65):", math.is_power_of_two(65))
+    // tt: ecs.Tiny_Table(UI_Position)
+    // ecs.tiny_table__init(&tt, &db)
+    // fmt.printfln("%-30s %v bytes", "Tiny_Table(UI_Position) memory usage:", ecs.memory_usage(&tt))
+    // fmt.printfln("%-30s %v", "is_power_of_2(64):", math.is_power_of_two(64))
+    // fmt.printfln("%-30s %v", "is_power_of_2(63):", math.is_power_of_two(63))
+    // fmt.printfln("%-30s %v", "is_power_of_2(65):", math.is_power_of_two(65))
+
+    fmt.println("YOOOOOOOOOOO!!!")
 
 
         //print_elements(&root)
