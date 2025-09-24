@@ -86,30 +86,43 @@ main :: proc() {
         err = ecs.init(&db, 100, allocator) 
         if err != nil { report_error(err); return }
 
+        //
         // Create entities
+        //
+
+        // human entity
         human, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
+        // robot entity
         robot, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
+        // non important entity, we just want to increase entity count
         _, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
+        // non important entity, we just want to increase entity count
         _, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
+        // bird entity
         bird, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
+        //
         // Tiny_Table
+        //
+
         pos_table : ecs.Tiny_Table(Position) // Tiny_Table !!!
         
         err = ecs.tiny_table__init(&pos_table, &db)
         if err != nil { report_error(err); return }
-        defer ecs.tiny_table__terminate(&pos_table)
 
-        // Add components
+        //
+        // Add components to human and bird entities
+        // 
+
         human_pos: ^Position
         bird_pos: ^Position
 
@@ -168,17 +181,31 @@ main :: proc() {
         // View on top of Tiny_Table, Table and Component_Table
         //
 
+        // 
+        // Table
+        //
+
         health_table : ecs.Table(Health)  // Table !!!
         err = ecs.table__init(&health_table, &db, 20)
         if err != nil { report_error(err); return } 
 
+        //
+        // Compact_Table
+        //
         inventory_table : ecs.Compact_Table(Inventory) // Compact_Table !!!
         err = ecs.compact_table__init(&inventory_table, &db, 5)
         if err != nil { report_error(err); return }     
 
+        //
+        // Create view on top of different table types
+        //
         view: ecs.View
         err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table}) // View on top of Tiny_Table, Table and Compact_Table !!!
         if err != nil { report_error(err); return }
+
+        //
+        // Add Health and Inventory components to human and bird entities
+        //
 
         // Add Health component to human
         human_health: ^Health
@@ -208,7 +235,15 @@ main :: proc() {
         bird_inventory.items[0][0] = Item_Type.Food
         bird_inventory.item_count = 1
 
-        ecs.view__rebuild(&view) // Rebuild view after adding components because Positions were added before view was created
+        //
+        // Rebuild view after adding components because Positions were added before view was created
+        //
+
+        ecs.view__rebuild(&view) 
+
+        //
+        // Iterate over view that includes Position(Tiny_Table), Health(Table) and Inventory(Compact_Table) components
+        //
 
         it: ecs.Iterator
         err = ecs.iterator_init(&it, &view)   
