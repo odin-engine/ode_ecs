@@ -82,7 +82,7 @@ package ode_ecs_sample3
     arch: Arch
 
 //
-// This example includes simple error handing.
+// This example includes simple error handling.
 //
 main :: proc() {
 

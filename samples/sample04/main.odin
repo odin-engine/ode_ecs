@@ -1,7 +1,11 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    Tiny_Table example. Also shows how to use View on top of different table types (Tiny_Table, Table and Compact_Table).
+    In this example:
+    - How to use Tiny_Table
+    - How to use View on top of different table types (Tiny_Table, Table, and Compact_Table)
+    - An example of a tags table
+    - An example of a bool table
 */
 
 package ode_ecs_sample4
@@ -42,7 +46,7 @@ package ode_ecs_sample4
     } 
 
 //
-// This example includes simple error handing.
+// This example includes simple error handling.
 //
 main :: proc() {
 
@@ -60,7 +64,7 @@ main :: proc() {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
+        // Replace default allocator with a panic allocator to make sure that  
         // no allocations happen outside of provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -269,6 +273,84 @@ main :: proc() {
                 fmt.println("Unknown entity: ", eid, pos, health, inventory)
             }  
         }
+
+        //
+        // An example of a tags table 
+        // 
+
+        Player_State :: enum {
+            Walking, 
+            Running,
+            Flying,
+            Stunned,
+            Dead,
+            Fighting,
+        }
+
+        tags_table : ecs.Table(Player_State)
+
+        err = ecs.table_init(&tags_table, &db, 10)
+        if err != nil { report_error(err); return }
+
+        enum_comp : ^Player_State
+        enum_comp, err = ecs.add_component(&tags_table, human)
+        if err != nil { report_error(err); return }
+        enum_comp^ = Player_State.Running
+
+        enum_comp, err = ecs.add_component(&tags_table, bird)
+        if err != nil { report_error(err); return }
+        enum_comp^ = Player_State.Flying
+
+        fmt.println()
+        fmt.println("Iterate over tags_table:")
+        fmt.println("--------------------------------------------------------------")
+        for &tag, index in tags_table.rows {
+            eid := ecs.get_entity(&tags_table, index)
+
+            if eid == human {
+                fmt.println("Human is", tag)
+            } else if eid == bird {
+                fmt.println("Bird is", tag)
+            }   
+            else {
+                fmt.println("Unknown entity is", tag)
+            }   
+        }
+
+        //
+        // An example of a bool table (I think it’s probably better to organize your components to hold more data, 
+        // and using a struct might be better since you can add more fields later — but you can use any type if you want).
+        // 
+
+        bool_table : ecs.Table(bool)
+
+        err = ecs.table_init(&bool_table, &db, 10)
+        if err != nil { report_error(err); return }
+
+        is_true : ^bool
+        is_true, err = ecs.add_component(&bool_table, human)
+        if err != nil { report_error(err); return }
+        is_true^ = false
+
+        is_true, err = ecs.add_component(&bool_table, bird)
+        if err != nil { report_error(err); return }
+        is_true^ = true
+        fmt.println()
+        fmt.println("Iterate over bool_table:")
+        fmt.println("--------------------------------------------------------------")
+        for &comp, index in bool_table.rows {
+            eid := ecs.get_entity(&bool_table, index)
+
+            if eid == human {
+                fmt.println("Human is", comp)
+            } else if eid == bird {
+                fmt.println("Bird is", comp)
+            }   
+            else {
+                fmt.println("Unknown entity is", comp)
+            }   
+        }
+
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

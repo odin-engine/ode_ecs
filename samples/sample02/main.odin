@@ -1,7 +1,9 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    Run this sample with speed optimization to see times closer to real-world performance:
+    This example shows how to optimize your ECS (Approach 1 vs. Approach 2).  
+    
+    Run this sample with speed optimizations enabled to see results closer to real-world performance:
 
     odin run . -o:speed 
 */
@@ -96,7 +98,7 @@ package ode_ecs_sample2
     
 //
 // ECS Optimization example
-// This example includes simple error handing.
+// This example includes simple error handling.
 //
 main :: proc() { 
 

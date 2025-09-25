@@ -50,7 +50,7 @@ package ode_ecs_sample1
     g_combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
 
 //
-// This example includes simple error handing.
+// This example includes simple error handling.
 //
 main :: proc() {
 
