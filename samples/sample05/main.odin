@@ -2,6 +2,10 @@
     2025 (c) Oleh, https://github.com/zm69
 
     Memory and speed comparision of Table and Compact_Table.
+
+    Run this sample with speed optimizations to see results closer to real-world performance:
+
+    odin run . -o:speed
 */
 
 package ode_ecs_sample5
@@ -248,7 +252,7 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
        
-        fmt.printfln("%-30s %.2f ms", "Loop time:", f64(smaller_table_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(smaller_table_time) / 1_000_000.0)
         fmt.printfln("%-30s %.2f MB", "Memory usage:", f64(ecs.memory_usage(&table))/  f64(runtime.Megabyte))
 
         //
@@ -260,7 +264,7 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
        
-        fmt.printfln("%-30s %.2f ms", "Loop time:", f64(smaller_compact_table_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(smaller_compact_table_time) / 1_000_000.0)
         fmt.printfln("%-30s %.2f MB", "Memory usage:",  f64(ecs.memory_usage(&compact_table))/  f64(runtime.Megabyte))
        
         //
@@ -272,7 +276,7 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
        
-        fmt.printfln("%-30s %.2f ms", "Loop time:", f64(large_table_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(large_table_time) / 1_000_000.0)
         fmt.printfln("%-30s %.2f MB", "Memory usage:", f64(ecs.memory_usage(&large_table))/  f64(runtime.Megabyte))
 
 
@@ -285,7 +289,7 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
        
-        fmt.printfln("%-30s %.2f ms", "Loop time:", f64(large_compact_table_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(large_compact_table_time) / 1_000_000.0)
         fmt.printfln("%-30s %.2f MB", "Memory usage:", f64(ecs.memory_usage(&large_compact_table))/  f64(runtime.Megabyte))
 
         fmt.println("=========================================")

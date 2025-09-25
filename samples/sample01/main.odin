@@ -1,9 +1,9 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    Run this sample with speed optimization to see times closer to real-world performance:
+    Run this sample with speed optimizations to see results closer to real-world performance:
 
-    odin run . -o:speed 
+    odin run . -o:speed
 */
 
 package ode_ecs_sample1
@@ -215,16 +215,16 @@ main :: proc() {
         fmt.println("-----------------------------------------------------------")
 
         s = oc.add_thousand_separator(ecs.table_len(&ais), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v components)", "Iterate over table:", f64(nanos0)/1_000_000.0, s)
+        fmt.printfln("%-30s %.4f ms (%v components)", "Iterate over table:", f64(nanos0)/1_000_000.0, s)
         delete(s, allocator)
         
         s = oc.add_thousand_separator(ecs.view_len(&physical), sep=',', allocator=allocator)
         s2 := oc.add_thousand_separator(ecs.view_len(&physical) * 2, sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v rows, %v components)", "Iterate over view:", f64(nanos1)/1_000_000.0, s, s2)
+        fmt.printfln("%-30s %.4f ms (%v rows, %v components)", "Iterate over view:", f64(nanos1)/1_000_000.0, s, s2)
         delete(s, allocator)
         delete(s2, allocator)
 
-        fmt.printfln("%-30s %.2f ms (destroying 10K entities, creating 10K entities with random components and iterating table and view)", "Frame two time:", f64(nanos2)/1_000_000.0)
+        fmt.printfln("%-30s %.4f ms (destroying 10K entities, creating 10K entities with random components and iterating table and view)", "Frame two time:", f64(nanos2)/1_000_000.0)
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

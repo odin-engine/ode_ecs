@@ -2,10 +2,10 @@
     2025 (c) Oleh, https://github.com/zm69
 
     This example shows how to optimize your ECS (Approach 1 vs. Approach 2).  
-    
-    Run this sample with speed optimizations enabled to see results closer to real-world performance:
 
-    odin run . -o:speed 
+    Run this sample with speed optimizations to see results closer to real-world performance:
+
+    odin run . -o:speed
 */
 
 package ode_ecs_sample2
@@ -369,24 +369,24 @@ main :: proc() {
 
         difference := f64(nanos1) / f64(nanos2)
 
-        fmt.printfln("%-30s %.2f ms", "Approach 1 time:", f64(nanos1)/1_000_000.0)
-        fmt.printfln("%-30s %.2f ms", "Approach 2 time:", f64(nanos2)/1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Approach 1 time:", f64(nanos1)/1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Approach 2 time:", f64(nanos2)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
-        fmt.printfln("%-30s %.2f times", "Difference is ", difference)
+        fmt.printfln("%-30s %.4f times", "Difference is ", difference)
         
         fmt.println("")
 
         difference_with_payload := f64(nanos1_with_payload) / f64(nanos2_with_payload)
 
-        fmt.printfln("%-30s %.2f ms", "Approach 1 with payload time:", f64(nanos1_with_payload)/1_000_000.0)
-        fmt.printfln("%-30s %.2f ms", "Approach 2 with payload time:", f64(nanos2_with_payload)/1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Approach 1 with payload time:", f64(nanos1_with_payload)/1_000_000.0)
+        fmt.printfln("%-30s %.4f ms", "Approach 2 with payload time:", f64(nanos2_with_payload)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
-        fmt.printfln("%-30s %.2f times", "Difference is ", difference_with_payload)
+        fmt.printfln("%-30s %.4f times", "Difference is ", difference_with_payload)
         
         fmt.println("")
         fmt.println("")
 
-        fmt.printfln("%-30s \"Approach 2\" is %.1f to %.1f times faster than \"Approach 1\" depending on component size", "End result: ", difference_with_payload, difference)
+        fmt.printfln("%-30s \"Approach 2\" is %.1f to %.1f times faster than \"Approach 1\", depending on the component size", "End result: ", difference_with_payload, difference)
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

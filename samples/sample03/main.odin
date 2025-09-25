@@ -7,9 +7,10 @@
     Result: The Archetype approach is not worth it. Views are about x2 times faster on my PC.
     Even if the Archetype approach were as fast as the View approach, the View approach has other advantages.
 
-    Run this sample with speed optimization to see times closer to real-world performance:
+    Run this sample with speed optimizations to see results closer to real-world performance:
 
-    odin run . -o:speed 
+    odin run . -o:speed
+
 */
 
 package ode_ecs_sample3
@@ -287,18 +288,18 @@ main :: proc() {
         fmt.printfln("%-30s %v bytes", "AI component size:", size_of(AI))
         fmt.printfln("%-30s %v bytes", "Component component size:", size_of(Component))
 
-        fmt.printfln("%-30s %v MB", "Total memory usage:", ecs.memory_usage(&db) / runtime.Megabyte)
+        fmt.printfln("%-30s %.2f MB", "Total memory usage:", f64(ecs.memory_usage(&db)) / f64(runtime.Megabyte))
         fmt.println("-----------------------------------------------------------")
         s = oc.add_thousand_separator(ecs.table_len(&ais), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v rows)", "Iterating over `ais` table:", f64(avg_table)/1_000_000.0, s)
+        fmt.printfln("%-30s %.4f ms (%v rows)", "Iterating over `ais` table:", f64(avg_table)/1_000_000.0, s)
         delete(s, allocator)
 
         s = oc.add_thousand_separator(step_1_view_len, sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v rows)", "Iterating over view:", f64(avg_view)/1_000_000.0, s)
+        fmt.printfln("%-30s %.4f ms (%v rows)", "Iterating over view:", f64(avg_view)/1_000_000.0, s)
         delete(s, allocator)
 
         s = oc.add_thousand_separator(arch__len(&arch), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %.2f ms (%v rows)", "Iterating over archetype:", f64(avg_arch)/1_000_000.0, s)
+        fmt.printfln("%-30s %4f ms (%v rows)", "Iterating over archetype:", f64(avg_arch)/1_000_000.0, s)
         delete(s, allocator)
 
         d: f64
