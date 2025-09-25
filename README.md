@@ -261,7 +261,7 @@ for i := 0; i < ecs.table_len(&pos_table); i += 1 {
 }
 ```
 
-See [this sample](https://github.com/odin-engine/ode_ecs/samples/sample04/main.odin) for more usage examples.
+See [this sample](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample04/main.odin) for more usage examples.
 
 > **NOTE:** Use `Tiny_Table` when you need a table with a component capacity of eight or fewer (you can change the limit via `TINY_TABLE__ROW_CAP`).
 
@@ -272,9 +272,9 @@ inventory_table : ecs.Compact_Table(Inventory) // Compact_Table !!!
 err = ecs.compact_table__init(&inventory_table, &db, 5)
 ```
 
-Views can be created on top of a mix of `Table`s, `Compact_Table`s, and `Tiny_Table`s. See the example [here](https://github.com/odin-engine/ode_ecs/samples/sample04/main.odin#L185).
+Views can be created on top of a mix of `Table`s, `Compact_Table`s, and `Tiny_Table`s. See the example [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample04/main.odin#L185).
 
-[Sample05](https://github.com/odin-engine/ode_ecs/samples/sample05/main.odin) shows memory usage and speed comparisons between `Table`, `Compact_Table`, and `Tiny_Table`.
+[Sample05](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample05/main.odin) shows memory usage and speed comparisons between `Table`, `Compact_Table`, and `Tiny_Table`.
 
 > **NOTE:** Use `Compact_Table` if you want to save memory at the cost of speed, but only if its capacity is much lower than your database entity capacity. If its capacity is close to the database entity capacity, `Table` will be faster and use less memory.
 
