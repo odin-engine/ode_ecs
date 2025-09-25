@@ -879,3 +879,95 @@ package ode_ecs__tests
         testing.expect(t, ecs.clear(&ecs_1) == nil) 
     }
 
+    @(test)
+    views_iterator_range__test :: proc(t: ^testing.T) {
+
+        //
+        // Prepare
+        //
+            // // Log into console when panic happens
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            // Replace default allocator with a panic allocator to make sure that  
+            // no allocations happen outside of provided allocator
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+        //
+        //  Test starts here
+        //
+
+        db: ecs.Database
+        table: ecs.Table(Position)
+        view: ecs.View
+        eid: ecs.entity_id
+        err: ecs.Error
+        pos: ^Position
+        i: int
+
+        ENTITIES_CAP :: 10
+        
+        // Init db
+        defer ecs.terminate(&db)
+        err = ecs.init(&db, ENTITIES_CAP, allocator)
+        testing.expect(t, err == nil)
+
+        // Init table
+        err = ecs.table_init(&table, &db, ENTITIES_CAP)
+        testing.expect(t, err == nil)
+
+        // Init view
+        err = ecs.view_init(&view, &db, {&table})
+        testing.expect(t, err == nil)
+
+        // Fill table
+        for i := 0; i < ENTITIES_CAP; i+=1 {
+            eid, err = ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+
+            pos, err = ecs.add_component(&table, eid)
+            testing.expect(t, err == nil)
+        }
+
+        testing.expect(t, ecs.view_len(&view) == ENTITIES_CAP)
+
+        //
+        // Test view ranges
+        //
+
+        it: ecs.Iterator
+        ecs.iterator_init(&it, &view)
+
+        // Default full range
+        for i=0; ecs.iterator_next(&it); i+=1 {
+            testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
+        }
+
+        testing.expect(t, i == ENTITIES_CAP) // making sure it was full range
+
+        // [0, 5] range
+        start_row : int = 0
+        end_row : int = 5
+        ecs.iterator_init(&it, &view, start_row, end_row)
+        for i=start_row; ecs.iterator_next(&it); i+=1 {
+            testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
+        }
+
+        // [4, ENTITIES_CAP] range
+        start_row = 4
+        end_row = ENTITIES_CAP
+        ecs.iterator_init(&it, &view, start_row, end_row)
+        for i=start_row; ecs.iterator_next(&it); i+=1 {
+            testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
+        }
+
+        // [3, 8] range
+        start_row = 3
+        end_row = 8
+        ecs.iterator_init(&it, &view, start_row, end_row)
+        for i=start_row; ecs.iterator_next(&it); i+=1 {
+            testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
+        }
+
+    }

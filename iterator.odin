@@ -10,16 +10,36 @@ package ode_ecs
     
     Iterator :: struct {
         view: ^View,
+        
+        start_row: int,
+        end_row: int, 
+
         one_record_size: int, 
         records_size: int,
+
 
         // cache
         raw_index: int,
         record: ^View_Record,
     }
 
-    iterator_init :: proc(self: ^Iterator, view: ^View) -> (err: Error)  {
+    // Use start_row and end_row if you want to process View in batches
+    iterator_init :: proc(self: ^Iterator, view: ^View, start_row: int = 0, end_row: int = 0) -> (err: Error)  {
+        when VALIDATIONS {
+            assert(view != nil)
+            assert(self != nil)
+            assert(start_row >= 0)
+            assert(end_row <= len(view.rows))
+            assert(start_row <= end_row)
+        }
+       
         self.view = view 
+        self.start_row = start_row
+        if end_row == 0 {
+            self.end_row = len(view.rows)
+        } else {
+            self.end_row = end_row
+        }
 
         return iterator_reset(self)
     }
@@ -33,9 +53,9 @@ package ode_ecs
         } 
 
         self.one_record_size = self.view.one_record_size
-        self.raw_index = -self.one_record_size
 
-        self.records_size = len(self.view.rows) * self.one_record_size
+        self.raw_index = self.one_record_size * (self.start_row - 1)
+        self.records_size = self.one_record_size * self.end_row
 
         return nil
     }
