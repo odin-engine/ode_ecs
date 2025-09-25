@@ -1,7 +1,7 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    Memory and speed comparision of Table and Compact_Table.
+    Table vs. Compact_Table comparison and Tiny_Table vs. Compact_Table vs. Table comparison.
 
     Run this sample with speed optimizations to see results closer to real-world performance:
 
@@ -237,6 +237,92 @@ main :: proc() {
         time.stopwatch_stop(&sw)
         _, _, _, large_compact_table_time := time.precise_clock_from_stopwatch(sw)
 
+
+        //
+        // Comparison with Tiny_Table
+        //
+
+        tiny_table: ecs.Tiny_Table(Health)
+        table8: ecs.Table(Health)
+        compact_table8: ecs.Compact_Table(Health)
+
+        err = ecs.tiny_table__init(&tiny_table, &db)
+        if err != nil { report_error(err); return }
+
+        err = ecs.table__init(&table8, &db, ecs.TINY_TABLE__ROW_CAP)
+        if err != nil { report_error(err); return }
+
+        err = ecs.compact_table__init(&compact_table8, &db, ecs.TINY_TABLE__ROW_CAP)
+        if err != nil { report_error(err); return }
+
+        //
+        // Fill tables
+        //
+
+        for i:= 0; i < ecs.TINY_TABLE__ROW_CAP; i+=1 {
+            eid = ecs.get_entity(&db, i)
+
+            component, err = ecs.add_component(&tiny_table, eid)
+            if err != nil { report_error(err); return }
+
+            component, err = ecs.add_component(&table8, eid)
+            if err != nil { report_error(err); return }
+
+            component, err = ecs.add_component(&compact_table8, eid)
+            if err != nil { report_error(err); return }
+        }
+
+
+
+        //
+        // Iterate over Tiny_Table
+        //
+
+        time.stopwatch_start(&sw)
+
+            for &comp, index in tiny_table.rows {
+                eid = ecs.get_entity(&tiny_table, index)
+
+                comp.hp += eid.ix  // random operation over component
+                comp.max_hp += eid.ix
+            }    
+        
+        time.stopwatch_stop(&sw)
+        _, _, _, tiny_table_time := time.precise_clock_from_stopwatch(sw)
+
+
+        //
+        // Iterate over tiny Compact_Table
+        //
+
+        time.stopwatch_start(&sw)
+
+            for &comp, index in compact_table8.rows {
+                eid = ecs.get_entity(&compact_table8, index)
+
+                comp.hp += eid.ix  // random operation over component
+                comp.max_hp += eid.ix
+            }    
+        
+        time.stopwatch_stop(&sw)
+        _, _, _, compact_table8_time := time.precise_clock_from_stopwatch(sw)
+
+        //
+        // Iterate over tiny Table
+        //
+
+        time.stopwatch_start(&sw)
+
+            for &comp, index in table8.rows {
+                eid = ecs.get_entity(&table8, index)
+
+                comp.hp += eid.ix  // random operation over component
+                comp.max_hp += eid.ix
+            }    
+        
+        time.stopwatch_stop(&sw)
+        _, _, _, table8_time := time.precise_clock_from_stopwatch(sw)
+
         s:= oc.add_thousand_separator(ecs.database__entities_len(&db), sep=',', allocator=allocator)
         fmt.printfln("%-30s %s", "Entities count:", s)
         delete(s, allocator)
@@ -291,14 +377,59 @@ main :: proc() {
        
         fmt.printfln("%-30s %.4f ms", "Loop time:", f64(large_compact_table_time) / 1_000_000.0)
         fmt.printfln("%-30s %.2f MB", "Memory usage:", f64(ecs.memory_usage(&large_compact_table))/  f64(runtime.Megabyte))
+    
+        fmt.println()
+        fmt.println("Comparison with Tiny_Table")
+        fmt.println("=========================================")
+
+        //
+        // Tiny_Table
+        //
+        fmt.println()
+        s = oc.add_thousand_separator(ecs.table_len(&tiny_table), sep=',', allocator=allocator)
+        fmt.printfln("Tiny_Table (%v rows)", s)
+        delete(s, allocator)
+        fmt.println("-----------------------------------------")
+    
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(tiny_table_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f MB", "Memory usage:",  f64(ecs.memory_usage(&tiny_table)) / f64(runtime.Megabyte))
+
+        //
+        // Compact_Table8
+        //
+        fmt.println()
+        s = oc.add_thousand_separator(ecs.table_len(&compact_table8), sep=',', allocator=allocator)
+        fmt.printfln("Compact_Table (%v rows)", s)
+        delete(s, allocator)
+        fmt.println("-----------------------------------------")
+    
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(compact_table8_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f MB", "Memory usage:",  f64(ecs.memory_usage(&compact_table8)) / f64(runtime.Megabyte))
+
+        //
+        // Table8
+        //
+        fmt.println()
+        s = oc.add_thousand_separator(ecs.table_len(&table8), sep=',', allocator=allocator)
+        fmt.printfln("Table (%v rows)", s)
+        delete(s, allocator)
+        fmt.println("-----------------------------------------")
+    
+        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(table8_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f MB", "Memory usage:",  f64(ecs.memory_usage(&table8)) / f64(runtime.Megabyte))
 
         fmt.println("=========================================")
-        fmt.println("Conclusion:")
-        fmt.println("It makes sense to use Compact_Table if you want to save memory at the cost of speed,")
-        fmt.println("but only if the Compact_Table capacity is much lower than your database entity capacity.")
-        fmt.println("If the Compact_Table capacity is close to the database entity capacity, Table will be faster and save you more memory.")
+        fmt.println("Conclusions:")
+        fmt.println()
+        fmt.println("   Compact_Table vs. Table")
+        fmt.println("       It makes sense to use Compact_Table if you want to save memory at the cost of speed,")
+        fmt.println("       but only if the Compact_Table capacity is much lower than your database entity capacity.")
+        fmt.println("       If the Compact_Table capacity is close to the database entity capacity, Table will be faster and save you more memory.")
+        fmt.println()
+        fmt.println("   For Tiny_Table vs. Compact_Table vs. Table:")
+        fmt.printfln("       Use Tiny_Table when you need a table with a component capacity of %v or less.", ecs.TINY_TABLE__ROW_CAP)
 
-    
+
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
