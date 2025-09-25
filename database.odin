@@ -125,8 +125,6 @@ package ode_ecs
         database__is_entity_correct(self, eid) or_return
 
         err: Error = nil 
-
-        table: ^Table_Base
         bits := self.eid_to_bits[eid.ix]
 
         for table in self.tables.items {  

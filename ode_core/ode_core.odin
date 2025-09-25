@@ -23,6 +23,7 @@ package ode_core
         Already_Freed,
         Out_Of_Bounds,
         Already_Exists,
+        Capacity_Is_Not_Power_Of_2,
     }
 
     Error :: union #shared_nil {

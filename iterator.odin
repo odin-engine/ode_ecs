@@ -62,7 +62,7 @@ package ode_ecs
         }
     }
 
-    iterator__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Small_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
+    iterator__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
         #no_bounds_check {
             return (^T)(it.record.refs[it.view.tid_to_cid[table.id]])
         }

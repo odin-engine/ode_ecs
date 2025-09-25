@@ -1,11 +1,11 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    NOTE: Work In Progress (WIP)
-
-    YOU CAN BUILD ANYTHING WITH ODE_ECS!
-    The reason for this is that ODE_ESC tables itself can be a component or part of any copmonent.
-    It means that you can build any data structure you want. 
+    In this example:
+    - How to use Tiny_Table
+    - How to use View on top of different table types (Tiny_Table, Table, and Compact_Table)
+    - An example of a tags table
+    - An example of a bool table
 */
 
 package ode_ecs_sample4
@@ -31,95 +31,22 @@ package ode_ecs_sample4
 // Components
 // 
 
-    //
-    // UI_Button
-    //
+    Position :: struct { x, y: int }
+    AI :: struct { level: int, name: [32]u8 }
+    Health :: struct { hp: int, max_hp: int }
+    Inventory :: struct { items: [8][32]Item_Type, item_count: int }
 
-        UI_Button :: struct {
-            text: string,
-        }
-
-        ui_button__print :: proc(self: ^UI_Button) {
-            fmt.print("button", self.text)
-        }
-
-    //
-    // UI_Panel
-    //
-
-        UI_Panel :: struct { 
-            color: int, 
-            width: int,
-            height: int, 
-        }
-
-        ui_panel__print :: proc(self: ^UI_Panel) {
-            fmt.printf("panel width=%v height=%v", self.width, self.height)
-        }
-
-    //
-    // UI_Text
-    // 
-
-        UI_Text :: struct {
-            text: string
-        }
-
-        ui_text__print :: proc(self: ^UI_Text) {
-            fmt.printf("text: %s ", self.text)
-        }
-    
-    //
-    // UI_Position
-    //
-
-        UI_Position :: struct {
-            x, y: int,              // coordinates relative to parent Element
-            parent: ^UI_Position, 
-
-            // We cannot use Tiny_Table on stack, because Tiny_Table has rows 
-            // of UI_Position on stack and compiler gets into a self reference cycle
-            // So instead we can use pointer to Tiny_Table, and hold Tiny_Tables in separate array
-            children: ^ecs.Tiny_Table(UI_Position), 
-        }
-
-        ui_position__init :: proc (self: ^UI_Position, parent: ^UI_Position, x, y: int) {
-            self.parent = parent
-            self.x = x
-            self.y = y
-        }
-
-        ui_position__add_child :: proc(self: ^UI_Position, db: ^ecs.Database, eid: ecs.entity_id) -> (child: ^UI_Position) {
-
-            // lazy init
-            // if self.children.state == ecs.Object_State.Not_Initialized {
-            //     err := ecs.tiny_table__init(&self.children, db)
-            //     if err != nil do report_error(err)
-            // }
-        
-            // ecs.add_component(&self.children, eid)
-        
-            return nil
-        }
-        
-        ui_position__print :: proc(root: ^UI_Position) {
-        
-        }
-
-    //
-    // Tiny_Tables 
-    //
-
-
-    
-// 
-// Globals
-// 
-    // ECS Database
-    db: ecs.Database
+    Item_Type :: enum {
+        None = 0,
+        Sword,
+        Armor,
+        Potion,
+        Food,
+        Misc
+    } 
 
 //
-// This example includes simple error handing.
+// This example includes simple error handling.
 //
 main :: proc() {
 
@@ -137,7 +64,7 @@ main :: proc() {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
+        // Replace default allocator with a panic allocator to make sure that  
         // no allocations happen outside of provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -145,15 +72,16 @@ main :: proc() {
     //
     // Actual ODE_ECS sample starts here.
     //
-        //
+
         // Simple error handling
-        //
         err: ecs.Error
-        
-        root: UI_Position
-    //
-    // Init 
-    //
+
+        // ECS Database
+        db: ecs.Database
+
+        // Entities
+        human, robot, bird: ecs.entity_id
+
         // Init database
         defer { 
             err = ecs.terminate(&db) 
@@ -161,23 +89,268 @@ main :: proc() {
         }
         err = ecs.init(&db, 100, allocator) 
         if err != nil { report_error(err); return }
+
+        //
+        // Create entities
+        //
+
+        // human entity
+        human, err = ecs.create_entity(&db)
+        if err != nil { report_error(err); return }
+
+        // robot entity
+        robot, err = ecs.create_entity(&db)
+        if err != nil { report_error(err); return }
+
+        // non important entity, we just want to increase entity count
+        _, err = ecs.create_entity(&db)
+        if err != nil { report_error(err); return }
+
+        // non important entity, we just want to increase entity count
+        _, err = ecs.create_entity(&db)
+        if err != nil { report_error(err); return }
+
+        // bird entity
+        bird, err = ecs.create_entity(&db)
+        if err != nil { report_error(err); return }
+
+        //
+        // Tiny_Table
+        //
+
+        pos_table : ecs.Tiny_Table(Position) // Tiny_Table !!!
         
-        // ui_position__init(&root, nil, 0, 0)
+        err = ecs.tiny_table__init(&pos_table, &db)
+        if err != nil { report_error(err); return }
 
-    //
-    // Systems
-    //
+        //
+        // Add components to human and bird entities
+        // 
+
+        human_pos: ^Position
+        bird_pos: ^Position
+
+        human_pos, err = ecs.add_component(&pos_table, human)
+        if err != nil { report_error(err); return }
+        human_pos.x = 10
+        human_pos.y = 20    
+
+        bird_pos, err = ecs.add_component(&pos_table, bird)
+        if err != nil { report_error(err); return }
+        bird_pos.x = 100
+        bird_pos.y = 200   
+
+        // 
+        // Iterate over components. 
+        // NOTE: Tiny_Table can hold only eight (defined by TINY_TABLE__ROW_CAP) components. 
+        // .rows in Tiny_Table is a static (fixed-size) array of TINY_TABLE__ROW_CAP elements (because Tiny_Table has no dynamic arrays and is fully in stack memory). 
+        // There is no metadata for it , so if you use `for &pos, index in pos_table.rows` loop it will go through all eight elements.
+        // To avoid this use `for i := 0; i < ecs.table_len(&pos_table); i += 1` loop instead.
+        // 
+        fmt.println("Using `for &pos, index in pos_table.rows` loop:")
+        fmt.println("--------------------------------------------------------------")
+        for &pos, index in pos_table.rows {
+            eid := ecs.get_entity(&pos_table, index)
+
+            if eid == human {
+                fmt.println("Human: ", eid, pos)
+            } else if eid == bird {
+                fmt.println("Bird: ", eid, pos)
+            }   
+            else {
+                fmt.println("Unknown entity: ", eid, pos)
+            }   
+        }
+
+        fmt.println()
+        
+        fmt.println("Using `for i := 0; i < ecs.table_len(&pos_table); i += 1` loop:")
+        fmt.println("--------------------------------------------------------------")
+        // This loop is better because it goes only through valid components
+        for i := 0; i < ecs.table_len(&pos_table); i += 1 {
+            component := &pos_table.rows[i]
+            eid := ecs.get_entity(&pos_table, i)
+
+            if eid == human {
+                fmt.println("Human: ", eid, component)
+            } else if eid == bird {
+                fmt.println("Bird: ", eid, component)
+            }   
+            else {
+                fmt.println("Unknown entity: ", eid, component)
+            }  
+        }
+
+        //
+        // View on top of Tiny_Table, Table and Component_Table
+        //
+
+        // 
+        // Table
+        //
+
+        health_table : ecs.Table(Health)  // Table !!!
+        err = ecs.table__init(&health_table, &db, 20)
+        if err != nil { report_error(err); return } 
+
+        //
+        // Compact_Table
+        //
+        inventory_table : ecs.Compact_Table(Inventory) // Compact_Table !!!
+        err = ecs.compact_table__init(&inventory_table, &db, 5)
+        if err != nil { report_error(err); return }     
+
+        //
+        // Create view on top of different table types
+        //
+        view: ecs.View
+        err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table}) // View on top of Tiny_Table, Table and Compact_Table !!!
+        if err != nil { report_error(err); return }
+
+        //
+        // Add Health and Inventory components to human and bird entities
+        //
+
+        // Add Health component to human
+        human_health: ^Health
+        human_health, err = ecs.add_component(&health_table, human)
+        if err != nil { report_error(err); return }
+        human_health.hp = 100
+        human_health.max_hp = 300
+
+        // Add Inventory component to human
+        human_inventory: ^Inventory
+        human_inventory, err = ecs.add_component(&inventory_table, human)
+        if err != nil { report_error(err); return }
+        human_inventory.items[0][0] = Item_Type.Sword
+        human_inventory.item_count = 1
+
+        // Add Health component to bird
+        bird_health: ^Health
+        bird_health, err = ecs.add_component(&health_table, bird)
+        if err != nil { report_error(err); return }
+        bird_health.hp = 10
+        bird_health.max_hp = 10
+
+        // Add Inventory component to bird
+        bird_inventory: ^Inventory  
+        bird_inventory, err = ecs.add_component(&inventory_table, bird)
+        if err != nil { report_error(err); return }
+        bird_inventory.items[0][0] = Item_Type.Food
+        bird_inventory.item_count = 1
+
+        //
+        // Rebuild view after adding components because Positions were added before view was created
+        //
+
+        ecs.view__rebuild(&view) 
+
+        //
+        // Iterate over view that includes Position(Tiny_Table), Health(Table) and Inventory(Compact_Table) components
+        //
+
+        it: ecs.Iterator
+        err = ecs.iterator_init(&it, &view)   
+        if err != nil { report_error(err); return }
 
 
-    //
-    // Results
-    //
+        fmt.println()
+        fmt.println("Iterating over view that includes Position(Tiny_Table), Health(Table) and Inventory(Compact_Table) components:") 
+        fmt.println("--------------------------------------------------------------")
+        for ecs.iterator_next(&it) {
+            eid := ecs.get_entity(&it)  
 
-    tt: ecs.Tiny_Table(UI_Position)
-    ecs.tiny_table__init(&tt, &db)
-    fmt.printfln("%-30s %v bytes", "Tiny_Table(UI_Position) memory usage:", ecs.memory_usage(&tt))
+            pos := ecs.get_component(&pos_table, &it)
+            health := ecs.get_component(&health_table, &it)
+            inventory := ecs.get_component(&inventory_table, &it)
 
-        //print_elements(&root)
+            if eid == human {
+                fmt.printfln("HUMAN id=%d position(x: %v, y: %v) health: %v/%v inventory: %v", eid.ix, pos.x, pos.y, health.hp, health.max_hp, inventory.items[0][0])
+            } else if eid == bird {
+               fmt.printfln("BIRD id=%d position(x: %v, y: %v) health: %v/%v inventory: %v", eid.ix, pos.x, pos.y, health.hp, health.max_hp, inventory.items[0][0])
+            }   
+            else {
+                fmt.println("Unknown entity: ", eid, pos, health, inventory)
+            }  
+        }
+
+        //
+        // An example of a tags table 
+        // 
+
+        Player_State :: enum {
+            Walking, 
+            Running,
+            Flying,
+            Stunned,
+            Dead,
+            Fighting,
+        }
+
+        tags_table : ecs.Table(Player_State)
+
+        err = ecs.table_init(&tags_table, &db, 10)
+        if err != nil { report_error(err); return }
+
+        enum_comp : ^Player_State
+        enum_comp, err = ecs.add_component(&tags_table, human)
+        if err != nil { report_error(err); return }
+        enum_comp^ = Player_State.Running
+
+        enum_comp, err = ecs.add_component(&tags_table, bird)
+        if err != nil { report_error(err); return }
+        enum_comp^ = Player_State.Flying
+
+        fmt.println()
+        fmt.println("Iterate over tags_table:")
+        fmt.println("--------------------------------------------------------------")
+        for &tag, index in tags_table.rows {
+            eid := ecs.get_entity(&tags_table, index)
+
+            if eid == human {
+                fmt.println("Human is", tag)
+            } else if eid == bird {
+                fmt.println("Bird is", tag)
+            }   
+            else {
+                fmt.println("Unknown entity is", tag)
+            }   
+        }
+
+        //
+        // An example of a bool table (I think it’s probably better to organize your components to hold more data, 
+        // and using a struct might be better since you can add more fields later — but you can use any type if you want).
+        // 
+
+        bool_table : ecs.Table(bool)
+
+        err = ecs.table_init(&bool_table, &db, 10)
+        if err != nil { report_error(err); return }
+
+        is_true : ^bool
+        is_true, err = ecs.add_component(&bool_table, human)
+        if err != nil { report_error(err); return }
+        is_true^ = false
+
+        is_true, err = ecs.add_component(&bool_table, bird)
+        if err != nil { report_error(err); return }
+        is_true^ = true
+        fmt.println()
+        fmt.println("Iterate over bool_table:")
+        fmt.println("--------------------------------------------------------------")
+        for &comp, index in bool_table.rows {
+            eid := ecs.get_entity(&bool_table, index)
+
+            if eid == human {
+                fmt.println("Human is", comp)
+            } else if eid == bird {
+                fmt.println("Bird is", comp)
+            }   
+            else {
+                fmt.println("Unknown entity is", comp)
+            }   
+        }
+
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

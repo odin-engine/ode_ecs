@@ -18,10 +18,36 @@ package ode_ecs__tests
 // ODE
     import ecs ".."
     import oc "../ode_core"
+    import oc_maps "../ode_core/maps"
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny_Table
+
+     @(test)
+    tiny_table__empty_component__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+
+            // Log into console when panic happens
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            
+            ecs_1: ecs.Database
+            empty_table: ecs.Tiny_Table(Empty)
+
+        //
+        // Test
+        //
+            testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
+            defer ecs.terminate(&ecs_1)
+
+            testing.expect(t, ecs.tiny_table__init(&empty_table, &ecs_1) == ecs.API_Error.Component_Size_Cannot_Be_Zero)
+    }
 
     @(test)
     tiny_table__aattaching_detaching_tables__test :: proc(t: ^testing.T) {
@@ -164,8 +190,8 @@ package ode_ecs__tests
             ai2.IQ = 42
 
             // Remove components
-            testing.expect(t, oc.toa_map__get(&positions.eid_to_ptr, eid_1.ix) == &positions.rows[0])
-            testing.expect(t, oc.toa_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[1])
+            testing.expect(t, oc_maps.tt_map__get(&positions.eid_to_ptr, eid_1.ix) == &positions.rows[0])
+            testing.expect(t, oc_maps.tt_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[1])
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
             testing.expect(t, ecs.table_len(&positions) == 2)
@@ -178,8 +204,8 @@ package ode_ecs__tests
             testing.expect(t, pos2.x == 0)
             testing.expect(t, pos2.y == 0)
 
-            testing.expect(t,  oc.toa_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
-            testing.expect(t,  oc.toa_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[0])
+            testing.expect(t,  oc_maps.tt_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
+            testing.expect(t,  oc_maps.tt_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[0])
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 1)
@@ -187,8 +213,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
             testing.expect(t, ecs.remove_component(&positions, eid_2) == nil)
 
-            testing.expect(t, oc.toa_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
-            testing.expect(t, oc.toa_map__get(&positions.eid_to_ptr, eid_2.ix) == nil)
+            testing.expect(t, oc_maps.tt_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
+            testing.expect(t, oc_maps.tt_map__get(&positions.eid_to_ptr, eid_2.ix) == nil)
             testing.expect(t, positions.rid_to_eid[0].ix == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 0)

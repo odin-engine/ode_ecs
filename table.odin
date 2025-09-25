@@ -12,6 +12,7 @@ package ode_ecs
 
 // ODE
     import oc "ode_core"
+    import oc_maps "ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Table_Base
@@ -39,7 +40,7 @@ package ode_ecs
         self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
 
         // if you need to optimize memory usage, use Tiny_Table if your table cap is less than 11, 
-        // and use Small_Table if your table cap is less than db.id_factory.cap / 2 but greater than 11
+        // and use Compact_Table if your table cap is less than db.id_factory.cap / 2 but greater than 11
         // in other cases or if you do not care about memory usage, use Table
         // db.id_factory.cap is database entities cap
         self.eid_to_ptr = make([]rawptr, db.id_factory.cap, db.allocator) or_return
@@ -241,6 +242,8 @@ package ode_ecs
             assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 
+        if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero
+
         self.type_info = type_info_of(typeid_of(T))
 
         table_base__init(&self.base, db, cap) or_return 
@@ -384,3 +387,5 @@ package ode_ecs
 
         return nil
     }
+
+

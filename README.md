@@ -19,10 +19,6 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
 - An example demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
 
-# Documentation
-- [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
-(more documentation incoming)
-
 # How to install
 
 Use `git clone` to clone this repository into your project, and then `import ecs "ode_ecs"`: 
@@ -64,7 +60,7 @@ You can have as many ECS databases in your game as you want:
     ecs.init(&ecs2, entities_cap=200)
 ```  
 
-The other two main objects in ODE_ECS are tables and views.  
+The other two main types of objects in ODE_ECS are tables and views.  
 
 ---
 
@@ -85,7 +81,7 @@ If you have a `Position` component, you can create a table like this:
 To create an entity, you can do this:  
 
 ```odin
-    robot, _ = ecs.create_entity(&ecs)
+    robot, _ = ecs.create_entity(&my_ecs)
 ```  
 
 Now you can add a `Position` component to the `robot` entity:  
@@ -110,8 +106,8 @@ Or this:
 
 ```odin
     for i := 0; i < ecs.table_len(positions); i += 1 {
-        pos = &positions.rows[i]
-        fmt.println(pos)
+        pos := &positions.rows[i]
+        fmt.println(pos^)
     }
 ```  
 
@@ -232,6 +228,57 @@ The `ix_gen` is defined like this:
 
 This approach is very useful because it ensures that if you save an entity ID somewhere and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 
+---
+### Tiny\_Table and Compact\_Table
+
+ODE\_ECS provides two additional variations of `Table`: `Tiny_Table` and `Compact_Table`.
+
+**Tiny\_Table** is created entirely on the stack and performs no memory allocations. You cannot pass an allocator to its `tiny_table__init()` procedure because it doesn’t use one. However, a `Tiny_Table` can hold only up to eight components (defined by `TINY_TABLE__ROW_CAP`).
+
+You can use `Tiny_Table` almost exactly like a regular `Table` object. The only difference is that you cannot pass an allocator or component capacity to its init procedure `tiny_table__init()`.
+
+**Usage example:**
+
+```odin
+pos_table : ecs.Tiny_Table(Position) // Tiny_Table !!!
+err = ecs.tiny_table__init(&pos_table, &db)
+```
+
+**Iteration example:**
+
+```odin
+for i := 0; i < ecs.table_len(&pos_table); i += 1 {
+    component := &pos_table.rows[i]
+    eid := ecs.get_entity(&pos_table, i)
+
+    if eid == human {
+        fmt.println("Human: ", eid, component)
+    } else if eid == bird {
+        fmt.println("Bird: ", eid, component)
+    } else {
+        fmt.println("Unknown entity: ", eid, component)
+    }
+}
+```
+
+See [this sample](https://github.com/odin-engine/ode_ecs/samples/sample04/main.odin) for more usage examples.
+
+> **NOTE:** Use `Tiny_Table` when you need a table with a component capacity of eight or fewer (you can change the limit via `TINY_TABLE__ROW_CAP`).
+
+**Compact\_Table** is designed to optimize memory usage at the cost of speed. You can use it exactly as you would use a `Table`.
+
+```odin
+inventory_table : ecs.Compact_Table(Inventory) // Compact_Table !!!
+err = ecs.compact_table__init(&inventory_table, &db, 5)
+```
+
+Views can be created on top of a mix of `Table`s, `Compact_Table`s, and `Tiny_Table`s. See the example [here](https://github.com/odin-engine/ode_ecs/samples/sample04/main.odin#L185).
+
+[Sample05](https://github.com/odin-engine/ode_ecs/samples/sample05/main.odin) shows memory usage and speed comparisons between `Table`, `Compact_Table`, and `Tiny_Table`.
+
+> **NOTE:** Use `Compact_Table` if you want to save memory at the cost of speed, but only if its capacity is much lower than your database entity capacity. If its capacity is close to the database entity capacity, `Table` will be faster and use less memory.
+
+---
 ### Maximum Number of Component Types  
 
 By default, the maximum number of component types is 128. However, you can have an unlimited number of component types. To increase the maximum number of component types, modify `TABLES_MULT` either in `ecs.odin` or by using the command-line define `ecs_tables_mult`:  
@@ -241,3 +288,7 @@ By default, the maximum number of component types is 128. However, you can have 
 ```  
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
+
+# Documentation
+- [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
+- [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)

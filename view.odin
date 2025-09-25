@@ -254,7 +254,7 @@ package ode_ecs
         }
     }
 
-    view__get_component_for_small_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Small_Table($T)) -> ^T {
+    view__get_component_for_compact_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Compact_Table($T)) -> ^T {
         #no_bounds_check {
             return (^T)(rec.refs[self.tid_to_cid[table.id]])
         }
