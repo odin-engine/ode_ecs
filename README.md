@@ -228,6 +228,7 @@ The `ix_gen` is defined like this:
 
 This approach is very useful because it ensures that if you save an entity ID somewhere and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 
+---
 ### Tiny\_Table and Compact\_Table
 
 ODE\_ECS provides two additional variations of `Table`: `Tiny_Table` and `Compact_Table`.
@@ -264,8 +265,6 @@ See [this sample](https://github.com/odin-engine/ode_ecs/samples/sample04/main.o
 
 > **NOTE:** Use `Tiny_Table` when you need a table with a component capacity of eight or fewer (you can change the limit via `TINY_TABLE__ROW_CAP`).
 
----
-
 **Compact\_Table** is designed to optimize memory usage at the cost of speed. You can use it exactly as you would use a `Table`.
 
 ```odin
@@ -279,6 +278,7 @@ Views can be created on top of a mix of `Table`s, `Compact_Table`s, and `Tiny_Ta
 
 > **NOTE:** Use `Compact_Table` if you want to save memory at the cost of speed, but only if its capacity is much lower than your database entity capacity. If its capacity is close to the database entity capacity, `Table` will be faster and use less memory.
 
+---
 ### Maximum Number of Component Types  
 
 By default, the maximum number of component types is 128. However, you can have an unlimited number of component types. To increase the maximum number of component types, modify `TABLES_MULT` either in `ecs.odin` or by using the command-line define `ecs_tables_mult`:  
