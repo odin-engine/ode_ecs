@@ -262,7 +262,7 @@ A View filter is a `proc` that you can pass to `ecs.view_init` to filter view da
 
     view.user_data = &my_user_data  // set user_data!
 
-    err = ecs.view_init(&view3, &db, {&is_alive_table}, my_filter)
+    err = ecs.view_init(&view, &db, {&is_alive_table}, my_filter)
 ```
 
 The `my_filter` proc determines whether an entity (and its components) will be added to the view.
