@@ -193,6 +193,87 @@ To get an entity or its components inside the iterator loop, you can do this:
     }
 ```
 
+Here’s your text with corrected grammar, smoother flow, and consistent style, while keeping the technical meaning intact:
+
+---
+
+### Tag_Table
+
+`Tag_Table` is a variation of `Table`, but it doesn’t contain any components. A `Tag_Table` only “tags” entities. You can create a `Tag_Table` like this:
+
+```odin
+    is_alive : ecs.Tag_Table
+    ecs.tag_table__init(&is_alive, &db, 10)
+```
+
+Then you can tag or untag entities like this:
+
+```odin
+    human, _ = ecs.create_entity(&db)
+    
+    ecs.add_tag(&is_alive, human)       // tag
+    ecs.remove_tag(&is_alive, human)    // untag
+```
+
+`Tag_Table` is especially useful with `View`:
+
+```odin
+    view : ecs.View
+
+    // create a view for all entities that have AI, Position components, and the alive tag
+    ecs.view_init(&view, &db, {&ais, &positions, &is_alive_table})
+```
+
+[Sample06](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample06/main.odin) demonstrates how to use `Tag_Table`.
+
+---
+
+### View Filter
+
+Instead of using `Tag_Table`, you can also use a **View filter**.
+
+A View filter is a `proc` that you can pass to `ecs.view_init` to filter view data:
+
+```odin
+    view: ecs.View
+
+    My_User_Data :: struct {
+        human_eid: ecs.entity_id,
+        chair_eid: ecs.entity_id,
+    }
+
+    // if this proc returns true, the entity (and its components) will be added to the view
+    my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
+        if user_data == nil do return false
+
+        eid := ecs.get_entity(row)
+        data := (^My_User_Data)(user_data)
+
+        // using entities saved in user_data
+        if eid == data.human_eid || eid == data.chair_eid do return true 
+
+        return false
+    }
+
+    my_user_data := My_User_Data{
+        human_eid = human,
+        chair_eid = chair,
+    }
+
+    view.user_data = &my_user_data  // set user_data!
+
+    err = ecs.view_init(&view3, &db, {&is_alive_table}, my_filter)
+```
+
+The `my_filter` proc determines whether an entity (and its components) will be added to the view.
+
+Check [Sample06](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample06/main.odin) for an example of how to use a View filter.
+
+---
+
+Would you like me to make this **more concise for documentation** (shorter sentences, fewer repeats) or keep it **tutorial-style** with step-by-step clarity?
+
+
 # How to Run Samples and Tests  
 
 To run samples, navigate to the appropriate folder (`samples/basic` or `samples/sample01`) and execute:  
