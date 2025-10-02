@@ -224,6 +224,16 @@ Then you can tag or untag entities like this:
     ecs.view_init(&view, &db, {&ais, &positions, &is_alive_table})
 ```
 
+You can iterate over tagged entities like this:
+
+```odin
+    // iterate over entities tagged in is_alive_table
+    fmt.println("Tagged entities:")
+    for eid in is_alive_table.rows {
+        fmt.println("Entity tagged in `is_alive_table`:", eid)
+    }
+```
+
 [Sample06](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample06/main.odin) demonstrates how to use `Tag_Table`.
 
 ---

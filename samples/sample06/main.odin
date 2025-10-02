@@ -95,6 +95,12 @@ main :: proc() {
         err = ecs.add_tag(&is_alive_table, bird)
         if err != nil { report_error(err); return }
 
+        // iterate over entities tagged in is_alive_table
+        fmt.println("Tagged entities:")
+        for eid in is_alive_table.rows {
+            fmt.println("Entity tagged in `is_alive_table`:", eid)
+        }
+
         it: ecs.Iterator
         err = ecs.iterator_init(&it, &view)
         if err != nil { report_error(err); return }
@@ -112,6 +118,7 @@ main :: proc() {
             if eid == chair do is_chair_alive = true
         }
 
+        fmt.println()
         fmt.println("Only entities tagged in `is_alive_table` should be alive:")
         fmt.println("Is human alive:",  is_human_alive)
         fmt.println("Is bird alive:",  is_bird_alive)
