@@ -29,6 +29,15 @@ package ode_ecs
     }
 
     @(private)
+    tiny_table_base__is_valid :: proc (self: ^Tiny_Table_Base) -> bool {
+        if self == nil do return false 
+        if !shared_table__is_valid_internal(&self.shared) do return false 
+        if self.type_info == nil do return false 
+
+        return true 
+    }
+
+    @(private)
     tiny_table_base__init :: proc(self: ^Tiny_Table_Base, db: ^Database) -> Error {
         shared_table__init(&self.shared, Table_Type.Tiny_Table, db)
 
@@ -43,9 +52,7 @@ package ode_ecs
 
         database__detach_table(self.db, self)
 
-        self.state = Object_State.Terminated
-        self.id = DELETED_INDEX
-        self.db = nil
+        shared_table__clear_state(&self.shared)
 
         return nil
     }
@@ -191,12 +198,18 @@ package ode_ecs
         rows: [TINY_TABLE__ROW_CAP]T,       
     }
 
+    tiny_table__is_valid :: proc (self: ^Tiny_Table($T)) -> bool {
+        if self == nil do return false 
+        if !tiny_table_base__is_valid(&self.base) do return false
+
+        return true
+    }
+
     tiny_table__init :: proc(self: ^Tiny_Table($T), db: ^Database, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
-            assert(db != nil, loc = loc)
+            assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
-            assert(db.state == Object_State.Normal, loc = loc) // db should be initialized
         }
 
         if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero

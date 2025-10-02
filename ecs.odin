@@ -50,19 +50,41 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases
 //
+    //
+    // Database
+    //
+        init                :: database__init
+        terminate           :: database__terminate
+        entities_len        :: database__entities_len 
+        create_entity       :: database__create_entity
+        destroy_entity      :: database__destroy_entity
+        is_entity_expired   :: database__is_entity_expired
 
+    //
+    // Table 
+    //
+        table_init          :: table__init
+        table_terminate     :: table__terminate
+
+    //
+    // View
+    //
+        view_init           :: view__init
+        view_terminate      :: view__terminate
+        view_len            :: view__len
+        view_cap            :: view__cap
+        rebuild             :: view__rebuild
+        view_entity_match   :: view__entity_match
+        suspend             :: view__suspend
+        resume              :: view__resume
+        
     //
     // Proc groups
     // 
 
-        clear               :: proc {  // only data clear
-            database__clear,                    
-            table__clear,
-            compact_table__clear,
-            view__clear,
-            table_raw__clear,
-            tiny_table__clear,
-        }
+        //
+        // Entity
+        //
 
         get_entity          :: proc {
             database__get_entity,
@@ -70,7 +92,18 @@ package ode_ecs
             compact_table__get_entity_by_row_number,
             tiny_table_base__get_entity_by_row_number,
             iterator__get_entity,
+            view_row__get_entity,
         }
+
+        get_entity_by_row_number :: proc {
+            table__get_entity_by_row_number, 
+            compact_table__get_entity_by_row_number, 
+            tiny_table__get_entity_by_row_number,
+        }
+
+        //
+        // Component
+        //
 
         add_component       :: proc {
             table__add_component,
@@ -91,6 +124,9 @@ package ode_ecs
             iterator__get_component_for_small_table, 
             iterator__get_component_for_tiny_table,
             tiny_table__get_component_by_entity,
+            view_row__get_component_for_table,
+            view_row__get_component_for_small_table,
+            view_row__get_component_for_tiny_table,
         }
 
         has_component       :: proc {
@@ -111,60 +147,65 @@ package ode_ecs
             tiny_table__move_component,
         }
 
-        get_entity_by_row_number :: proc {
-            table__get_entity_by_row_number, 
-            compact_table__get_entity_by_row_number, 
-            tiny_table__get_entity_by_row_number,
+        //
+        // Tags
+        //
+
+        add_tag :: proc {
+            tag_table__add_tag,
+        }
+
+        remove_tag :: proc {
+            tag_table__remove_tag,
+        }
+
+        //
+        // Other
+        //
+
+        clear               :: proc {  // only data clear
+            database__clear,                    
+            table__clear,
+            compact_table__clear,
+            view__clear,
+            table_raw__clear,
+            tiny_table__clear,
+            tag_table__clear,
         }
 
         table_len           :: proc {
             table__len,
             compact_table__len,
             tiny_table__len,
+            tag_table__len,
         }
 
         table_cap           :: proc {
             table__cap,
             compact_table__cap,
             tiny_table__cap, 
+            tag_table__cap,
         }
-
+ 
+        // Memory in bytes
         memory_usage        :: proc {
             database__memory_usage,
             table__memory_usage,
             compact_table__memory_usage,
             view__memory_usage,
             tiny_table__memory_usage,
+            tag_table__memory_usage,
         }
 
-    //
-    // Database
-    //
-        init                :: database__init
-        terminate           :: database__terminate
-        entities_len        :: database__entities_len 
-        create_entity       :: database__create_entity
-        destroy_entity      :: database__destroy_entity
-        is_entity_expired   :: database__is_entity_expired
-
-    //
-    // View
-    //
-        view_init           :: view__init
-        view_terminate      :: view__terminate
-        view_len            :: view__len
-        view_cap            :: view__cap
-        rebuild             :: view__rebuild
-        view_entity_match   :: view__entity_match
-        suspend             :: view__suspend
-        resume              :: view__resume
-
-    //
-    // Table 
-    //
-        table_init          :: table__init
-        table_terminate     :: table__terminate
-
+        // Is object valid (initialized and everything is ok)
+        is_valid            :: proc {
+            database__is_valid,
+            table__is_valid,
+            compact_table__is_valid,
+            view__is_valid,
+            tiny_table__is_valid,
+            tag_table__is_valid,
+        }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Basic types

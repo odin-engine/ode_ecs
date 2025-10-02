@@ -33,6 +33,15 @@ package ode_core
         freed_count: int
     }
 
+    ix_gen_factory__is_valid :: proc(self: ^Ix_Gen_Factory) -> bool {
+        if self == nil do return false 
+        if self.cap <= 0 do return false 
+        if self.items == nil do return false 
+        if self.freed == nil do return false 
+
+        return true
+    }
+
     ix_gen_factory__init :: proc(self: ^Ix_Gen_Factory, cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
         self.cap = cap
 

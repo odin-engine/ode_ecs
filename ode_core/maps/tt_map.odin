@@ -97,7 +97,6 @@ package maps
     }
 
     tt_map__remove :: proc(self: ^Tt_Map($CAP, $V), key: int) -> oc.Core_Error {
-
         hash := tt_map__hash(self, key)
 
         p, f_ix := tt_map__find_item_from_hash(self, key, hash)

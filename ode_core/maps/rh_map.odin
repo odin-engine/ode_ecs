@@ -25,11 +25,10 @@ package maps
     Rh_Map_Item :: struct($V: typeid) {
         key: int,
         value: V,
+        //dist: int, // can try this later to speed up
     }
 
     Rh_Map :: struct($V: typeid) {
-        //keys: []int,
-        //values: []V,
         items: []Rh_Map_Item(V),
         capacity: int,
         count: int,
@@ -38,14 +37,28 @@ package maps
         mask: int,
     }
 
+    rh_map__is_valid ::  #force_inline proc "contextless"(self: ^Rh_Map($V)) -> bool {
+        if self == nil do return false
+        if self.items == nil do return false 
+        if self.capacity <= 0 do return false 
+        if self.half_capacity <= 0 do return false 
+        if self.mask == 0 do return false
+
+        return true
+    }
+
     rh_map__init :: proc(self: ^Rh_Map($V),  #any_int capacity: int, allocator := context.allocator, loc := #caller_location) -> (err: oc.Error) {
         assert(self != nil, loc = loc)
         assert(capacity > 1, loc = loc)
 
         if !math.is_power_of_two(capacity) do return oc.Core_Error.Capacity_Is_Not_Power_Of_2
-    
-        self.items = make([]Rh_Map_Item(V), capacity, allocator) or_return
         self.capacity = capacity
+
+        when !MAPS_TESTING {
+            if self.capacity < 8 do self.capacity = 8 
+        }
+        
+        self.items = make([]Rh_Map_Item(V), self.capacity, allocator) or_return
 
         rh_map__clear(self)  // requires self.capacity to be set
 
@@ -238,11 +251,15 @@ package maps
 
     // }
     
-    rh_map__clear :: proc(self: ^Rh_Map($V)) {
-        for i in 0..<self.capacity {
+    rh_map__clear ::  #force_inline proc "contextless" (self: ^Rh_Map($V)) {
+        for i:=0; i<self.capacity; i+=1 {
             self.items[i].key = oc.DELETED_INDEX
         }
         self.count = 0
+    }
+
+    rh_map__len ::  #force_inline proc "contextless" (self: ^Rh_Map($V)) -> int {
+        return self.count
     }
 
     rh_map__memory_usage :: proc(self: ^Rh_Map($V)) -> int {
@@ -252,7 +269,7 @@ package maps
     rh_map__debug_print :: proc(self: ^Rh_Map($V)) {
         fmt.println("\nRh_Map debug print (key, hash, value):")
 
-        for i in 0..<self.capacity {
+        for i:=0; i<self.capacity; i+=1 {
             item := self.items[i]
 
             fmt.printf("% 4d, ", item.key)
@@ -260,7 +277,7 @@ package maps
 
         fmt.println()
 
-        for i in 0..<self.capacity {
+        for i:=0; i<self.capacity; i+=1 {
             item := self.items[i]
 
             if (item.key == oc.DELETED_INDEX) {
@@ -273,7 +290,7 @@ package maps
 
         fmt.println()
 
-        for i in 0..<self.capacity {
+        for i:=0; i<self.capacity; i+=1 {
             item := self.items[i]
 
             if item.value == nil {
@@ -397,7 +414,7 @@ package maps
         testing.expect(t, rh_map__add(&map2, 15, &h) == nil)
         testing.expect(t, rh_map__add(&map2, 18, &ii) == oc.Core_Error.Container_Is_Full) // should fail, map full
 
-        rh_map__debug_print(&map2)
+        //rh_map__debug_print(&map2)
 
         rh_map__clear(&map2)
 
@@ -420,7 +437,7 @@ package maps
         testing.expect(t, rh_map__add(&map3, 12, &v3) == nil)
         testing.expect(t, rh_map__add(&map3, 2, &v4) == nil)
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
 
         v,i := rh_map__get_with_index(&map3, 12)
         testing.expect(t, v == &v3)
@@ -453,7 +470,7 @@ package maps
         testing.expect(t, v == &v3)
         testing.expect(t, i == 0)
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
 
         testing.expect(t, map3.items[1].key == oc.DELETED_INDEX)
         testing.expect(t, map3.items[1].value == nil)
@@ -468,7 +485,7 @@ package maps
         testing.expect(t, rh_map__add(&map3, 8, &v2) == nil)
         testing.expect(t, rh_map__add(&map3, 4, &v1) == nil)
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
 
         v,i = rh_map__get_with_index(&map3, 4)
         testing.expect(t, v == &v1)
@@ -477,7 +494,7 @@ package maps
         testing.expect(t, rh_map__remove(&map3, 8) == nil) // remove
         testing.expect(t, rh_map__remove(&map3, 12) == nil) // remove
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
 
         v,i = rh_map__get_with_index(&map3, 4)
         testing.expect(t, v == &v1)
@@ -506,7 +523,6 @@ package maps
         testing.expect(t, rh_map__remove(&map3, 12) == nil) // remove
         testing.expect(t, rh_map__add(&map3, 7, &v3) == nil)
           
-        v = &v2
         v,i = rh_map__get_with_index(&map3, 7)
         testing.expect(t, v == &v3)
         testing.expect(t, i == 0)
@@ -535,7 +551,7 @@ package maps
         testing.expect(t, v == &v2)
         testing.expect(t, i == 3)
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
 
         testing.expect(t, rh_map__add(&map3, 4, &v1) == nil)
         testing.expect(t, rh_map__update(&map3, 4, &v4) == nil)
@@ -544,7 +560,7 @@ package maps
         testing.expect(t, v == &v4)
         testing.expect(t, i == 1) 
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
 
         testing.expect(t, rh_map__add(&map3, 4, &v1) == oc.Core_Error.Container_Is_Full)
 
@@ -556,7 +572,7 @@ package maps
         testing.expect(t, v == &v1)
         testing.expect(t, i == 1) 
 
-        rh_map__debug_print(&map3)
+        //rh_map__debug_print(&map3)
         
         testing.expect(t, rh_map__terminate(&map3, allocator) == nil)
     }

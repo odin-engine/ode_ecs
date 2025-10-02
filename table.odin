@@ -32,6 +32,19 @@ package ode_ecs
     }
 
     @(private)
+    table_base__is_valid :: proc(self: ^Table_Base) -> bool {
+        if self == nil do return false 
+        if !shared_table__is_valid_internal(&self.shared) do return false 
+        if self.type_info == nil do return false
+        if self.rid_to_eid == nil do return false 
+        if self.eid_to_ptr == nil do return false 
+        if self.cap <= 0 do return false 
+        if !oc.dense_arr__is_valid(&self.subscribers) do return false
+
+        return true 
+    }
+
+    @(private)
     table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int) -> Error {
         shared_table__init(&self.shared, Table_Type.Table, db)
 
@@ -39,8 +52,8 @@ package ode_ecs
 
         self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
 
-        // if you need to optimize memory usage, use Tiny_Table if your table cap is less than 11, 
-        // and use Compact_Table if your table cap is less than db.id_factory.cap / 2 but greater than 11
+        // if you need to optimize memory usage, use Tiny_Table if your table cap is less or equal than TINY_TABLE__ROW_CAP, 
+        // and use Compact_Table if you want to save memory and your table cap is less than db.id_factory.cap / 4 but greater than TINY_TABLE__ROW_CAP
         // in other cases or if you do not care about memory usage, use Table
         // db.id_factory.cap is database entities cap
         self.eid_to_ptr = make([]rawptr, db.id_factory.cap, db.allocator) or_return
@@ -126,9 +139,7 @@ package ode_ecs
 
         table_base__terminate(self) or_return
 
-        self.db = nil 
-        self.id = DELETED_INDEX
-        self.state = Object_State.Terminated
+        shared_table__clear_state(&self.shared)
 
         return nil
     }
@@ -233,12 +244,20 @@ package ode_ecs
         rows: []T,     
     }
 
+    table__is_valid :: proc(self: ^Table($T)) -> bool {
+        if self == nil do return false 
+        if !table_base__is_valid(self) do return false 
+        if self.rows == nil do return false 
+
+        return true
+    }
+
     table__init :: proc(self: ^Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
-            assert(db != nil, loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
-            assert(db.state == Object_State.Normal, loc = loc) // db should be initialized
+            assert(database__is_valid(db), loc = loc)
+            assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
+            assert(cap > 0, loc = loc)
             assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 

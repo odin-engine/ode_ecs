@@ -28,6 +28,17 @@ package ode_ecs
         eid_to_bits: []Uni_Bits, 
     }
 
+    database__is_valid :: proc(self: ^Database) -> bool {
+        if self == nil do return false
+        if self.state != Object_State.Normal do return false
+        if !oc.ix_gen_factory__is_valid(&self.id_factory) do return false
+        if !oc.sparce_arr__is_valid(&self.tables) do return false 
+        if !oc.sparce_arr__is_valid(&self.views) do return false
+        if self.eid_to_bits == nil do return false 
+
+        return true
+    }
+
     database__init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -47,6 +58,8 @@ package ode_ecs
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
 
         self.state = Object_State.Normal
+
+        assert(database__is_valid(self))
 
         return nil
     }

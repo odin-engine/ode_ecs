@@ -182,7 +182,7 @@ main :: proc() {
         }
 
         //
-        // View on top of Tiny_Table, Table and Component_Table
+        // View on top of Tiny_Table, Table, Tag_Table and Component_Table
         //
 
         // 
@@ -192,6 +192,16 @@ main :: proc() {
         health_table : ecs.Table(Health)  // Table !!!
         err = ecs.table__init(&health_table, &db, 20)
         if err != nil { report_error(err); return } 
+
+        //
+        // Tag_Table
+        //
+
+        is_alive_tag_table : ecs.Tag_Table
+        err = ecs.tag_table__init(&is_alive_tag_table, &db, 20)
+        if err != nil { report_error(err); return } 
+
+        //ecs.tag_table__terminate(&is_alive_tag_table)
 
         //
         // Compact_Table
@@ -204,7 +214,7 @@ main :: proc() {
         // Create view on top of different table types
         //
         view: ecs.View
-        err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table}) // View on top of Tiny_Table, Table and Compact_Table !!!
+        err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table, &is_alive_tag_table}) // View on top of Tiny_Table, Table and Compact_Table !!!
         if err != nil { report_error(err); return }
 
         //
@@ -217,6 +227,10 @@ main :: proc() {
         if err != nil { report_error(err); return }
         human_health.hp = 100
         human_health.max_hp = 300
+
+        // Tag as alive
+        err = ecs.add_tag(&is_alive_tag_table, human)
+        if err != nil { report_error(err); return } 
 
         // Add Inventory component to human
         human_inventory: ^Inventory
@@ -231,6 +245,10 @@ main :: proc() {
         if err != nil { report_error(err); return }
         bird_health.hp = 10
         bird_health.max_hp = 10
+
+        // Tag as alive
+        err = ecs.add_tag(&is_alive_tag_table, bird)
+        if err != nil { report_error(err); return } 
 
         // Add Inventory component to bird
         bird_inventory: ^Inventory  
@@ -253,9 +271,8 @@ main :: proc() {
         err = ecs.iterator_init(&it, &view)   
         if err != nil { report_error(err); return }
 
-
         fmt.println()
-        fmt.println("Iterating over view that includes Position(Tiny_Table), Health(Table) and Inventory(Compact_Table) components:") 
+        fmt.println("Iterating over view that is on top of Tiny_Table, Table, Compact_Table and Tag_Table tables:")
         fmt.println("--------------------------------------------------------------")
         for ecs.iterator_next(&it) {
             eid := ecs.get_entity(&it)  
@@ -275,7 +292,7 @@ main :: proc() {
         }
 
         //
-        // An example of a tags table 
+        // Another way to do tags 
         // 
 
         Player_State :: enum {

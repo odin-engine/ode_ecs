@@ -5,19 +5,59 @@ package ode_ecs
 
 // Base
     import "base:runtime"
+    
 // Core
     import "core:slice"
     import "core:mem"
+
 // ODE
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
-// View
+// View_Row_Raw and View_Row
 // 
-    View_Record :: struct {
+
+    View_Row_Raw :: struct {
         eid: entity_id,
         refs: [1] rawptr, // at least one component
+    } 
+
+    // Wrapper around View_Row_Raw, used in View filter proc and Iterator
+    View_Row :: struct {
+        view: ^View,
+        raw: ^View_Row_Raw,
     }
+
+    view_row__init ::  #force_inline proc "contextless" (self: ^View_Row, view: ^View, raw: ^View_Row_Raw) {
+        self.view = view
+        self.raw = raw
+    }
+
+    view_row__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
+        #no_bounds_check {
+            return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
+        }
+    }
+
+    view_row__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
+        #no_bounds_check {
+            return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
+        }
+    }
+
+    view_row__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
+        #no_bounds_check {
+            return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
+        }
+    }
+
+    view_row__get_entity :: #force_inline proc "contextless" (self: ^View_Row) -> entity_id {
+        return self.raw.eid
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// View
+// 
 
     View :: struct {
         id: view_id, 
@@ -37,19 +77,42 @@ package ode_ecs
 
         bits: Uni_Bits,
         suspended: bool,
+
+        filter: proc(row: ^View_Row, user_data: rawptr)->bool, 
+        user_data: rawptr
     }
 
-    view__init :: proc(self: ^View, db: ^Database, includes: []^Shared_Table) -> Error {
+    view__is_valid :: proc(self: ^View) -> bool {
+        if self == nil do return false 
+        if self.id < 0 do return false 
+        if self.state != Object_State.Normal do return false
+        if self.db == nil do return false
+        if !oc.dense_arr__is_valid(&self.tables) do return false 
+        if self.tid_to_cid == nil do return false 
+        if self.eid_to_ptr == nil do return false
+        if self.rows == nil do return false
+        if self.one_record_size <= 0 do return false 
+        if self.cap <= 0 do return false 
+
+        return true
+    }
+
+    view__init :: proc(
+        self: ^View, 
+        db: ^Database, 
+        includes: []^Shared_Table, 
+        filter: proc(row: ^View_Row, user_data: rawptr = nil)->bool = nil, 
+        loc := #caller_location
+    ) -> Error {
         when VALIDATIONS {
-            assert(self != nil)
-            assert(db != nil)
-            assert(db.state == Object_State.Normal)
-            assert(self.state == Object_State.Not_Initialized)
+            assert(self != nil, loc = loc)
+            assert(database__is_valid(db), loc = loc)
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
         }
 
-        self.db = db
-
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
+
+        self.db = db
 
         // Make sure we do not have repeating columns (copmonent typse/tables)
         slice.sort(includes)
@@ -73,7 +136,7 @@ package ode_ecs
         self.cap = max(int)
         for table, index in uniq_tables {
             when VALIDATIONS {
-                assert(table.state == Object_State.Normal)
+                assert(shared_table__is_valid(table), loc = loc)
             }
 
             oc.dense_arr__add(&self.tables, cast(^Shared_Table) table)
@@ -95,7 +158,7 @@ package ode_ecs
         //
         // rows
         //
-        self.one_record_size = size_of(View_Record) + (self.tables_len - 1) * size_of(rawptr)  // -1 because one is already in struct
+        self.one_record_size = size_of(View_Row_Raw) + (self.tables_len - 1) * size_of(rawptr)  // -1 because one is already in struct
         self.records_size = self.cap * self.one_record_size
 
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -117,6 +180,8 @@ package ode_ecs
         // Subscribe to tables
         //
         for table in uniq_tables do shared_table__attach_subscriber(table, self)
+
+        self.filter = filter
 
         return nil
     }
@@ -243,24 +308,24 @@ package ode_ecs
         self.suspended = false
     }
 
-    view__get_record :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Record { 
+    view__get_record :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Row_Raw { 
         if index < 0 || index >= view_len(self) do return nil
         return view__get_record_private(self, index)
     }
 
-    view__get_component_for_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Table($T)) -> ^T {
+    view__get_component_for_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Table($T)) -> ^T {
         #no_bounds_check {
             return (^T)(rec.refs[self.tid_to_cid[table.id]])
         }
     }
 
-    view__get_component_for_compact_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Compact_Table($T)) -> ^T {
+    view__get_component_for_compact_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Compact_Table($T)) -> ^T {
         #no_bounds_check {
             return (^T)(rec.refs[self.tid_to_cid[table.id]])
         }
     }
 
-    view__get_component_for_tiny_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Record, table: ^Tiny_Table($T)) -> ^T {
+    view__get_component_for_tiny_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Tiny_Table($T)) -> ^T {
         #no_bounds_check {
             return (^T)(rec.refs[self.tid_to_cid[table.id]])
         }
@@ -292,7 +357,19 @@ package ode_ecs
             }
         }
 
-        raw.len += 1
+        // When row is constructed, we can pass it to filter finally
+        if self.filter == nil {
+            raw.len += 1
+        } else {
+
+            view_row: View_Row
+
+            view_row__init(&view_row, self, record)
+            
+            if self.filter(&view_row, self.user_data) {
+                raw.len += 1
+            }
+        }
 
         return nil
     }
@@ -343,9 +420,9 @@ package ode_ecs
     }
 
     @(private)
-    view__get_record_private :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Record { 
+    view__get_record_private :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Row_Raw { 
         #no_bounds_check {
-            return (^View_Record)(&self.rows[index * self.one_record_size])
+            return (^View_Row_Raw)(&self.rows[index * self.one_record_size])
         }
     }
 

@@ -33,6 +33,19 @@ package ode_ecs
     }
 
     @(private)
+    compact_table_base__is_valid :: proc(self: ^Compact_Table_Base) -> bool {
+        if self == nil do return false 
+        if !shared_table__is_valid_internal(&self.shared) do return false 
+        if self.type_info == nil do return false
+        if self.rid_to_eid == nil do return false 
+        if !oc_maps.rh_map__is_valid(&self.eid_to_ptr) do return false
+        if self.cap <= 0 do return false 
+        if !oc.dense_arr__is_valid(&self.subscribers) do return false
+
+        return true
+    }
+
+    @(private)
     compact_table_base__init :: proc(self: ^Compact_Table_Base, db: ^Database, cap: int) -> Error {
         shared_table__init(&self.shared, Table_Type.Compact_Table, db)
 
@@ -122,9 +135,7 @@ package ode_ecs
 
         compact_table_base__terminate(self) or_return
 
-        self.db = nil 
-        self.id = DELETED_INDEX
-        self.state = Object_State.Terminated
+        shared_table__clear_state(&self.shared)
 
         return nil
     }
@@ -153,10 +164,13 @@ package ode_ecs
         
         target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
 
+        error : Error
+
         // Replace removed component with tail
         if target == tail {
             // Remove indexes
-            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            error = oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            assert(error == nil) // should not happen because we already checked it does exist
 
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
@@ -230,12 +244,20 @@ package ode_ecs
         rows: []T,     
     }
 
+    compact_table__is_valid :: proc(self: ^Compact_Table($T)) -> bool {
+        if self == nil do return false 
+        if !compact_table_base__is_valid(&self.base) do return false 
+        if rows == nil do return false
+
+        return true
+    }
+
     compact_table__init :: proc(self: ^Compact_Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
-            assert(db != nil, loc = loc)
+            assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
-            assert(db.state == Object_State.Normal, loc = loc) // db should be initialized
+            assert(cap > 0, loc = loc)
             assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 

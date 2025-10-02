@@ -13,6 +13,7 @@ package ode_ecs
         
         start_row: int,
         end_row: int, 
+        orig_end_row: int, 
 
         one_record_size: int, 
         records_size: int,
@@ -20,7 +21,7 @@ package ode_ecs
 
         // cache
         raw_index: int,
-        record: ^View_Record,
+        view_row: View_Row,
     }
 
     // Use start_row and end_row if you want to process View in batches
@@ -35,11 +36,15 @@ package ode_ecs
        
         self.view = view 
         self.start_row = start_row
+        self.orig_end_row = end_row
+
         if end_row == 0 {
-            self.end_row = len(view.rows)
+            self.end_row = view_len(view)
         } else {
             self.end_row = end_row
         }
+
+        self.view_row.view = view
 
         return iterator_reset(self)
     }
@@ -51,6 +56,14 @@ package ode_ecs
             self.records_size = 0
             return API_Error.Object_Invalid
         } 
+        
+        // Recalculate end_now if original end_row was zero, which means end_row should be view_len()
+        if self.orig_end_row == 0 {
+            self.end_row = view_len(self.view)
+        }
+
+        // We need to be careful here, because len of view might have changed
+        assert(self.start_row <= self.end_row)
 
         self.one_record_size = self.view.one_record_size
 
@@ -60,40 +73,34 @@ package ode_ecs
         return nil
     }
 
-    iterator_next :: proc "contextless" (self: ^Iterator) -> bool {
+    iterator_next :: proc /*"contextless"*/ (self: ^Iterator) -> bool {
 
         self.raw_index += self.one_record_size
 
         if self.raw_index < self.records_size {
             #no_bounds_check {
-                self.record = (^View_Record)(&self.view.rows[self.raw_index])
+                self.view_row.raw = (^View_Row_Raw)(&self.view.rows[self.raw_index])
             }
             return true 
 
         } else {
-            self.record = nil 
+            self.view_row.raw = nil 
             return false
         }
     }
 
     iterator__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), it: ^Iterator) -> ^T #no_bounds_check {
-        #no_bounds_check {
-            return (^T)(it.record.refs[it.view.tid_to_cid[table.id]])
-        }
+        return view_row__get_component_for_table(table, &it.view_row)
     }
 
     iterator__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
-        #no_bounds_check {
-            return (^T)(it.record.refs[it.view.tid_to_cid[table.id]])
-        }
+        return view_row__get_component_for_small_table(table, &it.view_row)
     }
 
     iterator__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
-        #no_bounds_check {
-            return (^T)(it.record.refs[it.view.tid_to_cid[table.id]])
-        }
+        return view_row__get_component_for_tiny_table(table, &it.view_row)
     }
 
     iterator__get_entity :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {
-        return self.record.eid
+        return self.view_row.raw.eid
     }

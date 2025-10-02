@@ -24,6 +24,14 @@ package ode_core
         has_nil_item: bool
     }
 
+    sparce_arr__is_valid :: proc(self: ^Sparce_Arr($T)) -> bool {
+        if self == nil do return false
+        if self.items == nil do return false
+        if self.cap <= 0 do return false 
+        
+        return true
+    }
+
     sparse_arr__init :: proc(self: ^Sparce_Arr($T), cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
         err: runtime.Allocator_Error = runtime.Allocator_Error.None
         self.items, err = make([]^T, cap, allocator)

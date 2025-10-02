@@ -1,7 +1,10 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 */
+
+// Everything is private here
 #+private 
+
 package ode_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -12,6 +15,7 @@ package ode_ecs
         Table,
         Tiny_Table,
         Compact_Table,
+        Tag_Table,
     }
 
     // Shared between all tables
@@ -22,10 +26,22 @@ package ode_ecs
         db: ^Database, 
     }
 
+    @(private)
+    shared_table__is_valid_internal :: proc(self: ^Shared_Table) -> bool {
+        if self == nil do return false 
+        if self.state != Object_State.Normal do return false 
+        if self.type == Table_Type.Unknown do return false 
+        if self.id < 0 do return false 
+        if self.db == nil do return false 
+
+        return true
+    }
+
     shared_table__init :: proc(self: ^Shared_Table, type: Table_Type, db: ^Database) {
-        self.state = Object_State.Invalid
+
+        shared_table__clear_state(self)
+
         self.type = type
-        self.id  = DELETED_INDEX
         self.db = db
     }
 
@@ -38,14 +54,38 @@ package ode_ecs
             case Table_Type.Tiny_Table:
             case Table_Type.Compact_Table:
                 compact_table_raw__terminate(cast(^Compact_Table_Raw)self) or_return
+            case Table_Type.Tag_Table:
+                tag_table__terminate(cast(^Tag_Table)self) or_return
         }
 
+        //shared_table__clear_state(self)
+
+        return nil
+    }
+
+    shared_table__clear_state :: proc(self: ^Shared_Table) {
         self.state = Object_State.Invalid
         self.type = Table_Type.Unknown
         self.id  = DELETED_INDEX
         self.db = nil
+    }
 
-        return nil
+    shared_table__is_valid :: proc(self: ^Shared_Table) -> bool {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                return table_base__is_valid(cast(^Table_Base) self)
+            case Table_Type.Tiny_Table:
+                return tiny_table_base__is_valid(cast(^Tiny_Table_Base) self)
+            case Table_Type.Compact_Table:
+                return compact_table_base__is_valid(cast(^Compact_Table_Base) self)
+            case Table_Type.Tag_Table:
+                return tag_table__is_valid(cast(^Tag_Table)self)
+        } 
+
+        assert(false) // should not happen
+        return true
     }
 
     shared_table__memory_usage :: proc(self: ^Shared_Table) -> int {
@@ -58,6 +98,8 @@ package ode_ecs
                 return tiny_table_base__memory_usage(cast(^Tiny_Table_Base) self)
             case Table_Type.Compact_Table:
                 return compact_table_base__memory_usage(cast(^Compact_Table_Base) self)
+            case Table_Type.Tag_Table:
+                return tag_table__memory_usage(cast(^Tag_Table)self)
         } 
 
         assert(false) // should not happen
@@ -74,6 +116,8 @@ package ode_ecs
                 return tiny_table_base__len(cast(^Tiny_Table_Base) self)
             case Table_Type.Compact_Table:
                 return compact_table_raw__len(cast(^Compact_Table_Raw)self)
+            case Table_Type.Tag_Table:
+                return tag_table__len(cast(^Tag_Table)self)
         } 
 
         assert(false) // should not happen
@@ -90,6 +134,8 @@ package ode_ecs
                 return tiny_table__cap(self)
             case Table_Type.Compact_Table:
                 return compact_table_base__cap(cast(^Compact_Table_Base)self)
+            case Table_Type.Tag_Table:
+                return tag_table__cap(cast(^Tag_Table)self)
         } 
 
         assert(false) // should not happen
@@ -106,6 +152,8 @@ package ode_ecs
                 return tiny_table_base__get_entity_by_row_number(cast(^Tiny_Table_Base) self, row_number)
             case Table_Type.Compact_Table:
                 return compact_table_base__get_entity_by_row_number(cast(^Compact_Table_Base) self, row_number)
+            case Table_Type.Tag_Table:
+               return tag_table__get_entity_by_row_number(cast(^Tag_Table) self, row_number)
         } 
 
         assert(false) // should not happen
@@ -122,6 +170,8 @@ package ode_ecs
                 return tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) self, eid)
             case Table_Type.Compact_Table:
                 return compact_table_base__get_component_by_entity(cast(^Compact_Table_Base) self, eid)
+            case Table_Type.Tag_Table:
+                return nil // no component for tag_table
         } 
 
         assert(false) // should not happen
@@ -138,6 +188,8 @@ package ode_ecs
                 return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
             case Table_Type.Compact_Table:
                 return compact_table_raw__remove_component(cast(^Compact_Table_Raw) self, eid)
+            case Table_Type.Tag_Table:
+                return nil // no component
         } 
 
         assert(false) // should not happen
@@ -154,6 +206,8 @@ package ode_ecs
                 return tiny_table_raw__clear(cast(^Tiny_Table_Raw) self)
             case Table_Type.Compact_Table:
                 return compact_table_raw__clear(cast(^Compact_Table_Raw) self)
+            case Table_Type.Tag_Table:
+                return tag_table__clear(cast(^Tag_Table)self)
         } 
 
         return API_Error.Unexpected_Error
@@ -173,6 +227,8 @@ package ode_ecs
                 return tiny_table_base__attach_subscriber(cast(^Tiny_Table_Base)self, view)
             case Table_Type.Compact_Table:
                 return compact_table_base__attach_subscriber(cast(^Compact_Table_Base)self, view)
+            case Table_Type.Tag_Table:
+                return tag_table__attach_subscriber(cast(^Tag_Table)self, view)
         } 
 
         return API_Error.Unexpected_Error
@@ -189,6 +245,8 @@ package ode_ecs
                 return tiny_table_base__detach_subscriber(cast(^Tiny_Table_Base)self, view)
             case Table_Type.Compact_Table:
                 return compact_table_base__detach_subscriber(cast(^Compact_Table_Base)self, view)
+            case Table_Type.Tag_Table:
+                return tag_table__detach_subscriber(cast(^Tag_Table)self, view)
         } 
 
         return API_Error.Unexpected_Error
