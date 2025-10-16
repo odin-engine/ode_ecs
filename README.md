@@ -279,9 +279,6 @@ Check [Sample06](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample
 
 ---
 
-Would you like me to make this **more concise for documentation** (shorter sentences, fewer repeats) or keep it **tutorial-style** with step-by-step clarity?
-
-
 # How to Run Samples and Tests  
 
 To run samples, navigate to the appropriate folder (`samples/basic` or `samples/sample01`) and execute:  
