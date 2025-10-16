@@ -333,3 +333,5 @@ A value of `2` will set the maximum number of component types to 256, `3` will i
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
 - [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)
+
+## If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
