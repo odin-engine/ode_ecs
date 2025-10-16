@@ -288,7 +288,7 @@ package ode_ecs
 
         for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
             view := self.subscribers[i]
-            if view != nil && !view.suspended && view_entity_match(view, eid) {
+            if view != nil && !view.suspended {
                 view__rerun_filter(view, eid) or_return
             }
         }

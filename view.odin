@@ -346,6 +346,14 @@ package ode_ecs
         return false
     }
 
+    // Rerun filter for an entity
+    view__rerun_filter :: proc(self: ^View, eid: entity_id) -> Error {
+        if !view__components_match(self, eid) do return nil // do not consider it an error
+                                                            // if components do not match, row had been removed in other way
+
+        return view__rerun_filter_private(self, eid)
+    }
+
     // Stop updating view when entities are created/destroyed or components/tags are added/removed  
     view__suspend :: proc(self: ^View) {
         when VALIDATIONS {
@@ -457,15 +465,16 @@ package ode_ecs
         raw.len -= 1 
     }
 
-    // Rerun components match and filter for a row when component data is updated
-    view__rerun_filter :: proc(self: ^View, eid: entity_id) -> Error {
+    @(private)
+    // Rerun filter for an entity
+    view__rerun_filter_private :: proc(self: ^View, eid: entity_id) -> Error {
         if view__filter_match(self, eid) {
             if self.eid_to_ptr[eid.ix] == DELETED_INDEX { // doesn't exist, add it
                 view__add_record(self, eid, false) or_return // add without filter test because we already know it matches
             } // else already exists, nothing to do
         } else { // doesn't match
             if self.eid_to_ptr[eid.ix] != DELETED_INDEX { // exists, remove it
-                view__remove_record(self, eid)
+                view__remove_record(self, eid) 
             } // else doesn't exist, nothing to do
         }
 
