@@ -15,6 +15,7 @@ package ode_ecs__tests
 // ODE
     import ecs ".."
     import oc "../ode_core"
+    import oc_maps "../ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Components
@@ -418,12 +419,12 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 0)
  
-        r := ecs.view__get_record(view1, 0)
+        r := ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_2))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
-        r = ecs.view__get_record(view1, 1)
+        r = ecs.view__get_row(view1, 1)
         testing.expect(t, r.eid == eid_1)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_1))
@@ -440,7 +441,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 3)
         testing.expect(t, ecs.view_len(view3) == 1)
 
-        r = ecs.view__get_record(view1, 2)
+        r = ecs.view__get_row(view1, 2)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_3))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_3))
@@ -449,12 +450,12 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 1)
 
-        r = ecs.view__get_record(view1, 0)
+        r = ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_2))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
-        r = ecs.view__get_record(view1, 1)
+        r = ecs.view__get_row(view1, 1)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_3))
         
@@ -468,12 +469,12 @@ package ode_ecs__tests
         ecs.remove_component(ais, eid_3)
         testing.expect(t, ecs.view_len(view1) == 1)
 
-        r = ecs.view__get_record(view1, 0)
+        r = ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_2))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
-        testing.expect(t, ecs.view__get_record(view1, 1) == nil)
+        testing.expect(t, ecs.view__get_row(view1, 1) == nil)
 
         ecs.remove_component(ais, eid_2)
         testing.expect(t, ecs.view_len(view1) == 0)
@@ -506,7 +507,7 @@ package ode_ecs__tests
         testing.expect(t, err == nil) 
         testing.expect(t, ecs.view_len(view1) == 1)
 
-        r = ecs.view__get_record(view1, 0)
+        r = ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_3))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_3))
@@ -521,12 +522,12 @@ package ode_ecs__tests
         testing.expect(t, err == nil) 
         testing.expect(t, ecs.view_len(view1) == 2)
 
-        r = ecs.view__get_record(view1, 0)
+        r = ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_3))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_record(view1, 1)
+        r = ecs.view__get_row(view1, 1)
         testing.expect(t, r.eid == eid_1)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_1))
@@ -542,11 +543,11 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 2) // LEN DIDN'T INCREASE, BECAUSE OF CAP
         testing.expect(t, ecs.view_len(view3) == 2)
 
-        r = ecs.view__get_record(view3, 0)
+        r = ecs.view__get_row(view3, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view3, r, positions) == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_record(view3, 1)
+        r = ecs.view__get_row(view3, 1)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view3, r, positions) == ecs.get_component(positions, eid_2))
 
@@ -562,17 +563,17 @@ package ode_ecs__tests
 
         // view1 
 
-        r = ecs.view__get_record(view1, 0)
+        r = ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_3))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_record(view1, 1)
+        r = ecs.view__get_row(view1, 1)
         testing.expect(t, r.eid == eid_1)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_table(view1, r, positions) == ecs.get_component(positions, eid_1))
 
-        r = ecs.view__get_record(view1, 2)
+        r = ecs.view__get_row(view1, 2)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view1, r, ais) == ecs.get_component(ais, eid_2))
@@ -580,11 +581,11 @@ package ode_ecs__tests
 
         // view3
         
-        r = ecs.view__get_record(view3, 0)
+        r = ecs.view__get_row(view3, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view3, r, positions) == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_record(view3, 1)
+        r = ecs.view__get_row(view3, 1)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view3, r, positions) == ecs.get_component(positions, eid_2))
 
@@ -651,15 +652,15 @@ package ode_ecs__tests
         testing.expect(t, index == 3)
         testing.expect(t, ecs.view_len(view2) == 3)
 
-        r = ecs.view__get_record(view2, 0)
+        r = ecs.view__get_row(view2, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_table(view2, r, ais) == ecs.get_component(ais, eid_3))
         testing.expect(t, ecs.view__get_component_for_table(view2, r, positions) == ecs.get_component(positions, eid_3))
-        r = ecs.view__get_record(view2, 1)
+        r = ecs.view__get_row(view2, 1)
         testing.expect(t, r.eid == eid_1)
         testing.expect(t, ecs.view__get_component_for_table(view2, r, ais) == ecs.get_component(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_table(view2, r, positions) == ecs.get_component(positions, eid_1))
-        r = ecs.view__get_record(view2, 2)
+        r = ecs.view__get_row(view2, 2)
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_table(view2, r, ais) == ecs.get_component(ais, eid_2))
         testing.expect(t, ecs.view__get_component_for_table(view2, r, positions) == ecs.get_component(positions, eid_2))
@@ -972,4 +973,197 @@ package ode_ecs__tests
             testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
         }
 
+    }
+
+    @(test)
+    table__filter__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            // Log into console when panic happens
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            
+        //
+        // Test rerunning filters for entities
+        //
+
+            db:     ecs.Database
+            view:   ecs.View
+            err:    ecs.Error
+            eid :   ecs.entity_id
+            it:     ecs.Iterator
+
+            human, bird, chair : ecs.entity_id
+
+            defer ecs.terminate(&db)
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+
+            human, err = ecs.create_entity(&db)
+            testing.expect(t, err == nil) 
+
+            bird, err = ecs.create_entity(&db)
+            testing.expect(t, err == nil) 
+
+            chair, err = ecs.create_entity(&db)
+            testing.expect(t, err == nil) 
+
+            Character_State :: enum {
+                Idle = 0,
+                Walking,
+                Running,
+                Jumping,
+                Flying,
+                Sliding,
+            }
+
+            Movement :: struct {
+                speed: f32,
+                direction: f32,
+                state: Character_State,
+            }
+
+            movement_table : ecs.Table(Movement)
+
+            err = ecs.table__init(&movement_table, &db, 10)
+            testing.expect(t, err == nil)
+
+            movement: ^Movement // component
+
+            // Add Movement component for human and bird            
+            movement, err = ecs.table__add_component(&movement_table, human)
+            testing.expect(t, err == nil) 
+
+            movement.speed = 5.0
+            movement.direction = 180.0  
+            movement.state = Character_State.Walking
+
+            movement, err = ecs.table__add_component(&movement_table, bird)
+            testing.expect(t, err == nil)
+
+            movement.speed = 20.0
+            movement.direction = 90.0
+            movement.state = Character_State.Flying
+
+            movement, err = ecs.table__add_component(&movement_table, chair)
+            testing.expect(t, err == nil)
+
+            movement.speed = 0.0
+            movement.direction = 0.0    
+            movement.state = Character_State.Idle
+
+            Movement_User_Data :: struct {
+                movement_table: ^ecs.Table(Movement),
+            }
+
+            user_data : Movement_User_Data = Movement_User_Data{ 
+                movement_table = &movement_table,
+            }
+
+            not_idle_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil)->bool {
+                eid := ecs.get_entity(row)
+                movement_table := (^Movement_User_Data)(user_data).movement_table
+
+                // get Movement component
+                movement := ecs.get_component(movement_table, row)
+
+                if movement == nil do return false
+                if movement.state == Character_State.Idle do return false
+
+                return true
+            }
+
+            err = ecs.view_init(&view, &db, {&movement_table}, not_idle_filter)
+            testing.expect(t, err == nil)
+            testing.expect(t, movement_table.type == ecs.Table_Type.Table)
+            testing.expect(t, oc.dense_arr__len(&movement_table.subscribers_with_filter) == 1)
+
+            view.user_data = &user_data
+
+            err = ecs.rebuild(&view)
+            testing.expect(t, err == nil)
+
+            err = ecs.iterator_init(&it, &view)
+            testing.expect(t, err == nil)
+
+            human_present := false
+            bird_present := false
+            chair_present := false
+
+            // Print list of moving entities (not idle)
+            for ecs.iterator_next(&it) {
+                eid = ecs.get_entity(&it)
+
+                movement := ecs.get_component(&movement_table, &it)
+
+                switch eid {
+                    case human: human_present = true
+                    case bird:  bird_present = true
+                    case chair: chair_present = true
+                }
+            }
+
+            testing.expect(t, human_present == true) // human is walking
+            testing.expect(t, bird_present == true)  // bird is flying  
+            testing.expect(t, chair_present == false) // chair is idle
+
+            // Now let's change state of some entities and rerun filter for them
+            movement = ecs.table__get_component_by_entity(&movement_table, human)
+            movement.state = Character_State.Idle // human stopped moving
+
+            movement = ecs.table__get_component_by_entity(&movement_table, chair)
+            movement.state = Character_State.Sliding // chair started sliding for some reason
+
+            // Reset
+            human_present = false
+            bird_present = false
+            chair_present = false
+
+            ecs.iterator_reset(&it)
+            for ecs.iterator_next(&it) {
+                eid = ecs.get_entity(&it)
+
+                movement := ecs.get_component(&movement_table, &it)
+
+                switch eid {
+                    case human: human_present = true
+                    case bird:  bird_present = true
+                    case chair: chair_present = true
+                }
+            }
+
+            testing.expect(t, human_present == true) // human is walking
+            testing.expect(t, bird_present == true)  // bird is flying  
+            testing.expect(t, chair_present == false) // chair is idle
+            
+            // If we re-iterate again, view is not updated, we need to rerun filter for entities that changed
+            ecs.view__rerun_filter(&view, human)
+
+            // Rerun filter for all views that has this component and entity
+            ecs.table__rerun_views_filters(&movement_table, chair)
+
+            // Reset
+            human_present = false
+            bird_present = false
+            chair_present = false
+
+            ecs.iterator_reset(&it)
+            for ecs.iterator_next(&it) {
+                eid = ecs.get_entity(&it)
+
+                movement := ecs.get_component(&movement_table, &it)
+
+                switch eid {
+                    case human: human_present = true
+                    case bird:  bird_present = true
+                    case chair: chair_present = true
+                }
+            }
+
+            testing.expect(t, human_present == false) // human is walking
+            testing.expect(t, bird_present == true)  // bird is flying  
+            testing.expect(t, chair_present == true) // chair is idle
     }

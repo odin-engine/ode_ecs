@@ -65,7 +65,7 @@ main :: proc() {
         err = ecs.database__init(&db, 10, allocator)
         if err != nil { report_error(err); return }
     
-    //
+    ///////////////////////////////////////////////////////////////////////////////
     // Tag_Table example
     //
         is_alive_table : ecs.Tag_Table
@@ -148,7 +148,7 @@ main :: proc() {
         fmt.println("Is bird alive:",  is_bird_alive)
         fmt.println("Is chair alive:", is_chair_alive)
 
-    //
+    ///////////////////////////////////////////////////////////////////////////////
     // View filter example 
     //
         view2: ecs.View
@@ -191,7 +191,7 @@ main :: proc() {
         fmt.println("Is bird alive:",  is_bird_alive)
         fmt.println("Is chair alive:", is_chair_alive)
 
-    //
+    ///////////////////////////////////////////////////////////////////////////////
     // View filter example with user data
     //
         view3: ecs.View
@@ -248,6 +248,151 @@ main :: proc() {
         fmt.println("Is human alive:",  is_human_alive)
         fmt.println("Is bird alive:",  is_bird_alive)
         fmt.println("Is chair alive:", is_chair_alive)
+
+    ///////////////////////////////////////////////////////////////////////////////
+    // View filter example with rerunning filters for entities
+    //
+
+        Character_State :: enum {
+            Idle = 0,
+            Walking,
+            Running,
+            Jumping,
+            Flying,
+            Sliding,
+        }
+
+        Movement :: struct {
+            speed: f32,
+            direction: f32,
+            state: Character_State,
+        }
+
+        movement_table : ecs.Tiny_Table(Movement) // you can use Table or Compact_Table as well
+
+        err = ecs.tiny_table__init(&movement_table, &db)
+        if err != nil { report_error(err); return } 
+
+        movement: ^Movement // component
+
+        // Add Movement component for human and bird            
+        movement, err = ecs.tiny_table__add_component(&movement_table, human)
+        if err != nil { report_error(err); return } 
+
+        movement.speed = 5.0
+        movement.direction = 180.0  
+        movement.state = Character_State.Walking
+
+        movement, err = ecs.tiny_table__add_component(&movement_table, bird)
+        if err != nil { report_error(err); return }
+
+        movement.speed = 20.0
+        movement.direction = 90.0
+        movement.state = Character_State.Flying
+
+        movement, err = ecs.tiny_table__add_component(&movement_table, chair)
+        if err != nil { report_error(err); return }
+
+        movement.speed = 0.0
+        movement.direction = 0.0    
+        movement.state = Character_State.Idle
+
+        view4: ecs.View
+
+        Movement_User_Data :: struct {
+            movement_table: ^ecs.Tiny_Table(Movement),
+        }
+
+        user_data : Movement_User_Data = Movement_User_Data{ 
+            movement_table = &movement_table,
+        }
+
+        not_idle_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil)->bool {
+            eid := ecs.get_entity(row)
+            movement_table := (^Movement_User_Data)(user_data).movement_table
+
+            // get Movement component
+            movement := ecs.get_component(movement_table, row)
+
+            if movement == nil do return false
+
+            if movement.state == Character_State.Idle do return false
+
+            return true
+        }
+
+        err = ecs.view_init(&view4, &db, {&movement_table}, not_idle_filter)
+        if err != nil { report_error(err); return }
+
+        view4.user_data = &user_data
+
+        err = ecs.rebuild(&view4)
+        if err != nil { report_error(err); return }
+    
+        it4: ecs.Iterator
+
+        err = ecs.iterator_init(&it4, &view4)
+        if err != nil { report_error(err); return }
+
+        // Print list of moving entities (not idle)
+        fmt.println()
+        fmt.println(ecs.view_len(&view4), "entities are moving (not idle):")
+        for ecs.iterator_next(&it4) {
+            eid = ecs.get_entity(&it4)
+
+            movement := ecs.get_component(&movement_table, &it4)
+
+            switch eid {
+                case human: fmt.println("Human is", movement.state)
+                case bird:  fmt.println("Bird is", movement.state)
+                case chair: fmt.println("Chair is", movement.state)
+            }
+        }
+
+        // Now let's change state of some entities and rerun filter for them
+        movement = ecs.tiny_table__get_component_by_entity(&movement_table, human)
+        movement.state = Character_State.Idle // human stopped moving
+
+        movement = ecs.tiny_table__get_component_by_entity(&movement_table, chair)
+        movement.state = Character_State.Sliding // chair started sliding for some reason
+
+        fmt.println()
+        fmt.println("View is not updated:")
+        ecs.iterator_reset(&it4)
+        for ecs.iterator_next(&it4) {
+            eid = ecs.get_entity(&it4)
+
+            movement := ecs.get_component(&movement_table, &it4)
+
+            switch eid {
+                case human: fmt.println("Human is", movement.state)
+                case bird:  fmt.println("Bird is", movement.state)
+                case chair: fmt.println("Chair is", movement.state)
+            }
+        }
+
+        
+        // If we re-iterate again, view is not updated, we need to rerun filter for entities that changed
+        ecs.view__rerun_filter(&view4, human)
+
+        // Rerun filter for all views that has this component and entity
+        ecs.tiny_table__rerun_views_filters(&movement_table, chair)
+
+        fmt.println()
+        fmt.println("Now view is updated after we rerun filters:")
+        ecs.iterator_reset(&it4)
+        for ecs.iterator_next(&it4) {
+            eid = ecs.get_entity(&it4)
+
+            movement := ecs.get_component(&movement_table, &it4)
+
+            switch eid {
+                case human: fmt.println("Human is", movement.state)
+                case bird:  fmt.println("Bird is", movement.state)
+                case chair: fmt.println("Chair is", movement.state)
+            }
+        }
+
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

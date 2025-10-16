@@ -31,3 +31,5 @@ ols.json
 
 ode_core/out/*
 ode_core/!out/.keep
+
+doc.md

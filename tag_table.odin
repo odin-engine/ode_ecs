@@ -30,6 +30,7 @@ package ode_ecs
         subscribers: oc.Dense_Arr(^View),
     }
 
+    // It table valid and ready to use (initialized and everything is ok)
     tag_table__is_valid :: proc(self: ^Tag_Table) -> bool {
         if self == nil do return false 
         if !shared_table__is_valid_internal(&self.shared) do return false 
@@ -80,6 +81,7 @@ package ode_ecs
         return nil
     }
 
+    // Memory usage in bytes
     tag_table__memory_usage :: proc (self: ^Tag_Table) -> int {  
         total := size_of(self^)
 
@@ -132,7 +134,7 @@ package ode_ecs
 
         // Notify subscribed views
         for view in self.subscribers.items {
-            if !view.suspended && view__entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 
         return nil
@@ -181,7 +183,7 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component(view, self, tail_eid, target_ptr)
+                    view__update_component_address(view, self, tail_eid, target_ptr)
                 }
             }
         }

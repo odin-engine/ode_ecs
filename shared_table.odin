@@ -10,14 +10,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Shared_Table - data shared between all tables
 
-    Table_Type :: enum {
-        Unknown = 0,
-        Table,
-        Tiny_Table,
-        Compact_Table,
-        Tag_Table,
-    }
-
     // Shared between all tables
     Shared_Table :: struct {
         state: Object_State,

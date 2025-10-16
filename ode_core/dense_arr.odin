@@ -62,19 +62,19 @@ package ode_core
         raw.len -= 1
     }
 
-    dense_arr__remove_by_value :: proc(self: ^Dense_Arr($T), value: T, loc := #caller_location) -> Core_Error {
+    dense_arr__remove_by_value :: proc(self: ^Dense_Arr($T), value: T, loc := #caller_location) -> Error {
         raw := (^runtime.Raw_Slice)(&self.items)
         for index:= 0; index < raw.len; index += 1 {
             if self.items[index] == value {
                 dense_arr__remove_by_index(self, index, loc)
-                return Core_Error.None
+                return nil
             }
         }
 
         return Core_Error.Not_Found
     }
 
-    dense_arr__add :: proc(self: ^Dense_Arr($T), value: T) -> (int, Core_Error) #no_bounds_check {
+    dense_arr__add :: proc(self: ^Dense_Arr($T), value: T) -> (int, Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.items)
         if raw.len >= self.cap do return DELETED_INDEX, Core_Error.Container_Is_Full
 
@@ -82,7 +82,7 @@ package ode_core
         self.items[index] = value
         raw.len += 1
 
-        return index, Core_Error.None
+        return index, nil
     }
 
     dense_arr__len :: #force_inline proc(self: ^Dense_Arr($T)) -> int {
@@ -126,7 +126,7 @@ package ode_core
         c : int = 88
 
         alloc_err: runtime.Allocator_Error
-        err: Core_Error
+        err: Error
         ix: int
 
         defer dense_arr__terminate(&arr, allocator)

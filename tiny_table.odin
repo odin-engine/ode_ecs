@@ -159,7 +159,7 @@ package ode_ecs
                 view := self.subscribers[i]
                 if view != nil && !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component(view, self, tail_eid, rawptr(target))
+                    view__update_component_address(view, self, tail_eid, rawptr(target))
                 }
             }
         }
@@ -175,6 +175,7 @@ package ode_ecs
     }
 
     // clear data, nothing else
+    @(private)
     tiny_table_raw__clear :: proc (self: ^Tiny_Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
@@ -198,6 +199,7 @@ package ode_ecs
         rows: [TINY_TABLE__ROW_CAP]T,       
     }
 
+    // Is table valid and ready to use (initialized and everything is ok)
     tiny_table__is_valid :: proc (self: ^Tiny_Table($T)) -> bool {
         if self == nil do return false 
         if !tiny_table_base__is_valid(&self.base) do return false
@@ -205,6 +207,7 @@ package ode_ecs
         return true
     }
 
+    // Initialize table
     tiny_table__init :: proc(self: ^Tiny_Table($T), db: ^Database, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -221,6 +224,7 @@ package ode_ecs
         return nil
     }
 
+    // Terminate table
     tiny_table__terminate :: proc(self: ^Tiny_Table($T), loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -233,6 +237,7 @@ package ode_ecs
         return nil
     }
 
+    // Add component for entity `eid`
     tiny_table__add_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
@@ -270,10 +275,25 @@ package ode_ecs
         return 
     }
 
+    // Remove component for entity `eid`
     tiny_table__remove_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (err: Error) {
         database__is_entity_correct(self.db, eid) or_return
 
         return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
+    }
+
+    // Goes through subscribed views with filters and reruns filter for entity `eid` and its components
+    tiny_table__rerun_views_filters :: proc(self: ^Tiny_Table($T), eid: entity_id) -> Error {
+        database__is_entity_correct(self.db, eid) or_return
+
+        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+            view := self.subscribers[i]
+            if view != nil && !view.suspended && view_entity_match(view, eid) {
+                view__rerun_filter(view, eid) or_return
+            }
+        }
+
+        return nil
     }
 
     @(require_results)
@@ -339,6 +359,7 @@ package ode_ecs
         return dest_component, nil
     }
 
+    // Clear all data, nothing else
     tiny_table__clear :: proc(self: ^Tiny_Table($T)) {
         when VALIDATIONS {
             assert(self != nil)

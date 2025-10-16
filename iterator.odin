@@ -3,7 +3,10 @@
 */
 package ode_ecs
 
-    import "core:fmt"
+// Base
+    import "base:runtime"
+// Core
+    import "core:mem"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Iterator
@@ -18,14 +21,14 @@ package ode_ecs
         one_record_size: int, 
         records_size: int,
 
-
         // cache
+        index: int,
         raw_index: int,
         view_row: View_Row,
     }
 
     // Use start_row and end_row if you want to process View in batches
-    iterator_init :: proc(self: ^Iterator, view: ^View, start_row: int = 0, end_row: int = 0) -> (err: Error)  {
+    iterator__init :: proc(self: ^Iterator, view: ^View, start_row: int = 0, end_row: int = 0) -> (err: Error)  {
         when VALIDATIONS {
             assert(view != nil)
             assert(self != nil)
@@ -46,10 +49,10 @@ package ode_ecs
 
         self.view_row.view = view
 
-        return iterator_reset(self)
+        return iterator__reset(self)
     }
 
-    iterator_reset :: proc(self: ^Iterator) -> Error {
+    iterator__reset :: proc(self: ^Iterator) -> Error {
         if self.view == nil || self.view.state != Object_State.Normal {
             self.view = nil
             self.raw_index = 0
@@ -67,21 +70,33 @@ package ode_ecs
 
         self.one_record_size = self.view.one_record_size
 
-        self.raw_index = self.one_record_size * (self.start_row - 1)
+        self.index = self.start_row - 1
+        self.raw_index = self.one_record_size * self.index
         self.records_size = self.one_record_size * self.end_row
 
         return nil
     }
 
-    iterator_next :: proc /*"contextless"*/ (self: ^Iterator) -> bool {
+    iterator__next :: proc /*"contextless"*/ (self: ^Iterator/*, filter_check: bool = false*/) -> bool {
 
         self.raw_index += self.one_record_size
+        self.index += 1
 
         if self.raw_index < self.records_size {
             #no_bounds_check {
                 self.view_row.raw = (^View_Row_Raw)(&self.view.rows[self.raw_index])
             }
-            return true 
+
+            // if filter_check && self.view.filter != nil && self.view.filter(&self.view_row, self.view.user_data) == false {
+            //     view__remove_record_by_row(self.view, self.index, self.view_row.raw)
+
+            //     if self.view_row.raw.eid.ix == DELETED_INDEX {
+            //         self.view_row.raw = nil
+            //         return false 
+            //     }
+            // }
+
+            return true
 
         } else {
             self.view_row.raw = nil 

@@ -13,44 +13,66 @@ package ode_ecs
 // ODE
     import oc "ode_core"
 
+
 ///////////////////////////////////////////////////////////////////////////////
-// View_Row_Raw and View_Row
-// 
+// View_Row_Raw - raw data of the row
 
     View_Row_Raw :: struct {
         eid: entity_id,
         refs: [1] rawptr, // at least one component
     } 
 
-    // Wrapper around View_Row_Raw, used in View filter proc and Iterator
+    @(private)
+    view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) {
+        self.eid = eid
+
+        table: ^Shared_Table
+        cid: view_column_id
+        for table in view.tables.items {
+            cid = view.tid_to_cid[table.id]
+            #no_bounds_check {
+                self.refs[cid] = shared_table__get_component(table, eid)
+            }
+        }
+    }
+
+    @(private)
+    view_row_raw__clear :: #force_inline proc (self: ^View_Row_Raw, view: ^View) {
+        mem.zero(self, view.one_record_size)
+        self.eid.ix = DELETED_INDEX
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// View_Row - wrapper around View_Row_Raw, used in View filter proc and Iterator
+// 
+
     View_Row :: struct {
         view: ^View,
         raw: ^View_Row_Raw,
     }
 
-    view_row__init ::  #force_inline proc "contextless" (self: ^View_Row, view: ^View, raw: ^View_Row_Raw) {
-        self.view = view
-        self.raw = raw
-    }
-
+    @(private)
     view_row__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
             return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
         }
     }
 
+    @(private)
     view_row__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
             return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
         }
     }
 
+    @(private)
     view_row__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
             return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
         }
     }
 
+    @(private)
     view_row__get_entity :: #force_inline proc "contextless" (self: ^View_Row) -> entity_id {
         return self.raw.eid
     }
@@ -66,7 +88,7 @@ package ode_ecs
         tables: oc.Dense_Arr(^Shared_Table), // includes tables, removing table invalidates View
 
         tid_to_cid: []view_column_id,  
-        eid_to_ptr: []view_record_id, 
+        eid_to_ptr: []view_record_id, // currently its actually eid_to_rid, might be changed to eid_to_ptr in future
         
         rows: []byte,  // tail swap, order doesn't matter here
         one_record_size: int, 
@@ -79,9 +101,11 @@ package ode_ecs
         suspended: bool,
 
         filter: proc(row: ^View_Row, user_data: rawptr)->bool, 
-        user_data: rawptr
+        user_data: rawptr, 
+        temp_row: ^View_Row_Raw, // used to filter, pointed to reserved row at the end of rows array
     }
 
+    // Is view valid and ready to use (initialized and everything is ok)
     view__is_valid :: proc(self: ^View) -> bool {
         if self == nil do return false 
         if self.id < 0 do return false 
@@ -114,6 +138,9 @@ package ode_ecs
 
         self.db = db
 
+        // Store filter
+        self.filter = filter
+
         // Make sure we do not have repeating columns (copmonent typse/tables)
         slice.sort(includes)
         uniq_tables := slice.unique(includes)
@@ -133,6 +160,7 @@ package ode_ecs
         self.tid_to_cid = make([]view_column_id, max_table_id + 1, db.allocator) or_return
         for i := 0; i < len(self.tid_to_cid); i+=1 do self.tid_to_cid[i] = DELETED_INDEX
 
+        // by definition cap of view is limited by the smallest table capacity
         self.cap = max(int)
         for table, index in uniq_tables {
             when VALIDATIONS {
@@ -159,13 +187,17 @@ package ode_ecs
         // rows
         //
         self.one_record_size = size_of(View_Row_Raw) + (self.tables_len - 1) * size_of(rawptr)  // -1 because one is already in struct
-        self.records_size = self.cap * self.one_record_size
+        self.records_size = (self.cap + 1) * self.one_record_size // +1 so we can use cap index row as temp row for filter match
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         raw.data = mem.alloc(self.records_size, allocator = db.allocator) or_return
         raw.len = 0
 
+        // Temp row is the last row in rows array
+        self.temp_row = view__get_row_private(self, self.cap) // remember we allocated cap + 1 rows
+
+        // State
         self.state = Object_State.Normal
 
         // Clear 
@@ -179,9 +211,7 @@ package ode_ecs
         //
         // Subscribe to tables
         //
-        for table in uniq_tables do shared_table__attach_subscriber(table, self)
-
-        self.filter = filter
+        for table in uniq_tables do shared_table__attach_subscriber(table, self) or_return
 
         return nil
     }
@@ -227,6 +257,7 @@ package ode_ecs
         return nil
     }
 
+    // Rebuild view and fill it with entities matching view's tables
     view__rebuild :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -261,12 +292,15 @@ package ode_ecs
         return nil
     }
     
+    // Number of records(rows) in view
     view__len :: #force_inline proc "contextless" (self: ^View) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
    
+    // Maximum number of records of view
     view__cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
 
+    // View memory usage in bytes
     view__memory_usage :: proc (self: ^View) -> int { 
         total := size_of(self^)
 
@@ -287,11 +321,32 @@ package ode_ecs
         return total
     }
 
-    // returns true if entity has components that would match this view
-    view__entity_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
+    // Returns true if entity has components that would match this view, doesn't check filter
+    view__components_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
         return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) 
+    } 
+
+    view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
+        if self == nil do return false
+        if self.filter == nil do return true
+
+        rid := self.eid_to_ptr[eid.ix]
+        if rid == DELETED_INDEX {
+            if self.temp_row == nil do return false // something is wrong, should not happen 
+            view_row_raw__fill(self.temp_row, self, eid)
+            return view__filter_match_private(self, self.temp_row)
+
+        } else {
+            row_raw := view__get_row(self, rid)
+            if row_raw == nil do return false // something is wrong, should not happen
+
+            return view__filter_match_private(self, row_raw)
+        }
+
+        return false
     }
 
+    // Stop updating view when entities are created/destroyed or components/tags are added/removed  
     view__suspend :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
@@ -300,6 +355,7 @@ package ode_ecs
         self.suspended = true
     }
 
+    // Resume updating view after calling suspend 
     view__resume :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
@@ -308,10 +364,12 @@ package ode_ecs
         self.suspended = false
     }
 
-    view__get_record :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Row_Raw { 
+    view__get_row :: #force_inline proc "contextless" (self: ^View, #any_int index: int) -> ^View_Row_Raw { 
         if index < 0 || index >= view_len(self) do return nil
-        return view__get_record_private(self, index)
+        return view__get_row_private(self, index)
     }
+
+    view__get_record :: view__get_row // for compatibility, use view__get_row instead, might be removed in future
 
     view__get_component_for_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Table($T)) -> ^T {
         #no_bounds_check {
@@ -335,7 +393,14 @@ package ode_ecs
 // Private
 
     @(private)
-    view__add_record :: proc(self: ^View, eid: entity_id) -> Error {
+    view__filter_match_private :: proc(self: ^View, row_raw: ^View_Row_Raw) -> bool {
+        if self.filter == nil do return true
+        return self.filter(&View_Row{ view = self, raw = row_raw }, self.user_data)
+    }
+
+    @(private)
+    // Adds record (row), checks filter if any
+    view__add_record :: proc(self: ^View, eid: entity_id, use_filter:= true) -> Error {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         // Should never happen because view is capped at table cap
@@ -344,31 +409,22 @@ package ode_ecs
 
         self.eid_to_ptr[eid.ix] = cast(view_record_id)raw.len
 
-        record := view__get_record_private(self, raw.len)
+        record := view__get_row_private(self, raw.len)
         record.eid = eid
 
-        table: ^Shared_Table
-        cid: view_column_id
-        rid: table_record_id
-        for table in self.tables.items {
-            cid = self.tid_to_cid[table.id]
-            #no_bounds_check {
-                record.refs[cid] = shared_table__get_component(table, eid)
-            }
-        }
+        view_row_raw__fill(record, self, eid) 
 
-        // When row is constructed, we can pass it to filter finally
-        if self.filter == nil {
+        if !use_filter { // no filter, just add
             raw.len += 1
+            return nil
+        }   
+
+        if view__filter_match_private(self, record) == false {
+            // doesn't match filter, rollback
+            self.eid_to_ptr[eid.ix] = DELETED_INDEX
+            view_row_raw__clear(record, self)
         } else {
-
-            view_row: View_Row
-
-            view_row__init(&view_row, self, record)
-            
-            if self.filter(&view_row, self.user_data) {
-                raw.len += 1
-            }
+            raw.len += 1
         }
 
         return nil
@@ -384,26 +440,62 @@ package ode_ecs
 
         src_row_ix := raw.len - 1
 
-        src_record:= view__get_record_private(self, src_row_ix)
+        src_record:= view__get_row_private(self, src_row_ix)
     
         // check if record is not tail
         if dest_row_ix != src_row_ix {
-            dst_record := view__get_record_private(self, dest_row_ix)    
+            dst_record := view__get_row_private(self, dest_row_ix)    
             
             mem.copy(dst_record, src_record, self.one_record_size)
 
             self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[eid.ix]
         }
 
-        mem.zero(src_record, self.one_record_size)
-        src_record.eid.ix = DELETED_INDEX
+        view_row_raw__clear(src_record, self)
 
         self.eid_to_ptr[eid.ix] = DELETED_INDEX
         raw.len -= 1 
     }
 
+    // Rerun components match and filter for a row when component data is updated
+    view__rerun_filter :: proc(self: ^View, eid: entity_id) -> Error {
+        if view__filter_match(self, eid) {
+            if self.eid_to_ptr[eid.ix] == DELETED_INDEX { // doesn't exist, add it
+                view__add_record(self, eid, false) or_return // add without filter test because we already know it matches
+            } // else already exists, nothing to do
+        } else { // doesn't match
+            if self.eid_to_ptr[eid.ix] != DELETED_INDEX { // exists, remove it
+                view__remove_record(self, eid)
+            } // else doesn't exist, nothing to do
+        }
+
+        return nil
+    }
+
     @(private)
-    view__update_component :: proc(self: ^View, table: ^Shared_Table, eid: entity_id, addr: rawptr) -> Error  {
+    view__remove_record_by_row :: proc(self: ^View, dest_row_ix: int, dest_record: ^View_Row_Raw) {
+        raw := (^runtime.Raw_Slice)(&self.rows)
+
+        src_row_ix := raw.len - 1
+        src_record:= view__get_row_private(self, src_row_ix)
+    
+        // check if record is not tail
+        if dest_row_ix != src_row_ix {
+            mem.copy(dest_record, src_record, self.one_record_size)
+
+            self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[dest_record.eid.ix]
+        }
+
+        mem.zero(src_record, self.one_record_size)
+        src_record.eid.ix = DELETED_INDEX
+
+        self.eid_to_ptr[src_record.eid.ix] = DELETED_INDEX
+        raw.len -= 1 
+    }
+
+    @(private)
+    // Update component address in view when component is updated in table
+    view__update_component_address :: proc(self: ^View, table: ^Shared_Table, eid: entity_id, addr: rawptr) -> Error  {
         cid := self.tid_to_cid[table.id]
         assert(cid != DELETED_INDEX)
 
@@ -411,7 +503,7 @@ package ode_ecs
         if self.eid_to_ptr[eid.ix] == DELETED_INDEX do return oc.Core_Error.Not_Found   // it is possible when removal of other component
                                                                                         // removed enity from the view      
         row_ix := int(self.eid_to_ptr[eid.ix])
-        record := view__get_record_private(self, row_ix)
+        record := view__get_row_private(self, row_ix)
         #no_bounds_check {
             record.refs[cid] = addr
         }
@@ -420,7 +512,7 @@ package ode_ecs
     }
 
     @(private)
-    view__get_record_private :: #force_inline proc "contextless" (self: ^View, index: int) -> ^View_Row_Raw { 
+    view__get_row_private :: #force_inline proc "contextless" (self: ^View, #any_int index: int) -> ^View_Row_Raw { 
         #no_bounds_check {
             return (^View_Row_Raw)(&self.rows[index * self.one_record_size])
         }

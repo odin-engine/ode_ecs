@@ -29,6 +29,7 @@ package ode_ecs
         cap: int,
 
         subscribers: oc.Dense_Arr(^View),
+        subscribers_with_filter: oc.Dense_Arr(^View),
     }
 
     @(private)
@@ -40,12 +41,13 @@ package ode_ecs
         if self.eid_to_ptr == nil do return false 
         if self.cap <= 0 do return false 
         if !oc.dense_arr__is_valid(&self.subscribers) do return false
+        if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
 
         return true 
     }
 
     @(private)
-    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int) -> Error {
+    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP) -> Error {
         shared_table__init(&self.shared, Table_Type.Table, db)
 
         self.cap = cap
@@ -58,13 +60,15 @@ package ode_ecs
         // db.id_factory.cap is database entities cap
         self.eid_to_ptr = make([]rawptr, db.id_factory.cap, db.allocator) or_return
 
-        oc.dense_arr__init(&self.subscribers, VIEWS_CAP, db.allocator) or_return
+        oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
+        oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
 
         return nil
     }
 
     @(private)
     table_base__terminate :: proc(self: ^Table_Base) -> Error {
+        oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
         delete(self.rid_to_eid, self.db.allocator) or_return
@@ -81,12 +85,23 @@ package ode_ecs
     @(private)
     table_base__attach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
         _, err := oc.dense_arr__add(&self.subscribers, view)
-        return err
+        if err != nil do return err
+
+        if view.filter != nil {
+            _, err = oc.dense_arr__add(&self.subscribers_with_filter, view)
+            if err != nil do return err
+        }
+
+        return nil
     }
 
     @(private)
     table_base__detach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
         err := oc.dense_arr__remove_by_value(&self.subscribers, view)
+        if err != nil do return err
+
+        err = oc.dense_arr__remove_by_value(&self.subscribers_with_filter, view)
+        if err == oc.Core_Error.Not_Found do return nil // not found is ok, it means view has no filter
         return err
     }
 
@@ -196,7 +211,7 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component(view, self, tail_eid, rawptr(target))
+                    view__update_component_address(view, self, tail_eid, rawptr(target))
                 }
             }
         }
@@ -252,7 +267,7 @@ package ode_ecs
         return true
     }
 
-    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
+    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
@@ -265,7 +280,7 @@ package ode_ecs
 
         self.type_info = type_info_of(typeid_of(T))
 
-        table_base__init(&self.base, db, cap) or_return 
+        table_base__init(&self.base, db, cap, subscribers_cap) or_return 
 
         self.rows = make([]T, cap, db.allocator) or_return
         
@@ -333,6 +348,17 @@ package ode_ecs
         database__is_entity_correct(self.db, eid) or_return
        
         return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
+    }
+
+    // Goes through subscribed views with filters and reruns filter for entity `eid` and its components
+    table__rerun_views_filters :: proc(self: ^Table($T), eid: entity_id) -> Error {
+        database__is_entity_correct(self.db, eid) or_return
+
+        for view in self.subscribers_with_filter.items {
+            if !view.suspended do view__rerun_filter(view, eid) or_return
+        }
+
+        return nil
     }
 
     table__len :: #force_inline proc "contextless" (self: ^Table($T)) -> int {
