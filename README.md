@@ -193,8 +193,6 @@ To get an entity or its components inside the iterator loop, you can do this:
     }
 ```
 
-Here’s your text with corrected grammar, smoother flow, and consistent style, while keeping the technical meaning intact:
-
 ---
 
 ### Tag_Table
