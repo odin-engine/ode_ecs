@@ -238,8 +238,6 @@ You can iterate over tagged entities like this:
 
 ### View Filter
 
-Instead of using `Tag_Table`, you can also use a **View filter**.
-
 A View filter is a `proc` that you can pass to `ecs.view_init` to filter view data:
 
 ```odin
