@@ -175,10 +175,12 @@ package ode_ecs
         add_tag :: proc {
             tag_table__add_tag,
         }
+        tag :: add_tag
 
         remove_tag :: proc {
             tag_table__remove_tag,
         }
+        untag :: remove_tag
 
         //
         // Other

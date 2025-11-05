@@ -89,10 +89,10 @@ main :: proc() {
         chair, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
-        err = ecs.add_tag(&is_alive_table, human)
+        err = ecs.tag(&is_alive_table, human)
         if err != nil { report_error(err); return }
 
-        err = ecs.add_tag(&is_alive_table, bird)
+        err = ecs.tag(&is_alive_table, bird)
         if err != nil { report_error(err); return }
 
         // iterate over entities tagged in is_alive_table
@@ -125,8 +125,8 @@ main :: proc() {
         fmt.println("Is chair alive:", is_chair_alive)
 
         // Remove some tags
-        ecs.remove_tag(&is_alive_table, human)
-        ecs.remove_tag(&is_alive_table, chair)
+        ecs.untag(&is_alive_table, human)
+        ecs.untag(&is_alive_table, chair)
 
         ecs.iterator_reset(&it)
 

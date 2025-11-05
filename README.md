@@ -209,8 +209,8 @@ Then you can tag or untag entities like this:
 ```odin
     human, _ = ecs.create_entity(&db)
     
-    ecs.add_tag(&is_alive, human)       // tag
-    ecs.remove_tag(&is_alive, human)    // untag
+    ecs.tag(&is_alive, human)       // add tag
+    ecs.untag(&is_alive, human)    // remove tag
 ```
 
 `Tag_Table` is especially useful with `View`:

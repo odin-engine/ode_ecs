@@ -68,12 +68,12 @@ package ode_ecs__tests
             chair, err = ecs.create_entity(&db)
             testing.expect(t, err == nil)
 
-            ecs.add_tag(&is_alive_table, human)
+            ecs.tag(&is_alive_table, human)
 
             testing.expect(t, ecs.tag_table__len(&is_alive_table) == 1)
             testing.expect(t, ecs.tag_table__cap(&is_alive_table) == 10)
 
-            ecs.add_tag(&is_alive_table, bird)
+            ecs.tag(&is_alive_table, bird)
 
             testing.expect(t, ecs.tag_table__len(&is_alive_table) == 2)
             testing.expect(t, ecs.tag_table__cap(&is_alive_table) == 10)
@@ -132,8 +132,8 @@ package ode_ecs__tests
             testing.expect(t, is_bird_alive)
             testing.expect(t, is_chair_alive)
 
-            ecs.remove_tag(&is_alive_table, human)
-            ecs.remove_tag(&is_alive_table, chair)
+            ecs.untag(&is_alive_table, human)
+            ecs.untag(&is_alive_table, chair)
 
             ecs.iterator_reset(&it)
 
