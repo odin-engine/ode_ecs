@@ -155,7 +155,7 @@ A **_View_** is used when you want to iterate over entities that have specific c
     ecs.view_init(&view1, &ecs1, {&positions, &ais})
 ```  
 
-At this point, the view might be empty because it tracks entities as they are created/destroyed or as components are added/removed. If you create the view before creating entities, it will stay up to date. If you initialize your view at a later stage, you can use the `rebuild()` procedure to update it:  
+At this point, the view might be empty because it tracks entities as they are created/destroyed or as components are added/removed. If you create the view before creating entities or adding/removing components, it will stay up to date. If you initialize your view at a later stage, you can use the `rebuild()` procedure to update it:  
 
 ```odin
     ecs.rebuild(&view1)  // This operation might be relatively costly as it iterates over components
