@@ -151,7 +151,7 @@ A **_View_** is used when you want to iterate over entities that have specific c
     
     // ... skipping initialization of other objects
 
-    // This view will reference all entities that have Position and AI components attached
+    // This view will reference all entities that have Position and AI components
     ecs.view_init(&view1, &ecs1, {&positions, &ais})
 ```  
 
