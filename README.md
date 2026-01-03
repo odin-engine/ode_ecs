@@ -21,7 +21,7 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 
 # How to install
 
-Use `git clone` to clone this repository into your project, and then `import ecs "ode_ecs"`: 
+Use `git clone` to clone this repository into your project folder, and then `import ecs "ode_ecs"`: 
 
 ```  
     git clone https://github.com/odin-engine/ode_ecs.git
