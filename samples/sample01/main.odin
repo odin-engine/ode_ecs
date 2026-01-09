@@ -1,6 +1,8 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
+    A basic sample with 100,000 entities that demonstrates how to use tables and views.
+    
     Run this sample with speed optimizations to see results closer to real-world performance:
 
     odin run . -o:speed
