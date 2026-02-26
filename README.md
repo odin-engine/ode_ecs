@@ -75,7 +75,7 @@ If you have a `Position` component, you can create a table like this:
 
     positions : ecs.Table(Position)  // component table
 
-    ecs.table_init(&positions, ecs=&my_ecs, cap=100)
+    ecs.table_init(&positions, db=&my_ecs, cap=100)
 ```  
 
 To create an entity, you can do this:  
