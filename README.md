@@ -29,9 +29,9 @@ Use `git clone` to clone this repository into your project folder, and then `imp
 
 # Basics  
 
-An `Entity` is simply an ID. All data associated with an entity is stored in its components.  
+An **_Entity_** is simply an ID. All data associated with an entity is stored in its components.  
 
-A `Component` represents your data and can be defined using a `struct` or other types in Odin. An entity can have many components.  
+A **_Component_** represents your data and can be defined using a `struct` or other types in Odin. An entity can have many components.  
 
 An ECS **_Database_** is a database similar to a relational database instance, but for entities and components. Other ECS libraries refer to this concept as _Worlds_ or _Scenes_. However, I believe `Database` is a better term because a single game world can use multiple ECS databases, and a single game scene can also use multiple ECS databases.  
 
