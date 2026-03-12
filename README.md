@@ -139,7 +139,8 @@ Using an entity, you can access its other components:
 
 ### **View**  
 
-A **_View_** is used when you want to iterate over entities that have specific components. To initialize a view for entities with both `Position` and `AI` components, you can do this:  
+A **_View_** is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
+To initialize a view for entities with both `Position` and `AI` components, you can do this:  
 
 ```odin
     ecs1: ecs.Database
