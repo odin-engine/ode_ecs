@@ -284,7 +284,7 @@ Check [Sample06](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample
 To run samples, navigate to the appropriate folder (`samples/basic` or `samples/sample01`) and execute:  
 
 ```  
-    odin run .  
+    odin run . -o:speed
 ```  
 
 To run tests, go to the `tests` folder and execute:  
