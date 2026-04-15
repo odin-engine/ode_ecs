@@ -317,10 +317,10 @@ This approach is very useful because it ensures that if you save an entity ID so
 If an entity has been destroyed via `ecs.destroy_entity()`, use `is_entity_expired` to check its status:
 
 ```odin
-    ecs.is_entity_expired(&db, my_entity_id) // returns true if entity was destroyed
+    ecs.is_entity_expired(&db, my_entity_id) // returns true if the entity was destroyed
 ```
 
-This procedure compares the entity's generation (`gen`) against the database records. Upon destruction, the record's gen is updated, causing any older references to be marked as expired.
+This procedure compares the entity's generation (`gen`) against the database records. 
 
 ---
 ### Maximum Number of Component Types  
