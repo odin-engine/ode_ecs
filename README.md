@@ -314,6 +314,14 @@ The `ix_gen` is defined like this:
 
 This approach is very useful because it ensures that if you save an entity ID somewhere and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 
+If an entity has been destroyed via `ecs.destroy_entity()`, use `is_entity_expired` to check its status:
+
+```odin
+    ecs.is_entity_expired(&db, my_entity_id) // returns true if entity was destroyed
+```
+
+This procedure compares the entity's generation (`gen`) against the database records. Upon destruction, the record's gen is updated, causing any older references to be marked as expired.
+
 ---
 ### Maximum Number of Component Types  
 

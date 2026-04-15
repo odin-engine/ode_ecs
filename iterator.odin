@@ -77,7 +77,7 @@ package ode_ecs
         return nil
     }
 
-    iterator__next :: proc /*"contextless"*/ (self: ^Iterator/*, filter_check: bool = false*/) -> bool {
+    iterator__next :: proc "contextless" (self: ^Iterator) -> bool {
 
         self.raw_index += self.one_record_size
         self.index += 1
@@ -86,15 +86,6 @@ package ode_ecs
             #no_bounds_check {
                 self.view_row.raw = (^View_Row_Raw)(&self.view.rows[self.raw_index])
             }
-
-            // if filter_check && self.view.filter != nil && self.view.filter(&self.view_row, self.view.user_data) == false {
-            //     view__remove_record_by_row(self.view, self.index, self.view_row.raw)
-
-            //     if self.view_row.raw.eid.ix == DELETED_INDEX {
-            //         self.view_row.raw = nil
-            //         return false 
-            //     }
-            // }
 
             return true
 

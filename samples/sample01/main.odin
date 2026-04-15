@@ -97,7 +97,7 @@ main :: proc() {
         if err != nil { report_error(err); return }
         
         // Init tables
-        err = ecs.table_init(&positions, &db, 100_000) // Maximum 100K position components
+        err = ecs.table_init(&positions, db = &db, cap = 100_000) // Maximum 100K position components
         if err != nil { report_error(err); return }
 
         err = ecs.table_init(&ais, &db, 100_000) // Maximum 20K AI components
