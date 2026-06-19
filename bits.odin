@@ -81,10 +81,10 @@ package ode_ecs
         return true
     }
 
-    bits_arr__no_intersection :: #force_inline proc "contextless" (a: ^Bits_Arr($N), b: ^Bits_Arr($S)) -> bool {
+    bits_arr__no_intersection :: #force_inline proc (a: ^Bits_Arr($N), b: ^Bits_Arr($S)) -> bool {
         assert(N == S)
         for i:=0; i < N; i += 1 {
-            if (a^ & b^) != {} do return false
+            if (a.value[i] & b.value[i]) != {} do return false
         }
 
         return true

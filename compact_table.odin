@@ -261,8 +261,8 @@ package ode_ecs
 
     compact_table__is_valid :: proc(self: ^Compact_Table($T)) -> bool {
         if self == nil do return false 
-        if !compact_table_base__is_valid(&self.base) do return false 
-        if rows == nil do return false
+        if !compact_table_base__is_valid(&self.base) do return false
+        if self.rows == nil do return false
 
         return true
     }
@@ -336,12 +336,13 @@ package ode_ecs
             err = API_Error.Component_Already_Exist
         }
 
-        // Notify subscribed views
+        // Notify subscribed views. Also runs on the already-exists path on purpose: it
+        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for view in self.subscribers.items {
             if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
         }
 
-        return 
+        return
     }
 
     compact_table__remove_component :: proc(self: ^Compact_Table($T), eid: entity_id, loc:= #caller_location) -> Error {

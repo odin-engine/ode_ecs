@@ -137,7 +137,7 @@ package ode_ecs
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
                 view := self.subscribers[i]
-                if view != nil do view__remove_record(view, target_eid)
+                if view != nil && !view.suspended do view__remove_record(view, target_eid)
             }
         }
         else {
@@ -266,13 +266,14 @@ package ode_ecs
             err = API_Error.Component_Already_Exist
         }
 
-        // Notify subscribed views
+        // Notify subscribed views. Also runs on the already-exists path on purpose: it
+        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
             view := self.subscribers[i]
             if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
         }
 
-        return 
+        return
     }
 
     // Remove component for entity `eid`

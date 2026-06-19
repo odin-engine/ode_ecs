@@ -315,7 +315,7 @@ package ode_ecs
         }
 
         if self.rows != nil {
-            total += size_of(self.rows[0]) * self.cap
+            total += self.one_record_size * (self.cap + 1) // +1 reserved temp row, see view__init
         }
 
         return total
@@ -488,18 +488,21 @@ package ode_ecs
         src_row_ix := raw.len - 1
         src_record:= view__get_row_private(self, src_row_ix)
     
+        dest_eid := dest_record.eid
+        src_eid := src_record.eid
+
         // check if record is not tail
         if dest_row_ix != src_row_ix {
             mem.copy(dest_record, src_record, self.one_record_size)
 
-            self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[dest_record.eid.ix]
+            self.eid_to_ptr[src_eid.ix] = self.eid_to_ptr[dest_eid.ix]
         }
 
         mem.zero(src_record, self.one_record_size)
         src_record.eid.ix = DELETED_INDEX
 
-        self.eid_to_ptr[src_record.eid.ix] = DELETED_INDEX
-        raw.len -= 1 
+        self.eid_to_ptr[dest_eid.ix] = DELETED_INDEX
+        raw.len -= 1
     }
 
     @(private)

@@ -122,6 +122,7 @@ package ode_core
     }
 
     ix_gen_factory__is_expired :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool {
+        if id.ix < 0 || id.ix >= self.cap do return true // out of range -> treat as expired
         return self.items[id.ix].gen != id.gen
     }
 
