@@ -13,7 +13,7 @@ ODE_ECS is a simple, fast, and type-safe ECS written in Odin.
 - Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
 - Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
-- MIT License.  
+- zlib License (even more permissive than both the MIT License and the BSD 3-Clause License). 
 - Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
 - Tests are [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
 - An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
