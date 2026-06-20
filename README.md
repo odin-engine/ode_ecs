@@ -333,6 +333,19 @@ By default, the maximum number of component types is 128. However, you can have 
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
 
+---
+### Thread safety?
+
+This is a data-oriented library with a "no hidden costs / preallocate everything" philosophy. Baking locks into every call is exactly the kind of hidden cost it avoids. The idiomatic answer is to not make the core thread-safe, and instead parallelize at a higher level where synchronization amortizes to zero:
+
+- Phase separation: run read/compute systems in parallel, then apply all structural changes (create/destroy/add/remove) in a single-threaded sync point. The parallel phase touches no shared mutable bookkeeping, so it needs no locks and the inner loop stays byte-for-byte identical → no throughput loss.
+
+- Data-parallel iteration is already a designed-in feature. iterator__init(self, view, start_row, end_row) exists precisely for this — its comment says "Use start_row and end_row if you want to process View in batches."
+
+- One Database per thread/region for fully independent workloads — the API explicitly supports many databases, and they share nothing.
+
+So the honest summary: making the core internally thread-safe would meaningfully hurt — per-element locking is a 2–10× hit on the headline iteration path and per-mutation locking serializes the very thing you parallelized for. But thread-safe usage via batched parallel iteration over immutable component data plus a single-threaded structural-mutation phase costs essentially nothing.
+
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
 - [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)
