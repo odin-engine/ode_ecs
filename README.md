@@ -338,7 +338,7 @@ A value of `2` will set the maximum number of component types to 256, `3` will i
 
 This is a data-oriented library with a "no hidden costs / preallocate everything" philosophy. Baking locks into every call is exactly the kind of hidden cost it avoids. The idiomatic answer is to not make the core thread-safe, and instead parallelize at a higher level where synchronization amortizes to zero:
 
-- Phase separation: run read/compute systems in parallel, then apply all structural changes (create/destroy/add/remove) in a single-threaded sync point. The parallel phase touches no shared mutable bookkeeping, so it needs no locks and the inner loop stays byte-for-byte identical → no throughput loss.
+- Phase separation: run read/compute systems in parallel, then apply all structural changes (create/destroy/add/remove) in a single-threaded sync point. The parallel phase touches no shared mutable bookkeeping.
 
 - Data-parallel iteration is already a designed-in feature. iterator__init(self, view, start_row, end_row) exists precisely for this — its comment says "Use start_row and end_row if you want to process View in batches."
 
