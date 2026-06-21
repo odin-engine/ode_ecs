@@ -26,7 +26,6 @@ package ode_ecs
     view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) {
         self.eid = eid
 
-        table: ^Shared_Table
         cid: view_column_id
         for table in view.tables.items {
             cid = view.tid_to_cid[table.id]
@@ -267,7 +266,7 @@ package ode_ecs
         view__clear(self) or_return 
 
         min_records_count: int = max(int)
-        min_table, table: ^Shared_Table
+        min_table: ^Shared_Table
         for table in self.tables.items {
             if shared_table__len(table) < min_records_count {
                 min_table = table
