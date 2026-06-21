@@ -44,6 +44,7 @@ package ode_ecs
             case Table_Type.Table:
                 table_raw__terminate(cast(^Table_Raw)self) or_return
             case Table_Type.Tiny_Table:
+                tiny_table_base__terminate(cast(^Tiny_Table_Base)self) or_return
             case Table_Type.Compact_Table:
                 compact_table_raw__terminate(cast(^Compact_Table_Raw)self) or_return
             case Table_Type.Tag_Table:
@@ -181,8 +182,10 @@ package ode_ecs
             case Table_Type.Compact_Table:
                 return compact_table_raw__remove_component(cast(^Compact_Table_Raw) self, eid)
             case Table_Type.Tag_Table:
-                return nil // no component
-        } 
+                // No component data, but the tag entry itself must be removed so
+                // destroying a tagged entity doesn't leave a stale tag behind.
+                return tag_table__remove_tag(cast(^Tag_Table) self, eid)
+        }
 
         assert(false) // should not happen
         return API_Error.Unexpected_Error

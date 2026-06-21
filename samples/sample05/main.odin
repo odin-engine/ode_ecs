@@ -177,6 +177,7 @@ main :: proc() {
 
         sw: time.Stopwatch
 
+        time.stopwatch_reset(&sw) // NOTE: Stopwatch accumulates; reset before every measurement
         time.stopwatch_start(&sw)
 
             for &comp, index in table.rows {
@@ -193,6 +194,7 @@ main :: proc() {
         // Iterate over smaller Compact_Table
         //
 
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
             for &comp, index in compact_table.rows {
@@ -209,6 +211,7 @@ main :: proc() {
         // Iterate over large Table
         //
 
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
             for &comp, index in large_table.rows {
@@ -225,6 +228,7 @@ main :: proc() {
         // Iterate over large Compact_Table
         //
 
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
             for &comp, index in large_compact_table.rows {
@@ -272,21 +276,29 @@ main :: proc() {
             if err != nil { report_error(err); return }
         }
 
-
+        
+        // The 8-row tables are too small to time in a single pass (the cost is below the
+        // timer's noise floor), so we repeat each loop REPEAT times. The reported "Loop time"
+        // for these is the TOTAL over REPEAT passes. `rep` is folded into the work so the
+        // optimizer cannot collapse the identical passes.
+        REPEAT :: 1_000_000
 
         //
         // Iterate over Tiny_Table
         //
 
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in tiny_table.rows {
-                eid = ecs.get_entity(&tiny_table, index)
+            for rep := 0; rep < REPEAT; rep += 1 {
+                for &comp, index in tiny_table.rows {
+                    eid = ecs.get_entity(&tiny_table, index)
 
-                comp.hp += eid.ix  // random operation over component
-                comp.max_hp += eid.ix
-            }    
-        
+                    comp.hp += eid.ix + rep  // random operation over component
+                    comp.max_hp += eid.ix
+                }
+            }
+
         time.stopwatch_stop(&sw)
         _, _, _, tiny_table_time := time.precise_clock_from_stopwatch(sw)
 
@@ -295,15 +307,18 @@ main :: proc() {
         // Iterate over tiny Compact_Table
         //
 
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in compact_table8.rows {
-                eid = ecs.get_entity(&compact_table8, index)
+            for rep := 0; rep < REPEAT; rep += 1 {
+                for &comp, index in compact_table8.rows {
+                    eid = ecs.get_entity(&compact_table8, index)
 
-                comp.hp += eid.ix  // random operation over component
-                comp.max_hp += eid.ix
-            }    
-        
+                    comp.hp += eid.ix + rep  // random operation over component
+                    comp.max_hp += eid.ix
+                }
+            }
+
         time.stopwatch_stop(&sw)
         _, _, _, compact_table8_time := time.precise_clock_from_stopwatch(sw)
 
@@ -311,15 +326,18 @@ main :: proc() {
         // Iterate over tiny Table
         //
 
+        time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in table8.rows {
-                eid = ecs.get_entity(&table8, index)
+            for rep := 0; rep < REPEAT; rep += 1 {
+                for &comp, index in table8.rows {
+                    eid = ecs.get_entity(&table8, index)
 
-                comp.hp += eid.ix  // random operation over component
-                comp.max_hp += eid.ix
-            }    
-        
+                    comp.hp += eid.ix + rep  // random operation over component
+                    comp.max_hp += eid.ix
+                }
+            }
+
         time.stopwatch_stop(&sw)
         _, _, _, table8_time := time.precise_clock_from_stopwatch(sw)
 
@@ -381,6 +399,7 @@ main :: proc() {
         fmt.println()
         fmt.println("Comparison with Tiny_Table")
         fmt.println("=========================================")
+        fmt.printfln("(8-row loop times below are totals over %v passes)", REPEAT)
 
         //
         // Tiny_Table
@@ -391,7 +410,7 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
     
-        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(tiny_table_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms (%v passes)", "Loop time:", f64(tiny_table_time) / 1_000_000.0, REPEAT)
         fmt.printfln("%-30s %.4f MB", "Memory usage:",  f64(ecs.memory_usage(&tiny_table)) / f64(runtime.Megabyte))
 
         //
@@ -403,7 +422,7 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
     
-        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(compact_table8_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms (%v passes)", "Loop time:", f64(compact_table8_time) / 1_000_000.0, REPEAT)
         fmt.printfln("%-30s %.4f MB", "Memory usage:",  f64(ecs.memory_usage(&compact_table8)) / f64(runtime.Megabyte))
 
         //
@@ -415,16 +434,16 @@ main :: proc() {
         delete(s, allocator)
         fmt.println("-----------------------------------------")
     
-        fmt.printfln("%-30s %.4f ms", "Loop time:", f64(table8_time) / 1_000_000.0)
+        fmt.printfln("%-30s %.4f ms (%v passes)", "Loop time:", f64(table8_time) / 1_000_000.0, REPEAT)
         fmt.printfln("%-30s %.4f MB", "Memory usage:",  f64(ecs.memory_usage(&table8)) / f64(runtime.Megabyte))
 
         fmt.println("=========================================")
         fmt.println("Conclusions:")
         fmt.println()
         fmt.println("   Compact_Table vs. Table")
-        fmt.println("       It makes sense to use Compact_Table if you want to save memory at the cost of speed,")
-        fmt.println("       but only if the Compact_Table capacity is much lower than your database entity capacity.")
-        fmt.println("       If the Compact_Table capacity is close to the database entity capacity, Table will be faster and save you more memory.")
+        fmt.println("       Use Compact_Table to save memory when its capacity is much lower than the database entity capacity. Iteration speed is")
+        fmt.println("       about the same as Table, but per-entity lookups and add/remove are slower (hash map vs. direct array). If the capacity is")
+        fmt.println("       close to the entity capacity, Table is faster on lookups and uses less memory.")
         fmt.println()
         fmt.println("   For Tiny_Table vs. Compact_Table vs. Table:")
         fmt.printfln("       Use Tiny_Table when you need a table with a component capacity of %v or less.", ecs.TINY_TABLE__ROW_CAP)

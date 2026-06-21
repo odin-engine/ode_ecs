@@ -1,3 +1,9 @@
+# Ignore  .md files 
+*.md
+
+# Allow the README.md file 
+!/README.md
+
 out/*
 !out/.keep
 

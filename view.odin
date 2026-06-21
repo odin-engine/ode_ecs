@@ -26,7 +26,6 @@ package ode_ecs
     view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) {
         self.eid = eid
 
-        table: ^Shared_Table
         cid: view_column_id
         for table in view.tables.items {
             cid = view.tid_to_cid[table.id]
@@ -267,7 +266,7 @@ package ode_ecs
         view__clear(self) or_return 
 
         min_records_count: int = max(int)
-        min_table, table: ^Shared_Table
+        min_table: ^Shared_Table
         for table in self.tables.items {
             if shared_table__len(table) < min_records_count {
                 min_table = table
@@ -315,16 +314,16 @@ package ode_ecs
         }
 
         if self.rows != nil {
-            total += size_of(self.rows[0]) * self.cap
+            total += self.one_record_size * (self.cap + 1) // +1 reserved temp row, see view__init
         }
 
         return total
     }
 
     // Returns true if entity has components that would match this view, doesn't check filter
-    view__components_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
-        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) 
-    } 
+    view__components_match :: #force_inline proc (self: ^View, eid: entity_id) -> bool {
+        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix])
+    }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
         if self == nil do return false
@@ -488,18 +487,21 @@ package ode_ecs
         src_row_ix := raw.len - 1
         src_record:= view__get_row_private(self, src_row_ix)
     
+        dest_eid := dest_record.eid
+        src_eid := src_record.eid
+
         // check if record is not tail
         if dest_row_ix != src_row_ix {
             mem.copy(dest_record, src_record, self.one_record_size)
 
-            self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[dest_record.eid.ix]
+            self.eid_to_ptr[src_eid.ix] = self.eid_to_ptr[dest_eid.ix]
         }
 
         mem.zero(src_record, self.one_record_size)
         src_record.eid.ix = DELETED_INDEX
 
-        self.eid_to_ptr[src_record.eid.ix] = DELETED_INDEX
-        raw.len -= 1 
+        self.eid_to_ptr[dest_eid.ix] = DELETED_INDEX
+        raw.len -= 1
     }
 
     @(private)

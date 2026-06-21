@@ -69,6 +69,8 @@ package ode_ecs
     }
 
     tag_table__terminate :: proc(self: ^Tag_Table) -> Error {
+        for view in self.subscribers.items do view.state = Object_State.Invalid
+
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
         oc_maps.rh_map__terminate(&self.eid_to_ptr, self.db.allocator) or_return
 
