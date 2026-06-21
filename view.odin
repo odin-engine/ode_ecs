@@ -322,9 +322,9 @@ package ode_ecs
     }
 
     // Returns true if entity has components that would match this view, doesn't check filter
-    view__components_match :: #force_inline proc "contextless" (self: ^View, eid: entity_id) -> bool {
-        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) 
-    } 
+    view__components_match :: #force_inline proc (self: ^View, eid: entity_id) -> bool {
+        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix])
+    }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
         if self == nil do return false

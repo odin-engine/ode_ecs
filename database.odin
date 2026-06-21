@@ -142,7 +142,7 @@ package ode_ecs
 
         for table in self.tables.items {  
             if table == nil do continue
-            if int(table.id) not_in bits  do continue
+            if !uni_bits__exists(&bits, int(table.id)) do continue
 
             shared_table__remove_component(table, eid) or_return
         } 

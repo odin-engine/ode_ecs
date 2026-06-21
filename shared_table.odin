@@ -44,6 +44,7 @@ package ode_ecs
             case Table_Type.Table:
                 table_raw__terminate(cast(^Table_Raw)self) or_return
             case Table_Type.Tiny_Table:
+                tiny_table_base__terminate(cast(^Tiny_Table_Base)self) or_return
             case Table_Type.Compact_Table:
                 compact_table_raw__terminate(cast(^Compact_Table_Raw)self) or_return
             case Table_Type.Tag_Table:

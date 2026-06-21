@@ -50,6 +50,8 @@ package ode_ecs
     @(private)
     tiny_table_base__terminate :: proc(self: ^Tiny_Table_Base) ->Error {
 
+        for view in self.subscribers do if view != nil do view.state = Object_State.Invalid
+
         database__detach_table(self.db, self)
 
         shared_table__clear_state(&self.shared)
