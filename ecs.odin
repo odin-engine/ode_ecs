@@ -105,15 +105,17 @@ package ode_ecs
             table__get_entity_by_row_number,
             compact_table__get_entity_by_row_number,
             tiny_table_base__get_entity_by_row_number,
+            tag_table__get_entity_by_row_number,
             iterator__get_entity,
             view_row__get_entity,
         }
 
         // Get entity_id by row number from different tables
         get_entity_by_row_number :: proc {
-            table__get_entity_by_row_number, 
-            compact_table__get_entity_by_row_number, 
+            table__get_entity_by_row_number,
+            compact_table__get_entity_by_row_number,
             tiny_table__get_entity_by_row_number,
+            tag_table__get_entity_by_row_number,
         }
 
         //
