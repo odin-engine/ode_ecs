@@ -3,6 +3,7 @@
 */
 package ode_ecs
 
+import "core:log"
 // Base
     import "base:runtime"
 // Core
@@ -110,3 +111,49 @@ package ode_ecs
     iterator__get_entity :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {
         return self.view_row.raw.eid
     }
+
+// TableIterators
+
+TableIterator :: struct($T: typeid) {
+	table:     ^Table(T),
+
+	// current state
+	index:     int,
+	max_index: int,
+}
+
+// Use start_row and end_row if you want to process View in batches
+table_iterator__init :: proc(table: ^Table($T)) -> (iterator: TableIterator(T)) {
+	when VALIDATIONS {assert(table != nil)}
+
+	iterator = TableIterator(T) {
+		table     = table,
+	}
+    table_iterator__reset(&iterator)
+
+	return iterator
+}
+
+table_iterator__reset :: proc(iterator: ^TableIterator($T)) {
+	when VALIDATIONS {assert(iterator.table != nil)}
+	iterator.index = -1
+	iterator.max_index = len(iterator.table.rows)
+}
+
+table_iterator__next :: proc(iterator: ^TableIterator($T)) -> bool {
+	iterator.index += 1
+	return iterator.index < iterator.max_index
+}
+
+
+table_iterator__get :: proc(self: ^TableIterator($T)) -> (
+    component: ^T,
+	entity: entity_id,
+    index: int,
+) {
+
+	component = &self.table.rows[self.index]
+	index = self.index
+	entity = get_entity(self.table, index)
+	return
+}
