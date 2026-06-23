@@ -238,6 +238,23 @@ You can iterate over tagged entities like this:
 
 ---
 
+### TIP: Avoid mutating tables while iterating over them 
+
+For example, avoid doing this:
+
+```Odin
+for d in my_tags_table.rows {
+    ecs.destroy_entity(&my_db, d)  // Mutates my_tags_table during iteration!
+}
+```
+Correct pattern: Drain the table by repeatedly taking row `0` until it is empty:
+```Odin
+for ecs.table_len(&my_tags_table) > 0 {
+    d := my_tags_table.rows[0]
+    ecs.destroy_entity(&my_db, d)   
+}
+```
+
 ### View Filter
 
 A View filter is a `proc` that you can pass to `ecs.view_init` to filter view data:
