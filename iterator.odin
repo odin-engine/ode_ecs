@@ -112,14 +112,14 @@ import "core:log"
         return self.view_row.raw.eid
     }
 
+
 // TableIterators
 
 TableIterator :: struct($T: typeid) {
 	table:     ^Table(T),
-
 	// current state
 	index:     int,
-	max_index: int,
+	row_count: int,
 }
 
 // Use start_row and end_row if you want to process View in batches
@@ -127,9 +127,9 @@ table_iterator__init :: proc(table: ^Table($T)) -> (iterator: TableIterator(T)) 
 	when VALIDATIONS {assert(table != nil)}
 
 	iterator = TableIterator(T) {
-		table     = table,
+		table = table,
 	}
-    table_iterator__reset(&iterator)
+	table_iterator__reset(&iterator)
 
 	return iterator
 }
@@ -137,19 +137,30 @@ table_iterator__init :: proc(table: ^Table($T)) -> (iterator: TableIterator(T)) 
 table_iterator__reset :: proc(iterator: ^TableIterator($T)) {
 	when VALIDATIONS {assert(iterator.table != nil)}
 	iterator.index = -1
-	iterator.max_index = len(iterator.table.rows)
+	iterator.row_count = len(iterator.table.rows) // actual table capacity, the real bound
 }
 
 table_iterator__next :: proc(iterator: ^TableIterator($T)) -> bool {
-	iterator.index += 1
-	return iterator.index < iterator.max_index
+	for {
+		iterator.index += 1
+		if iterator.index >= iterator.row_count {
+			return false
+		}
+		e := get_entity(iterator.table, iterator.index)
+		if is_entity_expired(iterator.table.db, e) {
+			continue
+		}
+		return true
+	}
 }
 
 
-table_iterator__get :: proc(self: ^TableIterator($T)) -> (
-    component: ^T,
+table_iterator__get :: proc(
+	self: ^TableIterator($T),
+) -> (
+	component: ^T,
 	entity: entity_id,
-    index: int,
+	index: int,
 ) {
 
 	component = &self.table.rows[self.index]
