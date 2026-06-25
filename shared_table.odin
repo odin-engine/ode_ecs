@@ -57,7 +57,9 @@ package ode_ecs
     }
 
     shared_table__clear_state :: proc(self: ^Shared_Table) {
-        self.state = Object_State.Invalid
+        // Not_Initialized (not Invalid) so a terminated table can be re-init'd
+        // on the same struct without zeroing it first. See issue #8.
+        self.state = Object_State.Not_Initialized
         self.type = Table_Type.Unknown
         self.id  = DELETED_INDEX
         self.db = nil

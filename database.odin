@@ -69,7 +69,10 @@ package ode_ecs
             assert(self != nil)
         }
 
-        if self.eid_to_bits != nil do delete(self.eid_to_bits, self.allocator) or_return
+        if self.eid_to_bits != nil {
+            delete(self.eid_to_bits, self.allocator) or_return
+            self.eid_to_bits = nil
+        }
 
         // Views
         for view in self.views.items {
@@ -89,7 +92,9 @@ package ode_ecs
 
         oc.ix_gen_factory__terminate(&self.id_factory, self.allocator) or_return
 
-        self.state = Object_State.Terminated
+        // Leave the db in Not_Initialized state (not Terminated) so the same
+        // struct can be re-init'd without zeroing it first. See issue #8.
+        self.state = Object_State.Not_Initialized
         return nil
     }
 

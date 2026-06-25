@@ -88,9 +88,70 @@ package ode_ecs__tests
             ecs.table_terminate(&ais)
 
             testing.expect(t, ais.id == ecs.DELETED_INDEX)
-            testing.expect(t, ecs_1.tables.items[0] == nil) 
+            testing.expect(t, ecs_1.tables.items[0] == nil)
             testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
             testing.expect(t, ecs_1.tables.has_nil_item == true)
+    }
+
+    // Issue #8: terminate() then init() on the same structs must work without
+    // zeroing them first. terminate must leave each object Not_Initialized.
+    @(test)
+    terminate_then_reinit__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
+            db: ecs.Database
+            positions: ecs.Table(Position)
+            is_alive: ecs.Tag_Table
+            view: ecs.View
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+
+            // helper: full init/use cycle on the SAME structs (no zeroing)
+            run_cycle :: proc(t: ^testing.T, db: ^ecs.Database, positions: ^ecs.Table(Position), is_alive: ^ecs.Tag_Table, view: ^ecs.View, allocator: mem.Allocator) {
+                testing.expect(t, ecs.init(db, entities_cap=100, allocator=allocator) == nil)
+                testing.expect(t, ecs.table_init(positions, db, 100) == nil)
+                testing.expect(t, ecs.tag_table__init(is_alive, db, 100) == nil)
+                testing.expect(t, ecs.view_init(view, db, {positions, is_alive}) == nil)
+
+                eid, err := ecs.create_entity(db)
+                testing.expect(t, err == nil)
+
+                pos, perr := ecs.add_component(positions, eid)
+                testing.expect(t, perr == nil)
+                testing.expect(t, pos != nil)
+                if pos != nil do pos^ = Position{ x = 1, y = 2 }
+
+                testing.expect(t, ecs.add_tag(is_alive, eid) == nil)
+
+                testing.expect(t, ecs.table_len(positions) == 1)
+                testing.expect(t, ecs.view_len(view) == 1)
+            }
+
+            // First cycle.
+            run_cycle(t, &db, &positions, &is_alive, &view, allocator)
+
+            // Terminate everything (db terminates its tables + view internally).
+            testing.expect(t, ecs.terminate(&db) == nil)
+
+            // States must be reset so the same structs can be re-init'd.
+            testing.expect(t, db.state == ecs.Object_State.Not_Initialized)
+            testing.expect(t, positions.state == ecs.Object_State.Not_Initialized)
+            testing.expect(t, is_alive.state == ecs.Object_State.Not_Initialized)
+            testing.expect(t, view.state == ecs.Object_State.Not_Initialized)
+
+            // Second cycle on the SAME structs, without zeroing them. This is the
+            // exact flow that asserted before the fix.
+            run_cycle(t, &db, &positions, &is_alive, &view, allocator)
     }
 
     @(test)

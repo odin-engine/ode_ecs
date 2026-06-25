@@ -237,7 +237,9 @@ package ode_ecs
         //
         database__detach_view(self.db, self)
 
-        self.state = Object_State.Terminated
+        // Leave the view in Not_Initialized state (not Terminated) so the same
+        // struct can be re-init'd without zeroing it first. See issue #8.
+        self.state = Object_State.Not_Initialized
         return nil
     }
 
