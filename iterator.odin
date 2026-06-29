@@ -3,6 +3,7 @@
 */
 package ode_ecs
 
+import "core:log"
 // Base
     import "base:runtime"
 // Core
@@ -110,3 +111,49 @@ package ode_ecs
     iterator__get_entity :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {
         return self.view_row.raw.eid
     }
+
+
+// TableIterators
+
+// NOTE:
+// Tables report length as "alive things in this db".
+// Dbs are the underlying structure holding "alive and expired"
+// So the index has no meaning outside of this iterator and/or table,
+// returning it on "get" would be confusing ?
+TableIterator :: struct($T: typeid) {
+	table:           ^Table(T),
+
+	// current state
+	alive_index:           int,
+	alive_index_max: int,
+}
+
+// Use start_row and end_row if you want to process View in batches
+table_iterator__init :: proc(table: ^Table($T)) -> (iterator: TableIterator(T)) {
+	when VALIDATIONS {assert(table != nil)}
+
+	iterator = TableIterator(T) {
+		table = table,
+	}
+	table_iterator__reset(&iterator)
+
+	return iterator
+}
+
+table_iterator__reset :: proc(iterator: ^TableIterator($T)) {
+	when VALIDATIONS {assert(iterator.table != nil)}
+	iterator.alive_index = -1
+	iterator.alive_index_max = len(iterator.table.rows) // alive things inside this table
+}
+
+table_iterator__next :: proc(iterator: ^TableIterator($T)) -> bool {
+	iterator.alive_index += 1
+	return iterator.alive_index < iterator.alive_index_max
+}
+
+
+table_iterator__get :: proc(self: ^TableIterator($T)) -> (component: ^T, entity: entity_id) {
+	component = &self.table.rows[self.alive_index]
+	entity = get_entity(self.table, self.alive_index)
+	return
+}

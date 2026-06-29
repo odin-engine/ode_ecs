@@ -82,9 +82,11 @@ package ode_ecs
     //
     // Iterator
     //
-        iterator_init       :: iterator__init
-        iterator_next       :: iterator__next   
-        iterator_reset      :: iterator__reset
+        iterator_init       :: proc {iterator__init, table_iterator__init}
+        iterator_next       :: proc { iterator__next, table_iterator__next   }
+        iterator_reset      :: proc{ iterator__reset, table_iterator__reset}
+
+        table_iterator_get :: table_iterator__get
 
     //
     // Outdated aliases (will be removed in future)
