@@ -263,7 +263,7 @@ package ode_ecs__tests
             testing.expect(t, ecs.database__destroy_entity(&ecs_1, eid_1) == nil)
             testing.expect(t, ecs_1.id_factory.created_count == 2)
 
-            testing.expect(t, ecs.database__destroy_entity(&ecs_1, eid_1) == oc.Core_Error.Already_Freed)
+            testing.expect(t, ecs.database__destroy_entity(&ecs_1, eid_1) == ecs.API_Error.Entity_Id_Expired)
             testing.expect(t, ecs_1.id_factory.created_count == 2)
     }
 ///////////////////////////////////////////////////////////////////////////////
