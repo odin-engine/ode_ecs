@@ -238,6 +238,8 @@ You can iterate over tagged entities like this:
 
 ---
 
+## Tips
+
 ### TIP: Avoid mutating tables while iterating over them 
 
 For example, avoid doing this:
@@ -254,45 +256,9 @@ for ecs.table_len(&my_tags_table) > 0 {
     ecs.destroy_entity(&my_db, d)   
 }
 ```
+### TIP: Be aware that component locations might shift within tables.
 
-### View Filter
-
-A View filter is a `proc` that you can pass to `ecs.view_init` to filter view data:
-
-```odin
-    view: ecs.View
-
-    My_User_Data :: struct {
-        human_eid: ecs.entity_id,
-        chair_eid: ecs.entity_id,
-    }
-
-    // if this proc returns true, the entity (and its components) will be added to the view
-    my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
-        if user_data == nil do return false
-
-        eid := ecs.get_entity(row)
-        data := (^My_User_Data)(user_data)
-
-        // using entities saved in user_data
-        if eid == data.human_eid || eid == data.chair_eid do return true 
-
-        return false
-    }
-
-    my_user_data := My_User_Data{
-        human_eid = human,
-        chair_eid = chair,
-    }
-
-    view.user_data = &my_user_data  // set user_data!
-
-    err = ecs.view_init(&view, &db, {&is_alive_table}, my_filter)
-```
-
-The `my_filter` proc determines whether an entity (and its components) will be added to the view.
-
-Check [Sample06](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample06/main.odin) for an example of how to use a View filter.
+ODE_ECS performs tail swaps when you remove components from a table (mutating a table) to optimize iteration speeds and avoid empty slots. This means you should avoid re-using pointers to components after a table has been mutated (e.g., by removing the component or its owning entity). Instead, save and use entity IDs to retrieve the updated component pointer after each table mutation.
 
 ---
 
