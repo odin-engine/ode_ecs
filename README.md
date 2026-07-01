@@ -1,7 +1,7 @@
 ![alt text](https://github.com/odin-engine/imgs/blob/main/ode_ecs_v1.png?raw=true)
 # ODE_ECS (Entity-Component-System)
 
-ODE_ECS is a lean, fast and type-safe ECS written in Odin.
+ODE_ECS is a simple, fast and type-safe ECS written in Odin.
 
 # Features  
 
