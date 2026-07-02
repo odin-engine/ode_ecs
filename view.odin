@@ -78,7 +78,30 @@ package ode_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // View
-// 
+//
+
+    // Dense (aligned) fast path state.
+    //
+    // A view is "aligned" when, for every Table (not Compact_Table/Tiny_Table/Tag_Table)
+    // in the view, view row `r` references exactly `table.rows[r]`. When that holds,
+    // Iterator reads components directly from the tables' dense arrays and skips the
+    // per-row pointer records entirely (~3x faster iteration).
+    //
+    // The state is maintained incrementally: appends verify the new row in O(tables),
+    // a non-tail removal degrades the state to Unknown, and Unknown is resolved by an
+    // early-abort rescan on the next iterator_init/iterator_reset. Tables with identical
+    // membership stay aligned even under tail-swap churn, so this fast path survives
+    // despawn/respawn workloads.
+    View_Dense_State :: enum u8 {
+        Unknown = 0,    // needs rescan (resolved lazily on iterator init/reset)
+        Aligned,
+        Misaligned,     // sticky until view__clear/view__rebuild
+    }
+
+    View_Dense_Col :: struct {
+        base: uintptr,   // &table.rows[0]
+        stride: uintptr, // size_of(T), or 0 when the column is not a Table
+    }
 
     View :: struct {
         id: view_id, 
@@ -98,6 +121,13 @@ package ode_ecs
 
         bits: Uni_Bits,
         suspended: bool,
+        dense_state: View_Dense_State,
+
+        // Per-column dense-alignment constants, indexed by cid. Valid for the view's
+        // lifetime: a Table's rows array is allocated once at table_init (fixed cap) and
+        // never reallocates. stride == 0 marks columns that never take part in the dense
+        // fast path (Compact_Table/Tiny_Table/Tag_Table).
+        dense_cols: []View_Dense_Col,
 
         filter: proc(row: ^View_Row, user_data: rawptr)->bool, 
         user_data: rawptr, 
@@ -172,9 +202,20 @@ package ode_ecs
                 self.cap = shared_table__cap(table)
             }
 
-            self.tid_to_cid[table.id] = cast(view_column_id)index 
+            self.tid_to_cid[table.id] = cast(view_column_id)index
 
             uni_bits__add(&self.bits, table.id)
+        }
+
+        //
+        // dense_cols
+        //
+        self.dense_cols = make([]View_Dense_Col, self.tables_len, db.allocator) or_return
+        for table, index in uniq_tables {
+            if table.type == Table_Type.Table {
+                tr := cast(^Table_Raw) table
+                self.dense_cols[index] = { uintptr(raw_data(tr.rows)), uintptr(tr.type_info.size) }
+            }
         }
 
         //
@@ -224,6 +265,8 @@ package ode_ecs
         delete(self.rows, self.db.allocator) or_return
         delete(self.eid_to_ptr, self.db.allocator) or_return
         delete(self.tid_to_cid, self.db.allocator) or_return
+        delete(self.dense_cols, self.db.allocator) or_return
+        self.dense_cols = nil
 
         //
         // Unsubscribe from tables
@@ -254,6 +297,8 @@ package ode_ecs
             mem.zero((^runtime.Raw_Slice)(&self.rows).data, len(self.rows) * self.one_record_size)
             (^runtime.Raw_Slice)(&self.rows).len = 0
         }
+
+        self.dense_state = View_Dense_State.Aligned // empty view is trivially aligned
 
         return nil
     }
@@ -371,6 +416,9 @@ package ode_ecs
         }
 
         self.suspended = false
+
+        // Notifications were skipped while suspended, so alignment can no longer be trusted.
+        self.dense_state = View_Dense_State.Unknown
     }
 
     view__get_row :: #force_inline proc "contextless" (self: ^View, #any_int index: int) -> ^View_Row_Raw { 
@@ -379,6 +427,30 @@ package ode_ecs
     }
 
     view__get_record :: view__get_row // for compatibility, use view__get_row instead, might be removed in future
+
+    // Batch (dense) access: when the view is dense-aligned, returns `table.rows[:view_len]` —
+    // the components of `table` in view-row order, as one contiguous slice. Returns nil when
+    // the view is not aligned (or suspended, or `table` is not part of the view); in that case
+    // iterate with Iterator as usual.
+    //
+    // Slices for different tables of the same view share indexing: slice_a[i] and slice_b[i]
+    // belong to the same entity (the entity of view row i). This is the fastest possible way
+    // to iterate — a plain loop over these slices compiles to a raw SoA sweep.
+    //
+    // The slice is invalidated by any structural change (add/remove component, create/destroy
+    // entity); do not hold on to it across such changes.
+    view__dense_slice :: proc "contextless" (self: ^View, table: ^Table($T)) -> []T {
+        if self == nil || table == nil do return nil
+        if self.state != Object_State.Normal do return nil
+        if int(table.id) < 0 || int(table.id) >= len(self.tid_to_cid) do return nil
+        if self.tid_to_cid[table.id] == DELETED_INDEX do return nil // table is not part of this view
+
+        if !view__dense_resolve(self) do return nil
+
+        #no_bounds_check {
+            return table.rows[:view_len(self)]
+        }
+    }
 
     view__get_component_for_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Table($T)) -> ^T {
         #no_bounds_check {
@@ -402,6 +474,55 @@ package ode_ecs
 // Private
 
     @(private)
+    // Verify one view row against the dense-alignment invariant:
+    // for every Table in the view, refs[cid] must be exactly &table.rows[row_ix].
+    // Non-Table columns (Compact/Tiny/Tag, stride == 0) never use the dense read path
+    // and are skipped.
+    view__dense_check_row :: proc "contextless" (self: ^View, record: ^View_Row_Raw, row_ix: int) -> bool {
+        #no_bounds_check {
+            for col, cid in self.dense_cols {
+                if col.stride == 0 do continue
+                if uintptr(record.refs[cid]) != col.base + uintptr(row_ix) * col.stride do return false
+            }
+        }
+        return true
+    }
+
+    @(private)
+    // Full alignment rescan, aborts on first mismatch. Called lazily (iterator init/reset)
+    // when dense_state is Unknown.
+    view__dense_rescan :: proc "contextless" (self: ^View) -> bool {
+        n := view_len(self)
+        #no_bounds_check {
+            for col, cid in self.dense_cols {
+                if col.stride == 0 do continue
+
+                addr := col.base
+                for r := 0; r < n; r += 1 {
+                    record := view__get_row_private(self, r)
+                    if uintptr(record.refs[cid]) != addr do return false
+                    addr += col.stride
+                }
+            }
+        }
+        return true
+    }
+
+    @(private)
+    // Resolve Unknown into Aligned/Misaligned; returns true if the dense fast path may be used.
+    view__dense_resolve :: proc "contextless" (self: ^View) -> bool {
+        if self.dense_state == View_Dense_State.Unknown {
+            if view__dense_rescan(self) {
+                self.dense_state = View_Dense_State.Aligned
+            } else {
+                self.dense_state = View_Dense_State.Misaligned
+            }
+        }
+
+        return self.dense_state == View_Dense_State.Aligned && !self.suspended
+    }
+
+    @(private)
     view__filter_match_private :: proc(self: ^View, row_raw: ^View_Row_Raw) -> bool {
         if self.filter == nil do return true
         return self.filter(&View_Row{ view = self, raw = row_raw }, self.user_data)
@@ -421,18 +542,24 @@ package ode_ecs
         record := view__get_row_private(self, raw.len)
         record.eid = eid
 
-        view_row_raw__fill(record, self, eid) 
+        view_row_raw__fill(record, self, eid)
 
         if !use_filter { // no filter, just add
+            if self.dense_state == View_Dense_State.Aligned && !view__dense_check_row(self, record, raw.len) {
+                self.dense_state = View_Dense_State.Misaligned
+            }
             raw.len += 1
             return nil
-        }   
+        }
 
         if view__filter_match_private(self, record) == false {
             // doesn't match filter, rollback
             self.eid_to_ptr[eid.ix] = DELETED_INDEX
             view_row_raw__clear(record, self)
         } else {
+            if self.dense_state == View_Dense_State.Aligned && !view__dense_check_row(self, record, raw.len) {
+                self.dense_state = View_Dense_State.Misaligned
+            }
             raw.len += 1
         }
 
@@ -453,11 +580,15 @@ package ode_ecs
     
         // check if record is not tail
         if dest_row_ix != src_row_ix {
-            dst_record := view__get_row_private(self, dest_row_ix)    
-            
+            dst_record := view__get_row_private(self, dest_row_ix)
+
             mem.copy(dst_record, src_record, self.one_record_size)
 
             self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[eid.ix]
+
+            // The moved row's alignment cannot be verified yet (subscribed tables swap
+            // their own rows after this notification) — rescan lazily on next iteration.
+            if self.dense_state == View_Dense_State.Aligned do self.dense_state = View_Dense_State.Unknown
         }
 
         view_row_raw__clear(src_record, self)
@@ -497,6 +628,8 @@ package ode_ecs
             mem.copy(dest_record, src_record, self.one_record_size)
 
             self.eid_to_ptr[src_eid.ix] = self.eid_to_ptr[dest_eid.ix]
+
+            if self.dense_state == View_Dense_State.Aligned do self.dense_state = View_Dense_State.Unknown
         }
 
         mem.zero(src_record, self.one_record_size)
@@ -520,7 +653,19 @@ package ode_ecs
         #no_bounds_check {
             record.refs[cid] = addr
         }
-        
+
+        // Safety net: a component moving to an address other than &rows[row_ix] breaks
+        // dense alignment. (While truly aligned this should not trigger — removals that
+        // move members degrade the state to Unknown before this notification arrives.)
+        if self.dense_state == View_Dense_State.Aligned {
+            #no_bounds_check {
+                col := self.dense_cols[cid]
+                if col.stride != 0 && uintptr(addr) != col.base + uintptr(row_ix) * col.stride {
+                    self.dense_state = View_Dense_State.Misaligned
+                }
+            }
+        }
+
         return nil
     }
 

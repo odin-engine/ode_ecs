@@ -195,6 +195,25 @@ To get an entity or its components inside the iterator loop, you can do this:
     }
 ```
 
+The `Iterator` automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view (which is the common case: it holds whenever components are added to tables in the same order per entity, and it survives entity despawn/respawn churn). In that case components are read directly from the tables' dense arrays, which is roughly 2x faster than going through the view's pointer records. This is fully automatic and falls back transparently when the view is not aligned.
+
+For the absolute fastest iteration, `view_dense_slice` returns the raw component slices in view-row order when the view is aligned (and `nil` otherwise). A plain loop over these slices compiles to a raw SoA sweep (~2x faster still than the iterator):
+
+```odin
+    pos_slice := ecs.view_dense_slice(&view1, &positions)
+    ai_slice  := ecs.view_dense_slice(&view1, &ais)
+
+    if pos_slice != nil && ai_slice != nil {
+        for i in 0..<len(pos_slice) {
+            // pos_slice[i] and ai_slice[i] belong to the same entity (view row i)
+        }
+    } else {
+        // View is not dense-aligned: iterate with Iterator as usual
+    }
+```
+
+The slices are invalidated by any structural change (adding/removing components, creating/destroying entities) — use them immediately, do not store them.
+
 ---
 
 ### Tag_Table

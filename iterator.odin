@@ -25,6 +25,10 @@ package ode_ecs
         index: int,
         raw_index: int,
         view_row: View_Row,
+
+        // true when the view is dense-aligned: components of Table(T) tables are read
+        // directly as table.rows[index], skipping the per-row pointer records
+        dense: bool,
     }
 
     // Use start_row and end_row if you want to process View in batches
@@ -57,8 +61,11 @@ package ode_ecs
             self.view = nil
             self.raw_index = 0
             self.records_size = 0
+            self.dense = false
             return API_Error.Object_Invalid
-        } 
+        }
+
+        self.dense = view__dense_resolve(self.view)
         
         // Recalculate end_now if original end_row was zero, which means end_row should be view_len()
         if self.orig_end_row == 0 {
@@ -77,7 +84,7 @@ package ode_ecs
         return nil
     }
 
-    iterator__next :: proc "contextless" (self: ^Iterator) -> bool {
+    iterator__next :: #force_inline proc "contextless" (self: ^Iterator) -> bool {
 
         self.raw_index += self.one_record_size
         self.index += 1
@@ -96,6 +103,12 @@ package ode_ecs
     }
 
     iterator__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), it: ^Iterator) -> ^T #no_bounds_check {
+        if it.dense {
+            // dense-aligned view: view row index == table row index
+            #no_bounds_check {
+                return &table.rows[it.index]
+            }
+        }
         return view_row__get_component_for_table(table, &it.view_row)
     }
 

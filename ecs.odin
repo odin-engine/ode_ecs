@@ -76,8 +76,9 @@ package ode_ecs
         view_cap                :: view__cap                        // Maximum number of rows of view
         rebuild                 :: view__rebuild                    // Rebuild view and fill it with entities matching view's tables
         view_components_match   :: view__components_match           // Returns true if entity has components that would match this view, doesn't check filter
-        suspend                 :: view__suspend                    // Stop updating view when entities are created/destroyed or components/tags are added/removed     
-        resume                  :: view__resume                     // Resume updating view after calling suspend 
+        suspend                 :: view__suspend                    // Stop updating view when entities are created/destroyed or components/tags are added/removed
+        resume                  :: view__resume                     // Resume updating view after calling suspend
+        view_dense_slice        :: view__dense_slice                // Components in view-row order as one contiguous slice (nil if view is not dense-aligned)
     
     //
     // Iterator
