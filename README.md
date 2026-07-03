@@ -352,6 +352,5 @@ So the honest summary: making the core internally thread-safe would meaningfully
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
 - [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)
-- [ECS Benchmark](https://github.com/zm69/ecs_bench)
 
 ## If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
