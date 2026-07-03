@@ -5,7 +5,7 @@ ODE_ECS is a simple, fast and type-safe ECS written in Odin.
 
 # Features  
 
-- Simple, lean and type-safe API.  
+- Simple and type-safe API.  
 - Fast (if you find a faster ECS written in Odin, please let me know).
 - Everything is preallocated (no hidden memory reallocations during a game loop).  
 - All important operations are **O(1)**, with no hidden linked lists.  
