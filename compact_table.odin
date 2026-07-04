@@ -117,6 +117,7 @@ package ode_ecs
         total += self.type_info.size * self.cap
 
         total += oc.dense_arr__memory_usage(&self.subscribers)
+        total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
 
         return total
     }
@@ -143,6 +144,9 @@ package ode_ecs
     @(private)
     compact_table_raw__terminate :: proc(self: ^Compact_Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
+
+        // Clear this table's bit from all entities, see table_raw__terminate
+        for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
 
         database__detach_table(self.db, self)
 
@@ -311,12 +315,14 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full 
-
         component = cast(^T) oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
 
         // Check if component already exist
         if component == nil {
+            // Capacity only matters when actually inserting — re-adding an
+            // existing component on a full table must still report Component_Already_Exist
+            if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
+
             // Get component
             #no_bounds_check {
                 component = &self.rows[raw.len]

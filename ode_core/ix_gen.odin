@@ -148,14 +148,24 @@ package ode_core
         return total
     }
 
-    ix_gen_factory__clear :: proc(self: ^Ix_Gen_Factory) {
+    // bump_gen advances every slot's generation so ids handed out before the
+    // clear stop matching ids created after it (the fresh-create path in
+    // ix_gen_factory__new_id reuses the stored gen without bumping).
+    ix_gen_factory__clear :: proc(self: ^Ix_Gen_Factory, bump_gen := false) {
         assert(self != nil)
         assert(self.items != nil)
         assert(self.freed != nil)
 
         self.created_count = 0
         self.freed_count = 0
-        for &item in self.items do item.ix = DELETED_INDEX
+        if bump_gen {
+            for &item in self.items {
+                item.ix = DELETED_INDEX
+                item.gen = item.gen >= GEN_MAX ? 0 : item.gen + 1
+            }
+        } else {
+            for &item in self.items do item.ix = DELETED_INDEX
+        }
         for i:=0; i < self.cap; i+=1 do self.freed[i] = DELETED_INDEX
 
     }
@@ -280,4 +290,16 @@ package ode_core
         testing.expect(t, err == Core_Error.Container_Is_Full)
         testing.expect(t, factory.created_count == 2)
         testing.expect(t, factory.freed_count == 0)
+
+        // clear with bump_gen: ids issued before the clear must expire,
+        // including against ids created right after it
+        ix_gen_factory__clear(&factory, bump_gen = true)
+        testing.expect(t, ix_gen_factory__is_expired(&factory, id_4))
+
+        id_5, err = ix_gen_factory__new_id(&factory)
+        testing.expect(t, err == Core_Error.None)
+        testing.expect(t, id_5.ix == 0)
+        testing.expect(t, id_5.gen == 4) // id_4 had gen 3
+        testing.expect(t, id_5 != id_4)
+        testing.expect(t, ix_gen_factory__is_expired(&factory, id_4))
     }

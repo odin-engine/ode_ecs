@@ -74,10 +74,13 @@ package ode_ecs
             self.eid_to_bits = nil
         }
 
-        // Views
+        // Views. Invalid views (their table was terminated) still own their
+        // allocations, so they must be terminated too or they leak.
         for view in self.views.items {
-            if view == nil do continue 
-            if view.state == Object_State.Normal do view_terminate(view) or_return
+            if view == nil do continue
+            if view.state == Object_State.Normal || view.state == Object_State.Invalid {
+                view_terminate(view) or_return
+            }
         }
         oc.sparse_arr__terminate(&self.views, self.allocator) or_return
 
@@ -106,23 +109,29 @@ package ode_ecs
 
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
-        slice.zero(self.eid_to_bits)
+        // Clear everything even if some object reports an error (e.g. a view
+        // invalidated by a terminated table) — a partial clear would leave the
+        // database in a torn state. The first error is still reported.
+        err: Error
 
         for view in self.views.items {
-            if view != nil {
-                view__clear(view) or_return
-            }
+            if view == nil do continue
+            verr := view__clear(view)
+            if err == nil do err = verr
         }
 
         for table in self.tables.items {
-            if table != nil {
-                shared_table__clear(table) or_return 
-            }
-        } 
+            if table == nil do continue
+            terr := shared_table__clear(table)
+            if err == nil do err = terr
+        }
 
-        oc.ix_gen_factory__clear(&self.id_factory)
+        slice.zero(self.eid_to_bits)
 
-        return nil
+        // bump_gen so entity ids held across the clear are detected as expired
+        oc.ix_gen_factory__clear(&self.id_factory, bump_gen = true)
+
+        return err
     }
 
     @(require_results)
@@ -142,15 +151,17 @@ package ode_ecs
         
         database__is_entity_correct(self, eid) or_return
 
-        err: Error = nil 
+        err: Error = nil
         bits := self.eid_to_bits[eid.ix]
 
-        for table in self.tables.items {  
+        for table in self.tables.items {
             if table == nil do continue
             if !uni_bits__exists(&bits, int(table.id)) do continue
 
-            shared_table__remove_component(table, eid) or_return
-        } 
+            // Not_Found is tolerated (stale bit); anything else aborts
+            terr := shared_table__remove_component(table, eid)
+            if terr != nil && terr != oc.Core_Error.Not_Found do return terr
+        }
 
         // clean bit_sets
         uni_bits__clear(&self.eid_to_bits[eid.ix])

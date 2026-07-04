@@ -1225,6 +1225,177 @@ package ode_ecs__tests
             }
 
             testing.expect(t, human_present == false) // human is walking
-            testing.expect(t, bird_present == true)  // bird is flying  
+            testing.expect(t, bird_present == true)  // bird is flying
             testing.expect(t, chair_present == true) // chair is idle
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Regression tests (2026-07 bug audit)
+
+    // Entity ids held across database__clear must be detected as expired.
+    // The generation of every slot is bumped on clear; without that, the first
+    // entity created after a clear had the exact same ix+gen as before it.
+    @(test)
+    database_clear_expires_old_ids__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+
+        old_eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+
+        testing.expect(t, ecs.clear(&db) == nil)
+        testing.expect(t, ecs.entities_len(&db) == 0)
+        testing.expect(t, ecs.is_entity_expired(&db, old_eid))
+
+        new_eid, err2 := ecs.create_entity(&db)
+        testing.expect(t, err2 == nil)
+        testing.expect(t, new_eid.ix == old_eid.ix)   // same slot...
+        testing.expect(t, new_eid != old_eid)         // ...but different generation
+        testing.expect(t, ecs.is_entity_expired(&db, old_eid))
+    }
+
+    // Terminating a table must not strand its subscriber views:
+    // - the invalidated view can still be terminated explicitly (used to hit
+    //   assert(false) on the dead table's Unknown type),
+    // - database terminate must free views left in Invalid state (used to leak),
+    // - the terminated table's bit is cleared from eid_to_bits so a new table
+    //   reusing the id doesn't make destroy_entity fail (used to leak the entity).
+    @(test)
+    table_terminate_view_cleanup__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        track: mem.Tracking_Allocator
+        mem.tracking_allocator_init(&track, context.allocator)
+        defer mem.tracking_allocator_destroy(&track)
+        allocator := mem.tracking_allocator(&track)
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        ais: ecs.Table(AI)
+        ais2: ecs.Table(AI)
+        view: ecs.View
+        view2: ecs.View
+
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&ais, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions, &ais}) == nil)
+        testing.expect(t, ecs.view_init(&view2, &db, {&positions, &ais}) == nil)
+
+        eid, cerr := ecs.create_entity(&db)
+        testing.expect(t, cerr == nil)
+
+        _, err := ecs.add_component(&positions, eid)
+        testing.expect(t, err == nil)
+        _, err = ecs.add_component(&ais, eid)
+        testing.expect(t, err == nil)
+        testing.expect(t, ecs.view_len(&view) == 1)
+
+        // Terminating a table invalidates subscribed views
+        testing.expect(t, ecs.table_terminate(&ais) == nil)
+        testing.expect(t, view.state == ecs.Object_State.Invalid)
+        testing.expect(t, view2.state == ecs.Object_State.Invalid)
+
+        // A new table reuses the freed table id
+        testing.expect(t, ecs.table_init(&ais2, &db, 10) == nil)
+        testing.expect(t, ais2.id == 1)
+
+        // The entity's stale bit was cleared on terminate, so destroy works
+        testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
+        testing.expect(t, ecs.entities_len(&db) == 0)
+
+        // An Invalid view can still be terminated explicitly
+        testing.expect(t, ecs.view_terminate(&view) == nil)
+
+        // Database terminate picks up view2 (still Invalid) and the tables
+        testing.expect(t, ecs.terminate(&db) == nil)
+
+        testing.expect(t, len(track.allocation_map) == 0) // no leaks
+        testing.expect(t, len(track.bad_free_array) == 0) // no bad frees
+    }
+
+    // Re-adding an existing component while the table is at capacity must
+    // report Component_Already_Exist (+ the component), not Container_Is_Full.
+    @(test)
+    add_component_at_cap_already_exists__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 2) == nil)
+
+        e1, err1 := ecs.create_entity(&db)
+        testing.expect(t, err1 == nil)
+        e2, err2 := ecs.create_entity(&db)
+        testing.expect(t, err2 == nil)
+        e3, err3 := ecs.create_entity(&db)
+        testing.expect(t, err3 == nil)
+
+        _, err := ecs.add_component(&positions, e1)
+        testing.expect(t, err == nil)
+        _, err = ecs.add_component(&positions, e2)
+        testing.expect(t, err == nil) // table is now full
+
+        p: ^Position
+        p, err = ecs.add_component(&positions, e1)
+        testing.expect(t, err == ecs.API_Error.Component_Already_Exist)
+        testing.expect(t, p != nil)
+
+        p, err = ecs.add_component(&positions, e3)
+        testing.expect(t, err == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, p == nil)
+    }
+
+    // database__clear reports Object_Invalid when a view was invalidated by a
+    // terminated table, but must still clear everything — no torn state where
+    // the bits are zeroed while the id factory and tables keep their data.
+    @(test)
+    database_clear_with_invalid_view__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        ais: ecs.Table(AI)
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&ais, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&ais}) == nil)
+
+        eid, cerr := ecs.create_entity(&db)
+        testing.expect(t, cerr == nil)
+        _, err := ecs.add_component(&positions, eid)
+        testing.expect(t, err == nil)
+
+        testing.expect(t, ecs.table_terminate(&ais) == nil)
+        testing.expect(t, view.state == ecs.Object_State.Invalid)
+
+        // the invalid view is reported...
+        testing.expect(t, ecs.clear(&db) == ecs.API_Error.Object_Invalid)
+        // ...but the clear itself must be complete, not torn
+        testing.expect(t, ecs.entities_len(&db) == 0)
+        testing.expect(t, ecs.table_len(&positions) == 0)
+        testing.expect(t, ecs.is_entity_expired(&db, eid))
     }

@@ -170,9 +170,12 @@ package ode_ecs
         // Store filter
         self.filter = filter
 
-        // Make sure we do not have repeating columns (copmonent typse/tables)
-        slice.sort(includes)
-        uniq_tables := slice.unique(includes)
+        // Make sure we do not have repeating columns (copmonent typse/tables).
+        // Sort a copy — the caller's slice must not be mutated.
+        sorted_includes := slice.clone(includes, db.allocator) or_return
+        defer delete(sorted_includes, db.allocator)
+        slice.sort(sorted_includes)
+        uniq_tables := slice.unique(sorted_includes)
         self.tables_len = len(uniq_tables)
 
         oc.dense_arr__init(&self.tables, self.tables_len, db.allocator) or_return
@@ -262,16 +265,27 @@ package ode_ecs
             assert(self.db != nil)
         }
 
-        delete(self.rows, self.db.allocator) or_return
+        //
+        // Unsubscribe from tables first, so a failure here doesn't strand a
+        // half-freed view. Tables that were already terminated dropped their
+        // subscriber lists (type is reset to Unknown) — skip them.
+        //
+        for table in self.tables.items {
+            if table == nil || table.type == Table_Type.Unknown do continue
+            derr := shared_table__detach_subscriber(table, self)
+            if derr != nil && derr != oc.Core_Error.Not_Found do return derr
+        }
+
+        // rows was allocated as one records_size block; its slice len holds the
+        // row count, so delete() would free with the wrong size.
+        if self.rows != nil {
+            mem.free_with_size((^runtime.Raw_Slice)(&self.rows).data, self.records_size, self.db.allocator) or_return
+            self.rows = nil
+        }
         delete(self.eid_to_ptr, self.db.allocator) or_return
         delete(self.tid_to_cid, self.db.allocator) or_return
         delete(self.dense_cols, self.db.allocator) or_return
         self.dense_cols = nil
-
-        //
-        // Unsubscribe from tables
-        //
-        for table in self.tables.items do shared_table__detach_subscriber(table, self) or_return
 
         oc.dense_arr__terminate(&self.tables, self.db.allocator) or_return
 
@@ -362,6 +376,10 @@ package ode_ecs
 
         if self.rows != nil {
             total += self.one_record_size * (self.cap + 1) // +1 reserved temp row, see view__init
+        }
+
+        if self.dense_cols != nil {
+            total += size_of(self.dense_cols[0]) * len(self.dense_cols)
         }
 
         return total

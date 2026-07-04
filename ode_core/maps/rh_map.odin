@@ -62,13 +62,15 @@ package maps
 
         rh_map__clear(self)  // requires self.capacity to be set
 
+        // derive from self.capacity (may have been bumped to the 8 minimum above),
+        // otherwise part of the allocated items would never be probed
         when MAPS_TESTING {
-            self.half_capacity = capacity
+            self.half_capacity = self.capacity
         } else {
-            self.half_capacity = capacity / 2  // this is for 0.5 load factor
+            self.half_capacity = self.capacity / 2  // this is for 0.5 load factor
         }
-       
-        self.mask = capacity - 1
+
+        self.mask = self.capacity - 1
 
         return nil
     }

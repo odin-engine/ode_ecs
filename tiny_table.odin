@@ -52,6 +52,9 @@ package ode_ecs
 
         for view in self.subscribers do if view != nil do view.state = Object_State.Invalid
 
+        // Clear this table's bit from all entities, see table_raw__terminate
+        for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
+
         database__detach_table(self.db, self)
 
         shared_table__clear_state(&self.shared)
@@ -217,6 +220,10 @@ package ode_ecs
             assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
         }
 
+        // Tiny_Table_Raw does pointer math assuming rows sits at the same offset
+        // in both structs; an over-aligned T would pad rows to a different offset
+        #assert(offset_of(Tiny_Table(T), rows) == offset_of(Tiny_Table_Raw, rows))
+
         if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero
 
         self.type_info = type_info_of(typeid_of(T))
@@ -244,12 +251,14 @@ package ode_ecs
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full 
-
         component = cast(^T) oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
 
         // Check if component already exist
         if component == nil {
+            // Capacity only matters when actually inserting — re-adding an
+            // existing component on a full table must still report Component_Already_Exist
+            if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full
+
             // Get component
             component = &self.rows[self.len]
             
@@ -363,10 +372,10 @@ package ode_ecs
     }
 
     // Clear all data, nothing else
-    tiny_table__clear :: proc(self: ^Tiny_Table($T)) {
+    tiny_table__clear :: proc(self: ^Tiny_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
         }
-        tiny_table_raw__clear((^Tiny_Table_Raw)(self), true)
+        return tiny_table_raw__clear((^Tiny_Table_Raw)(self), true)
     }
 

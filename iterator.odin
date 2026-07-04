@@ -84,6 +84,9 @@ package ode_ecs
         return nil
     }
 
+    // NOTE: the iterator caches the view's length (and dense-alignment state) at
+    // init/reset. Structural changes while iterating — add/remove component,
+    // create/destroy entity — are not reflected; call iterator_reset after them.
     iterator__next :: #force_inline proc "contextless" (self: ^Iterator) -> bool {
 
         self.raw_index += self.one_record_size

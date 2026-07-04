@@ -101,9 +101,11 @@ package maps
 
         p, f_ix := tt_map__find_item_from_hash(self, key, hash)
 
-        if p == nil do return oc.Core_Error.Not_Found
+        // find returns the first empty slot when the key is absent — that is
+        // Not_Found for removal purposes, not a match
+        if p == nil || p.value == nil do return oc.Core_Error.Not_Found
 
-        p.key = 0
+        p.key = oc.DELETED_INDEX
         p.value = nil
 
         n_ix: int = f_ix
@@ -124,7 +126,7 @@ package maps
             temp[temp_len] = p^
             temp_len += 1
 
-            p.key = 0
+            p.key = oc.DELETED_INDEX
             p.value = nil
         }
 
@@ -199,10 +201,13 @@ package maps
         testing.expect(t, tt_map__remove(&map1, 22) == oc.Core_Error.Not_Found)
         testing.expect(t, tt_map__remove(&map1, 33) == nil)
 
+        // removing an already-removed (absent) key must not "succeed"
+        testing.expect(t, tt_map__remove(&map1, 33) == oc.Core_Error.Not_Found)
+
         item = tt_map__find_item(&map1, 33)
 
         testing.expect(t, item != nil)
-        testing.expect(t, item.key == 0)
+        testing.expect(t, item.key == oc.DELETED_INDEX)
         testing.expect(t, item.value == nil)
 
         testing.expect(t, tt_map__add(&map1, 55, &v2) == nil)
@@ -277,15 +282,18 @@ package maps
         testing.expect(t, v == &v3)
         testing.expect(t, i == 0)
 
-        testing.expect(t, map2.items[1].key == 0)
+        testing.expect(t, map2.items[1].key == oc.DELETED_INDEX)
         testing.expect(t, map2.items[1].value == nil)
 
         v,i = tt_map__get_with_index(&map2, 2)
         testing.expect(t, v == &v4)
         testing.expect(t, i == 2)
 
-        testing.expect(t, map2.items[3].key == 0)
+        testing.expect(t, map2.items[3].key == oc.DELETED_INDEX)
         testing.expect(t, map2.items[3].value == nil)
+
+        // absent key with empty slots present in the probe chain: still Not_Found
+        testing.expect(t, tt_map__remove(&map2, 99) == oc.Core_Error.Not_Found)
 
         testing.expect(t, tt_map__add(&map2, 8, &v2) == nil)
         testing.expect(t, tt_map__add(&map2, 4, &v1) == nil)
