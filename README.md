@@ -14,6 +14,7 @@ ODE_ECS is a simple, fast and type-safe ECS written in Odin.
 - Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
 - Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
+- Deferred tail swap: `pause_tail_swap`/`resume_tail_swap` make it safe to remove components and destroy entities *while iterating* tables — component pointers stay stable until you `pack`.  
 - zlib License (even more permissive than both the MIT License and the BSD 3-Clause License). 
 - Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
 - Tests are [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
@@ -276,9 +277,31 @@ for ecs.table_len(&my_tags_table) > 0 {
     ecs.destroy_entity(&my_db, d)   
 }
 ```
+Or pause tail swapping for the duration of the iteration — see the next section.
+
+### Mutating tables while iterating: pause_tail_swap / resume_tail_swap / pack
+
+`ecs.pause_tail_swap(&db)` switches all component tables (`Table`, `Compact_Table`, `Tiny_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate. The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX`, and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
+
+```Odin
+ecs.pause_tail_swap(&db)
+
+for i in 0..<ecs.table_len(&monsters) {
+    eid := ecs.get_entity(&monsters, i)
+    if eid.ix == ecs.DELETED_INDEX do continue // hole (already removed this frame)
+
+    monster := ecs.get_component(&monsters, eid)
+    if monster.hp <= 0 do ecs.destroy_entity(&db, eid) // safe: nothing moves
+}
+
+ecs.resume_tail_swap(&db) // packs all tables with holes and re-enables tail swap
+```
+
+`ecs.resume_tail_swap(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
+
 ### TIP: Be aware that component locations might shift within tables.
 
-ODE_ECS performs tail swaps when you remove components from a table (mutating a table) to optimize iteration speeds and avoid empty slots. This means you should avoid re-using pointers to components after a table has been mutated (e.g., by removing the component or its owning entity). Instead, save and use entity IDs to retrieve the updated component pointer after each table mutation.
+ODE_ECS performs tail swaps when you remove components from a table (mutating a table) to optimize iteration speeds and avoid empty slots. This means you should avoid re-using pointers to components after a table has been mutated (e.g., by removing the component or its owning entity). Instead, save and use entity IDs to retrieve the updated component pointer after each table mutation. (Exception: while tail swapping is paused, pointers stay stable until the table is packed.)
 
 ---
 

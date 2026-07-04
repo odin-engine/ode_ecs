@@ -23,9 +23,15 @@ package ode_ecs
         
         tables: oc.Sparce_Arr(Shared_Table),
 
-        views: oc.Sparce_Arr(View), 
+        views: oc.Sparce_Arr(View),
 
-        eid_to_bits: []Uni_Bits, 
+        eid_to_bits: []Uni_Bits,
+
+        // When true, removing a component from any Table/Compact_Table/Tiny_Table
+        // clears it in place (leaving a hole) instead of tail-swapping, so table
+        // rows and component pointers stay stable while iterating.
+        // See database__pause_tail_swap / database__resume_tail_swap.
+        tail_swap_paused: bool,
     }
 
     database__is_valid :: proc(self: ^Database) -> bool {
@@ -185,6 +191,42 @@ package ode_ecs
     database__is_entity_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
         // Happens when eid.gen do not match. It means eid expired (was deleted)
         return oc.ix_gen_factory__is_expired(&self.id_factory, eid)
+    }
+
+    // Pause tail swapping in all component tables (Table, Compact_Table, Tiny_Table).
+    // While paused, remove_component/destroy_entity clear the component in place —
+    // the row becomes a hole (get_entity for it returns ix == DELETED_INDEX), no other
+    // component moves, and subscribed views are still notified. This makes it safe to
+    // remove components/destroy entities while iterating table rows.
+    // Note: Tag_Table stores no component data; its rows keep tail swapping.
+    database__pause_tail_swap :: proc(self: ^Database) {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Normal)
+        }
+
+        self.tail_swap_paused = true
+    }
+
+    // Resume tail swapping and pack every table that accumulated holes, so the
+    // normal removal path never encounters a hole. O(tables) when nothing was removed.
+    database__resume_tail_swap :: proc(self: ^Database) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Normal)
+        }
+
+        self.tail_swap_paused = false
+
+        // Pack all tables even if one reports an error; first error is reported.
+        err: Error
+        for table in self.tables.items {
+            if table == nil || table.state != Object_State.Normal do continue
+            terr := shared_table__pack(table)
+            if err == nil do err = terr
+        }
+
+        return err
     }
 
     database__memory_usage :: proc (self: ^Database) -> int {

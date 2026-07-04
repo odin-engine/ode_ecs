@@ -26,6 +26,10 @@ package ode_ecs
         eid_to_ptr: oc_maps.Tt_Map(TINY_TABLE__MAP_CAP, rawptr),
         subscribers: [TINY_TABLE__VIEWS_CAP]^View,
         len: int,
+
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping, see Table_Base
+        holes_count: int,
+        first_hole_rid: int,
     }
 
     @(private)
@@ -121,8 +125,38 @@ package ode_ecs
 
         // Check if component exists
         if target == nil do return oc.Core_Error.Not_Found
-        
+
         T_size := self.type_info.size
+
+        // Deferred tail swap: clear the component in place, leaving a hole.
+        // Nothing moves, so component pointers stay stable while iterating.
+        if self.db.tail_swap_paused {
+            target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
+
+            oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
+            self.rid_to_eid[target_rid].ix = DELETED_INDEX
+            mem.zero(target, T_size)
+
+            if target_rid == self.len - 1 {
+                self.len -= 1
+                // absorb trailing holes so they never need packing
+                for self.len > 0 && self.rid_to_eid[self.len - 1].ix == DELETED_INDEX {
+                    self.len -= 1
+                    self.holes_count -= 1
+                }
+            } else {
+                self.holes_count += 1
+                if target_rid < self.first_hole_rid do self.first_hole_rid = target_rid
+            }
+
+            for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+                view := self.subscribers[i]
+                if view != nil && !view.suspended do view__remove_record(view, target_eid)
+            }
+
+            database__remove_component(self.db, target_eid, self.id)
+            return
+        }
 
         tail_rid := self.len - 1
         tail_eid := self.rid_to_eid[tail_rid] 
@@ -192,6 +226,63 @@ package ode_ecs
             mem.zero(&self.rows, self.type_info.size * self.len)
         }
         self.len = 0
+
+        self.holes_count = 0
+        self.first_hole_rid = max(int)
+
+        return nil
+    }
+
+    // Compact holes left by removals made while tail swap was paused,
+    // see table_raw__pack for the algorithm
+    @(private)
+    tiny_table_raw__pack :: proc(self: ^Tiny_Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+        if self.holes_count <= 0 {
+            self.first_hole_rid = max(int)
+            return nil
+        }
+
+        T_size := self.type_info.size
+        rows := rawptr(&self.rows[0])
+
+        front := self.first_hole_rid
+        back := self.len - 1
+
+        for self.holes_count > 0 {
+            // shrink span past trailing holes
+            for back >= 0 && self.rid_to_eid[back].ix == DELETED_INDEX {
+                back -= 1
+                self.holes_count -= 1
+            }
+            if self.holes_count <= 0 do break
+
+            // next hole from the front; guaranteed to exist below back
+            for self.rid_to_eid[front].ix != DELETED_INDEX do front += 1
+
+            // move the last live row into the hole
+            dst := rawptr(uintptr(rows) + uintptr(front) * uintptr(T_size))
+            src := rawptr(uintptr(rows) + uintptr(back)  * uintptr(T_size))
+            mem.copy(dst, src, T_size)
+
+            moved_eid := self.rid_to_eid[back]
+            self.rid_to_eid[front] = moved_eid
+            self.rid_to_eid[back].ix = DELETED_INDEX
+            oc_maps.tt_map__add(&self.eid_to_ptr, moved_eid.ix, dst)
+            mem.zero(src, T_size)
+
+            for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+                view := self.subscribers[i]
+                if view != nil && !view.suspended do view__update_component_address(view, self, moved_eid, dst)
+            }
+
+            back -= 1
+            front += 1
+            self.holes_count -= 1
+        }
+
+        self.len = back + 1
+        self.first_hole_rid = max(int)
 
         return nil
     }
@@ -285,6 +376,15 @@ package ode_ecs
         }
 
         return
+    }
+
+    // Compact holes left by removals made while tail swap was paused
+    // (see database__pause_tail_swap). Callable mid-pause too.
+    tiny_table__pack :: proc(self: ^Tiny_Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return tiny_table_raw__pack(cast(^Tiny_Table_Raw) self)
     }
 
     // Remove component for entity `eid`

@@ -29,6 +29,10 @@ package ode_ecs
 
         cap: int,
 
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping, see Table_Base
+        holes_count: int,
+        first_hole_rid: int,
+
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
     }
@@ -165,12 +169,42 @@ package ode_ecs
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found 
 
-        target := oc_maps.rh_map__get(&self.eid_to_ptr, target_eid.ix) 
-        
+        target := oc_maps.rh_map__get(&self.eid_to_ptr, target_eid.ix)
+
         // Check if component exists
         if target == nil do return oc.Core_Error.Not_Found
-        
+
         T_size := self.type_info.size
+
+        // Deferred tail swap: clear the component in place, leaving a hole.
+        // Nothing moves, so component pointers stay stable while iterating.
+        if self.db.tail_swap_paused {
+            target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
+
+            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            self.rid_to_eid[target_rid].ix = DELETED_INDEX
+            mem.zero(target, T_size)
+
+            if target_rid == raw.len - 1 {
+                raw.len -= 1
+                // absorb trailing holes so they never need packing
+                for raw.len > 0 && self.rid_to_eid[raw.len - 1].ix == DELETED_INDEX {
+                    raw.len -= 1
+                    self.holes_count -= 1
+                }
+            } else {
+                self.holes_count += 1
+                if target_rid < self.first_hole_rid do self.first_hole_rid = target_rid
+            }
+
+            for view in self.subscribers.items {
+                if !view.suspended do view__remove_record(view, target_eid)
+            }
+
+            database__remove_component(self.db, target_eid, self.id)
+            return
+        }
+
         rows := raw_data(self.rows)
 
         tail_rid := raw.len - 1
@@ -230,6 +264,60 @@ package ode_ecs
         return
     }
 
+    // Compact holes left by removals made while tail swap was paused,
+    // see table_raw__pack for the algorithm
+    @(private)
+    compact_table_raw__pack :: proc(self: ^Compact_Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+        if self.holes_count <= 0 {
+            self.first_hole_rid = max(int)
+            return nil
+        }
+
+        raw := (^runtime.Raw_Slice)(&self.rows)
+        T_size := self.type_info.size
+        rows := raw_data(self.rows)
+
+        front := self.first_hole_rid
+        back := raw.len - 1
+
+        for self.holes_count > 0 {
+            // shrink span past trailing holes
+            for back >= 0 && self.rid_to_eid[back].ix == DELETED_INDEX {
+                back -= 1
+                self.holes_count -= 1
+            }
+            if self.holes_count <= 0 do break
+
+            // next hole from the front; guaranteed to exist below back
+            for self.rid_to_eid[front].ix != DELETED_INDEX do front += 1
+
+            // move the last live row into the hole
+            dst := rawptr(uintptr(rows) + uintptr(front) * uintptr(T_size))
+            src := rawptr(uintptr(rows) + uintptr(back)  * uintptr(T_size))
+            mem.copy(dst, src, T_size)
+
+            moved_eid := self.rid_to_eid[back]
+            self.rid_to_eid[front] = moved_eid
+            self.rid_to_eid[back].ix = DELETED_INDEX
+            oc_maps.rh_map__update(&self.eid_to_ptr, moved_eid.ix, dst)
+            mem.zero(src, T_size)
+
+            for view in self.subscribers.items {
+                if !view.suspended do view__update_component_address(view, self, moved_eid, dst)
+            }
+
+            back -= 1
+            front += 1
+            self.holes_count -= 1
+        }
+
+        raw.len = back + 1
+        self.first_hole_rid = max(int)
+
+        return nil
+    }
+
     compact_table_raw__len :: #force_inline proc "contextless" (self: ^Compact_Table_Raw) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
@@ -249,6 +337,9 @@ package ode_ecs
             mem.zero(raw_data(self.rows), self.type_info.size * raw.len)
         }
         (^runtime.Raw_Slice)(&self.rows).len = 0
+
+        self.holes_count = 0
+        self.first_hole_rid = max(int)
 
         return nil
     }
@@ -349,6 +440,15 @@ package ode_ecs
         }
 
         return
+    }
+
+    // Compact holes left by removals made while tail swap was paused
+    // (see database__pause_tail_swap). Callable mid-pause too.
+    compact_table__pack :: proc(self: ^Compact_Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
     }
 
     compact_table__remove_component :: proc(self: ^Compact_Table($T), eid: entity_id, loc:= #caller_location) -> Error {

@@ -56,10 +56,12 @@ package ode_ecs
     //
         init                    :: database__init
         terminate               :: database__terminate
-        entities_len            :: database__entities_len               
+        entities_len            :: database__entities_len
         create_entity           :: database__create_entity
         destroy_entity          :: database__destroy_entity
         is_entity_expired       :: database__is_entity_expired      // Generation of entity in database does not match the one in provided entity_id
+        pause_tail_swap         :: database__pause_tail_swap        // Removals clear components in place (holes) instead of tail swapping — safe to remove while iterating tables
+        resume_tail_swap        :: database__resume_tail_swap       // Resume tail swapping; packs every table that accumulated holes
 
     //
     // Table 
@@ -198,6 +200,14 @@ package ode_ecs
             table_raw__clear,
             tiny_table__clear,
             tag_table__clear,
+        }
+
+        // Compact holes left by removals made while tail swap was paused,
+        // see pause_tail_swap / resume_tail_swap
+        pack                :: proc {
+            table__pack,
+            compact_table__pack,
+            tiny_table__pack,
         }
 
         table_len           :: proc {

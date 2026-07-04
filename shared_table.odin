@@ -193,6 +193,26 @@ package ode_ecs
         return API_Error.Unexpected_Error
     }
 
+    // Compact holes left by removals made while tail swap was paused,
+    // see database__resume_tail_swap
+    shared_table__pack :: proc (self: ^Shared_Table) -> Error {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                return table_raw__pack(cast(^Table_Raw) self)
+            case Table_Type.Tiny_Table:
+                return tiny_table_raw__pack(cast(^Tiny_Table_Raw) self)
+            case Table_Type.Compact_Table:
+                return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
+            case Table_Type.Tag_Table:
+                return nil // no component data, tag rows keep tail swapping — never has holes
+        }
+
+        assert(false) // should not happen
+        return API_Error.Unexpected_Error
+    }
+
     shared_table__clear :: proc (self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:

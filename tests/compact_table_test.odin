@@ -1064,3 +1064,88 @@ package ode_ecs__tests
             testing.expect(t, bird_present == true)  // bird is flying  
             testing.expect(t, chair_present == true) // chair is idle
     }
+
+///////////////////////////////////////////////////////////////////////////////
+// Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
+
+    // While paused, removals leave holes and move nothing; pack compacts them.
+    @(test)
+    compact_table__pause_tail_swap__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Compact_Table(Position)
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.compact_table__init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions}) == nil)
+
+        eids: [5]ecs.entity_id
+        for i in 0..<5 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            p, aerr := ecs.add_component(&positions, eid)
+            testing.expect(t, aerr == nil)
+            p.x = i + 1
+            eids[i] = eid
+        }
+
+        testing.expect(t, ecs.table_len(&positions) == 5)
+        testing.expect(t, ecs.view_len(&view) == 5)
+
+        ecs.pause_tail_swap(&db)
+
+        p1 := ecs.get_component(&positions, eids[1])
+        p4 := ecs.get_component(&positions, eids[4])
+
+        // removing a middle entity leaves a hole, nothing moves
+        testing.expect(t, ecs.remove_component(&positions, eids[2]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 5) // len is the row span, holes included
+        testing.expect(t, positions.holes_count == 1)
+        testing.expect(t, ecs.has_component(&positions, eids[2]) == false)
+        testing.expect(t, ecs.get_entity(&positions, 2).ix == ecs.DELETED_INDEX) // hole marker
+        testing.expect(t, ecs.get_component(&positions, eids[1]) == p1) // stable
+        testing.expect(t, ecs.get_component(&positions, eids[4]) == p4) // stable (tail swap would have moved it)
+        testing.expect(t, p4.x == 5)
+        testing.expect(t, ecs.view_len(&view) == 4) // views are still notified
+
+        // removing the tail row shrinks len without leaving a hole
+        testing.expect(t, ecs.remove_component(&positions, eids[4]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 4)
+        testing.expect(t, positions.holes_count == 1)
+
+        // removing the new tail absorbs the trailing hole at row 2 as well
+        testing.expect(t, ecs.remove_component(&positions, eids[3]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 2)
+        testing.expect(t, positions.holes_count == 0)
+
+        // punch a hole and pack explicitly (pack is usable mid-pause)
+        testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
+        testing.expect(t, positions.holes_count == 1)
+
+        testing.expect(t, ecs.pack(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+        testing.expect(t, ecs.get_entity(&positions, 0) == eids[1]) // survivor moved into the hole
+        testing.expect(t, ecs.get_component(&positions, eids[1]).x == 2) // data moved with it
+        testing.expect(t, ecs.view_len(&view) == 1)
+
+        // pack propagated the new address to the view
+        it: ecs.Iterator
+        testing.expect(t, ecs.iterator_init(&it, &view) == nil)
+        for ecs.iterator_next(&it) {
+            testing.expect(t, ecs.get_entity(&it) == eids[1])
+            testing.expect(t, ecs.get_component(&positions, &it) == ecs.get_component(&positions, eids[1]))
+        }
+
+        // normal tail-swap removal works after resume
+        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 0)
+    }

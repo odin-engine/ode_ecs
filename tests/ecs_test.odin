@@ -1399,3 +1399,242 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&positions) == 0)
         testing.expect(t, ecs.is_entity_expired(&db, eid))
     }
+
+///////////////////////////////////////////////////////////////////////////////
+// Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
+
+    // While paused, removals leave holes and move nothing: component pointers
+    // stay stable, len keeps the row span, views are still notified.
+    @(test)
+    pause_tail_swap__table__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions}) == nil)
+
+        eids: [5]ecs.entity_id
+        for i in 0..<5 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            p, aerr := ecs.add_component(&positions, eid)
+            testing.expect(t, aerr == nil)
+            p.x = i + 1
+            eids[i] = eid
+        }
+
+        testing.expect(t, ecs.table_len(&positions) == 5)
+        testing.expect(t, ecs.view_len(&view) == 5)
+
+        ecs.pause_tail_swap(&db)
+
+        p1 := ecs.get_component(&positions, eids[1])
+        p4 := ecs.get_component(&positions, eids[4])
+
+        // removing a middle entity leaves a hole, nothing moves
+        testing.expect(t, ecs.remove_component(&positions, eids[2]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 5) // len is the row span, holes included
+        testing.expect(t, positions.holes_count == 1)
+        testing.expect(t, ecs.has_component(&positions, eids[2]) == false)
+        testing.expect(t, ecs.get_entity(&positions, 2).ix == ecs.DELETED_INDEX) // hole marker
+        testing.expect(t, ecs.get_component(&positions, eids[1]) == p1) // stable
+        testing.expect(t, ecs.get_component(&positions, eids[4]) == p4) // stable (tail swap would have moved it)
+        testing.expect(t, p4.x == 5)
+        testing.expect(t, ecs.view_len(&view) == 4) // views are still notified
+
+        // removing the tail row shrinks len without leaving a hole
+        testing.expect(t, ecs.remove_component(&positions, eids[4]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 4)
+        testing.expect(t, positions.holes_count == 1)
+
+        // removing the new tail absorbs the trailing hole at row 2 as well
+        testing.expect(t, ecs.remove_component(&positions, eids[3]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 2)
+        testing.expect(t, positions.holes_count == 0)
+
+        // punch a hole and pack explicitly (pack is usable mid-pause)
+        testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
+        testing.expect(t, positions.holes_count == 1)
+
+        testing.expect(t, ecs.pack(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+        testing.expect(t, ecs.get_entity(&positions, 0) == eids[1]) // survivor moved into the hole
+        testing.expect(t, ecs.get_component(&positions, eids[1]).x == 2) // data moved with it
+        testing.expect(t, ecs.view_len(&view) == 1)
+
+        // pack propagated the new address to the view
+        it: ecs.Iterator
+        testing.expect(t, ecs.iterator_init(&it, &view) == nil)
+        for ecs.iterator_next(&it) {
+            testing.expect(t, ecs.get_entity(&it) == eids[1])
+            testing.expect(t, ecs.get_component(&positions, &it) == ecs.get_component(&positions, eids[1]))
+        }
+
+        // normal tail-swap removal works after resume
+        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 0)
+    }
+
+    // Database-level pause: destroy entities while iterating a table; every
+    // component table accumulates holes; resume packs them all.
+    @(test)
+    pause_tail_swap__database__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        ais: ecs.Compact_Table(AI)
+        tiny_positions: ecs.Tiny_Table(Position)
+        marked: ecs.Tag_Table
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.compact_table__init(&ais, &db, 10) == nil)
+        testing.expect(t, ecs.tiny_table__init(&tiny_positions, &db) == nil)
+        testing.expect(t, ecs.tag_table__init(&marked, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions, &ais}) == nil)
+
+        eids: [6]ecs.entity_id
+        for i in 0..<6 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+
+            p, perr := ecs.add_component(&positions, eid)
+            testing.expect(t, perr == nil)
+            p.x = i
+
+            a, aerr := ecs.add_component(&ais, eid)
+            testing.expect(t, aerr == nil)
+            a.neurons_count = i * 10
+
+            tp, terr := ecs.add_component(&tiny_positions, eid)
+            testing.expect(t, terr == nil)
+            tp.y = i
+
+            testing.expect(t, ecs.add_tag(&marked, eid) == nil)
+
+            eids[i] = eid
+        }
+
+        testing.expect(t, ecs.view_len(&view) == 6)
+
+        ecs.pause_tail_swap(&db)
+
+        // destroy every other entity while iterating the table's rows
+        destroyed := 0
+        for i in 0..<ecs.table_len(&positions) {
+            eid := ecs.get_entity(&positions, i)
+            if eid.ix == ecs.DELETED_INDEX do continue // hole
+            if i % 2 == 0 {
+                testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
+                destroyed += 1
+            }
+        }
+        testing.expect(t, destroyed == 3)
+
+        testing.expect(t, positions.holes_count == 3)
+        testing.expect(t, ais.holes_count == 3)
+        testing.expect(t, tiny_positions.holes_count == 3)
+        testing.expect(t, ecs.view_len(&view) == 3)
+        testing.expect(t, ecs.table_len(&marked) == 3) // tag rows keep tail swapping, no holes
+
+        // rebuilding a view over holey tables skips the holes
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect(t, ecs.view_len(&view) == 3)
+
+        // resume packs every component table
+        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ais.holes_count == 0)
+        testing.expect(t, tiny_positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 3)
+        testing.expect(t, ecs.table_len(&ais) == 3)
+        testing.expect(t, ecs.table_len(&tiny_positions) == 3)
+        testing.expect(t, ecs.entities_len(&db) == 3)
+
+        // survivors are intact in all tables
+        for i in 0..<6 {
+            if i % 2 == 0 do continue
+            eid := eids[i]
+
+            p := ecs.get_component(&positions, eid)
+            testing.expect(t, p != nil && p.x == i)
+
+            a := ecs.get_component(&ais, eid)
+            testing.expect(t, a != nil && a.neurons_count == i * 10)
+
+            tp := ecs.get_component(&tiny_positions, eid)
+            testing.expect(t, tp != nil && tp.y == i)
+        }
+
+        // normal tail-swap removal works after resume
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 2)
+    }
+
+    // Dense fast path across a pause/pack cycle: unavailable while the view and
+    // table diverge, healed by rebuild.
+    @(test)
+    pause_tail_swap__dense_view__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions}) == nil)
+
+        eids: [4]ecs.entity_id
+        for i in 0..<4 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            p, aerr := ecs.add_component(&positions, eid)
+            testing.expect(t, aerr == nil)
+            p.x = i
+            eids[i] = eid
+        }
+
+        dense := ecs.view_dense_slice(&view, &positions)
+        testing.expect(t, len(dense) == 4)
+
+        ecs.pause_tail_swap(&db)
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+
+        // the view tail-swapped its rows while the table kept a hole -> not aligned
+        dense = ecs.view_dense_slice(&view, &positions)
+        testing.expect(t, dense == nil)
+
+        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+
+        // rebuild restores alignment
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        dense = ecs.view_dense_slice(&view, &positions)
+        testing.expect(t, len(dense) == 3)
+        for row, i in dense {
+            testing.expect(t, ecs.get_component(&positions, ecs.get_entity(&positions, i)).x == row.x)
+        }
+    }
