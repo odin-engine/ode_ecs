@@ -1400,6 +1400,42 @@ package ode_ecs__tests
         testing.expect(t, ecs.is_entity_expired(&db, eid))
     }
 
+    // destroy_entity iterates the entity's set bits; make sure table ids in the
+    // upper half of the 128-bit set (id > 64) are visited correctly.
+    @(test)
+    destroy_entity_high_table_id__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        tags: [68]ecs.Tag_Table
+        positions: ecs.Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+
+        for i in 0..<68 {
+            testing.expect(t, ecs.tag_table__init(&tags[i], &db, 10) == nil)
+        }
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, int(positions.id) == 68) // upper half of the bit set
+
+        eid, cerr := ecs.create_entity(&db)
+        testing.expect(t, cerr == nil)
+        _, aerr := ecs.add_component(&positions, eid)
+        testing.expect(t, aerr == nil)
+        testing.expect(t, ecs.add_tag(&tags[0], eid) == nil)
+
+        testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
+        testing.expect(t, ecs.entities_len(&db) == 0)
+        testing.expect(t, ecs.table_len(&positions) == 0)
+        testing.expect(t, ecs.table_len(&tags[0]) == 0)
+        testing.expect(t, ecs.has_component(&positions, eid) == false)
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
 

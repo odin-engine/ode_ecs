@@ -23,13 +23,17 @@ package ode_ecs
     } 
 
     @(private)
-    view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) {
+    // #no_bounds_check: eid validated upstream; refs has one slot per column
+    view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) #no_bounds_check {
         self.eid = eid
 
-        cid: view_column_id
-        for table in view.tables.items {
-            cid = view.tid_to_cid[table.id]
-            #no_bounds_check {
+        // cid equals the column's position in view.tables.items by construction
+        // (view__init sets tid_to_cid[table.id] = index), so no lookup is needed
+        for table, cid in view.tables.items {
+            if table.type == Table_Type.Table {
+                // devirtualized fast path for the most common column type
+                self.refs[cid] = table_base__get_component_by_entity(cast(^Table_Base) table, eid)
+            } else {
                 self.refs[cid] = shared_table__get_component(table, eid)
             }
         }
@@ -548,7 +552,8 @@ package ode_ecs
 
     @(private)
     // Adds record (row), checks filter if any
-    view__add_record :: proc(self: ^View, eid: entity_id, use_filter:= true) -> Error {
+    // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
+    view__add_record :: proc(self: ^View, eid: entity_id, use_filter:= true) -> Error #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         // Should never happen because view is capped at table cap
@@ -585,7 +590,8 @@ package ode_ecs
     }
 
     @(private)
-    view__remove_record :: proc(self: ^View, eid: entity_id) {
+    // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
+    view__remove_record :: proc(self: ^View, eid: entity_id) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
         if raw.len <= 0 do return // no rows
         

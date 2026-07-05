@@ -164,7 +164,8 @@ package ode_ecs
     }
 
     @(private)
-    compact_table_raw__remove_component :: proc(self: ^Compact_Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
+    // #no_bounds_check: row indexes derive from raw.len < cap or from pointers into rows
+    compact_table_raw__remove_component :: proc(self: ^Compact_Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found 
@@ -414,16 +415,17 @@ package ode_ecs
             // existing component on a full table must still report Component_Already_Exist
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
 
-            // Get component
+            // #no_bounds_check: raw.len < cap == len(rows) == len(rid_to_eid) (checked above)
             #no_bounds_check {
+                // Get component
                 component = &self.rows[raw.len]
+
+                // Update rid_to_eid
+                self.rid_to_eid[raw.len] = eid
             }
-                        
+
             // Add eid_to_ptr
             oc_maps.rh_map__add(&self.eid_to_ptr, eid.ix, component) or_return
-
-            // Update rid_to_eid
-            self.rid_to_eid[raw.len] = eid
 
             // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)

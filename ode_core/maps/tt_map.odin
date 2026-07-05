@@ -32,7 +32,8 @@ package maps
     }
 
     @(private)
-    tt_map__find_item_from_hash :: proc(self: ^Tt_Map($CAP, $V), key: int, ix: int) -> (^Tt_Map_Item(V), int) {
+    // #no_bounds_check: pi wraps manually and stays < CAP
+    tt_map__find_item_from_hash :: proc(self: ^Tt_Map($CAP, $V), key: int, ix: int) -> (^Tt_Map_Item(V), int) #no_bounds_check {
         pi: int = ix
         p: ^Tt_Map_Item(V)
         for i:=0; i<CAP; i+=1 { 

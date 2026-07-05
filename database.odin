@@ -157,16 +157,20 @@ package ode_ecs
         
         database__is_entity_correct(self, eid) or_return
 
-        err: Error = nil
         bits := self.eid_to_bits[eid.ix]
 
-        for table in self.tables.items {
-            if table == nil do continue
-            if !uni_bits__exists(&bits, int(table.id)) do continue
-
-            // Not_Found is tolerated (stale bit); anything else aborts
-            terr := shared_table__remove_component(table, eid)
-            if terr != nil && terr != oc.Core_Error.Not_Found do return terr
+        // Iterate only the entity's set bits (the tables it belongs to) instead of
+        // scanning every attached table — O(components), not O(TABLES_CAP)
+        when TABLES_MULT == 1 {
+            for id in bits {
+                database__remove_component_by_table_id(self, id, eid) or_return
+            }
+        } else {
+            for word, wi in bits.value {
+                for b in word {
+                    database__remove_component_by_table_id(self, wi * BIT_SET_VALUES_CAP + b, eid) or_return
+                }
+            }
         }
 
         // clean bit_sets
@@ -174,7 +178,7 @@ package ode_ecs
 
         oc.ix_gen_factory__free_id(&self.id_factory, eid) or_return
 
-        return err
+        return nil
     }
 
     @(require_results)
@@ -275,12 +279,29 @@ package ode_ecs
     }
 
     @(private)
-    database__add_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) {
+    // Removes entity's component from the table with id `id` during entity
+    // destruction. Stale bits (table terminated / id reused) are tolerated.
+    database__remove_component_by_table_id :: #force_inline proc(self: ^Database, #any_int id: int, eid: entity_id) -> Error {
+        if id >= len(self.tables.items) do return nil // stale bit beyond the attached span
+        table := self.tables.items[id]
+        if table == nil do return nil // stale bit, table slot freed
+
+        terr := shared_table__remove_component(table, eid)
+        if terr != nil && terr != oc.Core_Error.Not_Found do return terr
+
+        return nil
+    }
+
+    @(private)
+    // #no_bounds_check: callers validate eid via database__is_entity_correct,
+    // and len(eid_to_bits) == id_factory.cap
+    database__add_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__add(&self.eid_to_bits[eid.ix], table_id)
     }
 
     @(private)
-    database__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) {
+    // #no_bounds_check: see database__add_component
+    database__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__remove(&self.eid_to_bits[eid.ix], table_id)
     }
 

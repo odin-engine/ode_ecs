@@ -106,7 +106,8 @@ package maps
     // }
 
     // Insert, key is expected to be non-negative
-    rh_map__add :: proc(self: ^Rh_Map($T), key: int, value: T) -> (err: oc.Error) {
+    // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
+    rh_map__add :: proc(self: ^Rh_Map($T), key: int, value: T) -> (err: oc.Error) #no_bounds_check {
 
         // if load factor >= 0.5 
         if self.count >= self.half_capacity {
@@ -158,7 +159,8 @@ package maps
 
 
     @(private)
-    rh_map__get_from_hash :: proc(self: ^Rh_Map($V), key: int, ix: int) -> (V, int) {
+    // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
+    rh_map__get_from_hash :: proc(self: ^Rh_Map($V), key: int, ix: int) -> (V, int) #no_bounds_check {
         probe_distance := 0
         idx := ix
 
@@ -207,7 +209,8 @@ package maps
     }
 
     // Delete
-    rh_map__remove :: proc(self: ^Rh_Map($T), key: int) -> oc.Error{
+    // #no_bounds_check: indexes are always masked with capacity - 1, capacity == len(items)
+    rh_map__remove :: proc(self: ^Rh_Map($T), key: int) -> oc.Error #no_bounds_check {
         idx := rh_map__hash(self, key)
         probe_distance := 0
 

@@ -39,3 +39,5 @@ ode_core/out/*
 ode_core/!out/.keep
 
 doc.md
+benchmarks/out/*
+!benchmarks/out/.keep

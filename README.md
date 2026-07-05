@@ -6,7 +6,7 @@ ODE_ECS is a simple, fast and type-safe ECS written in Odin.
 # Features  
 
 - Simple and type-safe API.  
-- Fast (if you find a faster ECS written in Odin, please let me know).
+- Fast (if you find a faster ECS written in Odin, please open an issue to let me know).
 - Everything is preallocated (no hidden memory reallocations during a game loop).  
 - All important operations are **O(1)**, with no hidden linked lists.  
 - Supports custom allocators.  
@@ -358,6 +358,24 @@ By default, the maximum number of component types is 128. However, you can have 
 ```  
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
+
+---
+### Performance tuning
+
+ODE_ECS ships with a micro-benchmark suite in `benchmarks/` — the referee for any performance work on the library. Run it before and after a change and compare ns/op:
+
+```
+    cd benchmarks
+    odin run . -o:speed -out:out/bench.exe
+```
+
+Compiler flags that matter for release builds of your game:
+
+- `-o:speed` — enables optimizations; the single biggest factor.
+- `-define:ECS_VALIDATIONS=false` — strips the library's parameter/state asserts.
+- `-disable-assert` — strips all remaining asserts globally.
+- `-no-bounds-check` — disables bounds checking globally. The library already annotates its provably-safe hot paths with `#no_bounds_check`, so this mostly affects your own code.
+- `-microarch:native` — allows the compiler to use your CPU's full instruction set.
 
 ---
 ### Thread safety?

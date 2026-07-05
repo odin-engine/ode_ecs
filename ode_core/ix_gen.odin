@@ -121,7 +121,8 @@ package ode_core
         return self.items[id.ix].ix == DELETED_INDEX 
     }
 
-    ix_gen_factory__is_expired :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool {
+    // #no_bounds_check: items has cap elements and id.ix is range-checked right above
+    ix_gen_factory__is_expired :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool #no_bounds_check {
         if id.ix < 0 || id.ix >= self.cap do return true // out of range -> treat as expired
         // Comparing the whole stored id (ix + gen) rather than just gen also rejects slots that were
         // never created or have been freed: those store ix == DELETED_INDEX, so the zero/default id

@@ -137,7 +137,9 @@ package ode_ecs
     }
 
     @(private)
-    table_base__get_component_by_entity :: proc (self: ^Table_Base, eid: entity_id) -> rawptr {
+    // #no_bounds_check: callers validate eid via database__is_entity_correct,
+    // and len(eid_to_ptr) == db.id_factory.cap
+    table_base__get_component_by_entity :: #force_inline proc "contextless" (self: ^Table_Base, eid: entity_id) -> rawptr #no_bounds_check {
         return self.eid_to_ptr[eid.ix]
     }
 
@@ -171,7 +173,9 @@ package ode_ecs
     }
 
     @(private)
-    table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
+    // #no_bounds_check: callers validate target_eid (len(eid_to_ptr) == db.id_factory.cap);
+    // all row indexes derive from raw.len < cap or from pointers into rows
+    table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found 
@@ -410,7 +414,11 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        component = cast(^T) self.eid_to_ptr[eid.ix]
+        // #no_bounds_check: eid.ix validated by database__is_entity_correct above,
+        // len(eid_to_ptr) == db.id_factory.cap
+        #no_bounds_check {
+            component = cast(^T) self.eid_to_ptr[eid.ix]
+        }
 
         // Check if component already exist
         if component == nil {
@@ -418,16 +426,17 @@ package ode_ecs
             // existing component on a full table must still report Component_Already_Exist
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
 
-            // Get component
+            // #no_bounds_check: raw.len < cap == len(rows) == len(rid_to_eid) (checked above)
             #no_bounds_check {
+                // Get component
                 component = &self.rows[raw.len]
-            }
-                        
-            // Update eid_to_ptr
-            self.eid_to_ptr[eid.ix] = component
 
-            // Update rid_to_eid
-            self.rid_to_eid[raw.len] = eid
+                // Update eid_to_ptr
+                self.eid_to_ptr[eid.ix] = component
+
+                // Update rid_to_eid
+                self.rid_to_eid[raw.len] = eid
+            }
 
             // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)
