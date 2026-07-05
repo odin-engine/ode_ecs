@@ -14,7 +14,6 @@ ODE_ECS is a simple, fast and type-safe ECS written in Odin.
 - Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
 - Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
-- Deferred tail swap: `pause_tail_swap`/`resume_tail_swap` make it safe to remove components and destroy entities *while iterating* tables — component pointers stay stable until you `pack`.  
 - zlib License (even more permissive than both the MIT License and the BSD 3-Clause License). 
 - Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
 - Tests are [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
@@ -358,24 +357,6 @@ By default, the maximum number of component types is 128. However, you can have 
 ```  
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
-
----
-### Performance tuning
-
-ODE_ECS ships with a micro-benchmark suite in `benchmarks/` — the referee for any performance work on the library. Run it before and after a change and compare ns/op:
-
-```
-    cd benchmarks
-    odin run . -o:speed -out:out/bench.exe
-```
-
-Compiler flags that matter for release builds of your game:
-
-- `-o:speed` — enables optimizations; the single biggest factor.
-- `-define:ECS_VALIDATIONS=false` — strips the library's parameter/state asserts.
-- `-disable-assert` — strips all remaining asserts globally.
-- `-no-bounds-check` — disables bounds checking globally. The library already annotates its provably-safe hot paths with `#no_bounds_check`, so this mostly affects your own code.
-- `-microarch:native` — allows the compiler to use your CPU's full instruction set.
 
 ---
 ### Thread safety?
