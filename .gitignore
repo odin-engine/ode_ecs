@@ -3,6 +3,7 @@
 
 # Allow the README.md file 
 !/README.md
+!docs/*.md
 
 out/*
 !out/.keep
@@ -38,6 +39,5 @@ ols.json
 ode_core/out/*
 ode_core/!out/.keep
 
-doc.md
 benchmarks/out/*
 !benchmarks/out/.keep
