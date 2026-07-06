@@ -475,6 +475,10 @@ ECS is designed heavily around data-oriented design and cache locality. Iteratin
 
 In ECS you should have systems (basically procs) that iterate over components/Views related to those systems. Like network system should iterate over network copmonenents to process them. Physics system should iterate over physics components to process them etc.
 
+### 3. Do you have observers/events for "entity created", "entity destroyed", "component added", "component removed", etc.?
+
+Code written with observers and events can be difficult to understand and maintain. In my opinion, we should avoid this approach as much as possible. If you disagree, please open an issue with your arguments.
+
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
 - [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)
