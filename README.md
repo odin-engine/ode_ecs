@@ -14,6 +14,7 @@ ODE_ECS is a simple, fast and type-safe ECS written in Odin.
 - Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
 - Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
+- Optional parent/child entity relations (`Relations_Table`): O(1) re-parenting, cycle protection, automatic cleanup on destroy, and cascading `destroy_entity(&db, eid, destroy_children=true)`.  
 - zlib License (even more permissive than both the MIT License and the BSD 3-Clause License). 
 - Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
 - Tests are [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
@@ -258,7 +259,53 @@ You can iterate over tagged entities like this:
 
 ---
 
-## Tips
+### Relations_Table (parent/child entity relations)
+
+`Relations_Table` is an optional table that adds parent/child relations between entities: every entity can have at most one parent and any number of children. Like everything else in ODE_ECS, all of its memory is preallocated at init and every operation is a direct array access (adding, removing and re-parenting are all **O(1)**). Only one `Relations_Table` can be created per `Database`:
+
+```odin
+    rt : ecs.Relations_Table
+
+    // cap limits the number of concurrent parent links (relations)
+    ecs.relations_table__init(&rt, &db, cap=100)
+```
+
+Once created, relations are managed through database-level procedures (they return `Relations_Table_Not_Created` if you call them before creating the table):
+
+```odin
+    parent, _ := ecs.create_entity(&db)
+    child, _  := ecs.create_entity(&db)
+
+    ecs.set_parent(&db, child, parent)      // make `parent` the parent of `child`
+    ecs.remove_parent(&db, child)           // remove the link (alias: ecs.unparent)
+
+    p, _        := ecs.parent_of(&db, child)      // parent id, or .ix == ecs.DELETED_INDEX if none
+    children, _ := ecs.children_of(&db, parent)   // []entity_id — use immediately, see note below
+    n, _        := ecs.children_count(&db, parent)
+
+    yes, _ = ecs.is_child_of(&db, child, parent)    // is `child` a child of `parent`?
+    yes, _ = ecs.is_parent_of(&db, parent, child)   // is `parent` the parent of `child`?
+    yes, _ = ecs.has_relations(&db, child)          // does entity have a parent or children?
+    yes, _ = ecs.is_relation_of(&db, parent, child) // direct link in either direction
+```
+
+`set_parent` re-parents in place (replacing the previous parent) and always guards against cycles: making an entity a descendant of itself returns `Relation_Cycle` and changes nothing. The check walks the new parent's ancestor chain, so it costs O(tree depth).
+
+**Cleanup is automatic.** Destroying an entity unlinks it from its parent and *orphans* its children (their parent link is cleared). To destroy a whole subtree instead, use the new optional flag on `destroy_entity`:
+
+```odin
+    ecs.destroy_entity(&db, boss, destroy_children=true) // destroys boss and all descendants
+```
+
+The cascade is iterative (no recursion) and destroys the deepest entities first; each destroyed entity is removed from all its component tables as usual.
+
+>**NOTE:** The slice returned by `children_of` points into an internal preallocated buffer. It is valid only until the next `children_of` call or any structural change (set_parent / remove_parent / destroy_entity / clear) — use it immediately, do not store it.
+
+>**NOTE:** Relations are not components: they do not affect `View`s. If you need to iterate "all entities that have a parent", pair the feature with a `Tag_Table`.
+
+---
+
+# Tips
 
 ### TIP: Avoid mutating tables while iterating over them 
 
@@ -358,8 +405,9 @@ By default, the maximum number of component types is 128. However, you can have 
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
 
----
-### Thread safety?
+# F.A.Q
+
+### 1. Thread safety?
 
 This is a data-oriented library with a "no hidden costs / preallocate everything" philosophy. Baking locks into every call is exactly the kind of hidden cost it avoids. The idiomatic answer is to not make the core thread-safe, and instead parallelize at a higher level where synchronization amortizes to zero:
 
@@ -370,6 +418,11 @@ This is a data-oriented library with a "no hidden costs / preallocate everything
 - One Database per thread/region for fully independent workloads — the API explicitly supports many databases, and they share nothing.
 
 So the honest summary: making the core internally thread-safe would meaningfully hurt — per-element locking is a 2–10× hit on the headline iteration path and per-mutation locking serializes the very thing you parallelized for. But thread-safe usage via batched parallel iteration over immutable component data plus a single-threaded structural-mutation phase costs essentially nothing.
+
+### 2. How to iterate over all entities?
+
+Iterating over all entities is ECS anti-pattern. You have should have systems (basically procs) that iterate over components related to those systems. Like network system should iterate over network copmonenents to process them. Physics system should iterate over physics components to process them etc.
+
 
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    

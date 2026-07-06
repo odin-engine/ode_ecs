@@ -86,8 +86,23 @@ package ode_ecs
     // Iterator
     //
         iterator_init       :: iterator__init
-        iterator_next       :: iterator__next   
+        iterator_next       :: iterator__next
         iterator_reset      :: iterator__reset
+
+    //
+    // Relations (parent/child), require a Relations_Table on the database,
+    // see relations_table__init
+    //
+        set_parent          :: database__set_parent                 // Make one entity the parent of another (replaces previous parent)
+        remove_parent       :: database__remove_parent              // Remove entity's parent link
+        unparent            :: database__remove_parent
+        parent_of           :: database__parent_of                  // Entity's parent id, or id with ix == DELETED_INDEX if none
+        children_of         :: database__children_of                // Entity's children as a slice of an internal buffer — use immediately
+        children_count      :: database__children_count
+        is_child_of         :: database__is_child_of                // Is `a` a child of `b`?
+        is_parent_of        :: database__is_parent_of               // Is `a` the parent of `b`?
+        has_relations       :: database__has_relations              // Does entity have a parent or children?
+        is_relation_of      :: database__is_relation_of             // Does `e` relate to `target` directly (as child or parent)?
 
     //
     // Outdated aliases (will be removed in future)
@@ -193,13 +208,14 @@ package ode_ecs
 
         // Clear all data but do not terminate object
         clear               :: proc {  // only data clear
-            database__clear,                    
+            database__clear,
             table__clear,
             compact_table__clear,
             view__clear,
             table_raw__clear,
             tiny_table__clear,
             tag_table__clear,
+            relations_table__clear,
         }
 
         // Compact holes left by removals made while tail swap was paused,
@@ -215,13 +231,15 @@ package ode_ecs
             compact_table__len,
             tiny_table__len,
             tag_table__len,
+            relations_table__len,
         }
 
         table_cap           :: proc {
             table__cap,
             compact_table__cap,
-            tiny_table__cap, 
+            tiny_table__cap,
             tag_table__cap,
+            relations_table__cap,
         }
  
         // Memory in bytes
@@ -232,6 +250,7 @@ package ode_ecs
             view__memory_usage,
             tiny_table__memory_usage,
             tag_table__memory_usage,
+            relations_table__memory_usage,
         }
 
         // Is object valid (initialized and everything is ok)
@@ -242,6 +261,7 @@ package ode_ecs
             view__is_valid,
             tiny_table__is_valid,
             tag_table__is_valid,
+            relations_table__is_valid,
         }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -289,6 +309,9 @@ package ode_ecs
             Cannot_Add_Record_To_View_Container_Is_Full,
             Object_Invalid,
             Component_Size_Cannot_Be_Zero,
+            Relations_Table_Already_Exists,   // only one Relations_Table per Database
+            Relations_Table_Not_Created,      // relation procs require relations_table__init first
+            Relation_Cycle,                   // set_parent would make an entity its own ancestor
         }
 
         Error :: union #shared_nil {
