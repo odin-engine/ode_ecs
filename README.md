@@ -460,8 +460,20 @@ So the honest summary: making the core internally thread-safe would meaningfully
 
 ### 2. How to iterate over all entities?
 
-Iterating over all entities is ECS anti-pattern. You have should have systems (basically procs) that iterate over components related to those systems. Like network system should iterate over network copmonenents to process them. Physics system should iterate over physics components to process them etc.
+Iterating over all entities unconditionally is a major anti-pattern in ECS.
 
+In fact, avoiding this exact practice is one of the primary reasons the ECS architecture was invented in the first place.
+
+Why It's an Anti-Pattern
+ECS is designed heavily around data-oriented design and cache locality. Iterating over every single entity defeats these benefits for three major reasons:
+
+- CPU Cache Misses: In a good ECS, components are stored in contiguous memory arrays (often grouped by archetype). If a system loops through every entity, it will constantly jump around in memory to look up components, causing CPU cache misses and destroying performance.
+
+- The "Empty Entity" Waste: Many entities in your game might just be static environment pieces, UI elements, or particle effects. If your MovementSystem has to look at a UI button entity just to check if it has a Velocity component, you are wasting massive amounts of CPU cycles.
+
+- O(N) Complexity Scaling: As your world grows from 1,000 entities to 100,000 entities, your frame rate will plummet because every system is checking every entity, even if only 5 of them are relevant.
+
+In ECS you should have systems (basically procs) that iterate over components/Views related to those systems. Like network system should iterate over network copmonenents to process them. Physics system should iterate over physics components to process them etc.
 
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
