@@ -1,25 +1,20 @@
 ![alt text](https://github.com/odin-engine/imgs/blob/main/ode_ecs_v1.png?raw=true)
 # ODE_ECS (Entity-Component-System)
 
-ODE_ECS is a simple, fast and type-safe ECS written in Odin.
+A minimal, data-oriented, high-performance Entity Component System written in Odin.
 
 # Features  
 
-- Simple and type-safe API.  
-- Fast — if you find a faster ECS written in Odin, please open an issue and let me know.
+- Simple and type-safe API.
+- High-performance — if you find a better-performing ECS written in Odin, please open an issue and let me know.
 - Everything is preallocated (no hidden memory reallocations during a game loop).  
 - All important operations are **O(1)**, with no hidden linked lists.  
 - Supports custom allocators.  
 - No additional data is stored with components, ensuring maximum cache efficiency.  
 - Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
-- Entity IDs are not just indices; they also include a generation number. This ensures that if you save an entity ID and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 - Supports an unlimited number of component types (default is 128).  
-- Optional parent/child entity relations (`Relations_Table`): O(1) re-parenting, cycle protection, automatic cleanup on destroy, and cascading `destroy_entity(&db, eid, destroy_children=true)`.  
 - zlib License (even more permissive than both the MIT License and the BSD 3-Clause License). 
-- Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
-- Tests are [here](https://github.com/odin-engine/ode_ecs/blob/main/tests/ecs_test.odin).  
-- An example with 100,000 entities is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample01/main.odin).  
-- An example demonstrating how to optimize your ECS can be found [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/sample02/main.odin). 
+and more.
 
 # How to install
 
@@ -475,12 +470,9 @@ ECS is designed heavily around data-oriented design and cache locality. Iteratin
 
 In ECS you should have systems (basically procs) that iterate over components/Views related to those systems. Like network system should iterate over network copmonenents to process them. Physics system should iterate over physics components to process them etc.
 
-### 3. Do you have observers/events for "entity created", "entity destroyed", "component added", "component removed", etc.?
-
-Code written with observers and events can be difficult to understand and maintain. In my opinion, we should avoid this approach as much as possible. If you disagree, please open an issue with your arguments.
-
 # Documentation
 - [Updates Timeline](https://github.com/odin-engine/ode_ecs/wiki/Updates-Timeline)    
 - [Documentation](https://github.com/odin-engine/ode_ecs/wiki/Documentation)
+- Basic sample is available [here](https://github.com/odin-engine/ode_ecs/blob/main/samples/basics/main.odin).  
 
 ## If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
