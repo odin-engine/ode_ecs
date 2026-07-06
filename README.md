@@ -14,7 +14,7 @@ A minimal, data-oriented, high-performance Entity Component System written in Od
 - Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
 - Supports an unlimited number of component types (default is 128).  
 - zlib License (even more permissive than both the MIT License and the BSD 3-Clause License). 
-and more.
+- and more.
 
 # How to install
 
