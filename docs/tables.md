@@ -134,6 +134,34 @@ cam.zoom = 2.0
 
 Everything else works like the other tables (`get_component`, `remove_component`, `has_component`, `copy_component` / `move_component` between two Tiny_Tables, etc.). At most `TINY_TABLE__VIEWS_CAP` (8) views can subscribe to a Tiny_Table.
 
+**Usage example:**
+
+```odin
+pos_table : ecs.Tiny_Table(Position) // Tiny_Table !!!
+err = ecs.tiny_table__init(&pos_table, &db)
+```
+
+**Iteration example:**
+
+```odin
+for i := 0; i < ecs.table_len(&pos_table); i += 1 {
+    component := &pos_table.rows[i]
+    eid := ecs.get_entity(&pos_table, i)
+
+    if eid == human {
+        fmt.println("Human: ", eid, component)
+    } else if eid == bird {
+        fmt.println("Bird: ", eid, component)
+    } else {
+        fmt.println("Unknown entity: ", eid, component)
+    }
+}
+```
+
+See [this sample](../samples/sample04/main.odin) for more usage examples.
+
+> **NOTE:** In most cases, start by using `Table`. If memory optimization becomes necessary at later stages, consider switching to `Tiny_Table` or `Compact_Table` in some places. As Donald Knuth famously stated: *“Premature optimization is the root of all evil.”*
+
 ## Tag_Table
 
 A `Tag_Table` stores no component data at all — it only marks ("tags") entities. Its `rows` is a dense slice of `entity_id`:
@@ -165,4 +193,4 @@ See [Sample06](../samples/sample06/main.odin) for a complete Tag_Table example.
 
 ## Choosing a variant
 
-From the source's own guidance: use `Tiny_Table` if `cap <= 8`; use `Compact_Table` if you want to save memory and `cap` is less than `entities_cap / 4` (but more than 8); otherwise — or if you don't care about memory — use `Table`. Use `Tag_Table` when there is no data to store at all. [Sample02](../samples/sample02/main.odin) demonstrates memory optimization with the different variants.
+Use `Tiny_Table` if `cap <= 8`; use `Compact_Table` if you want to save memory and `cap` is less than `entities_cap / 4` (but more than 8); otherwise — or if you don't care about memory — use `Table`. Use `Tag_Table` when there is no data to store at all. [Sample02](../samples/sample02/main.odin) demonstrates memory optimization with the different variants.
