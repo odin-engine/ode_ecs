@@ -151,9 +151,10 @@ package maps
             idx = (idx + 1) & self.mask
             probe_distance += 1
 
-            if probe_distance > self.half_capacity {
-                return oc.Core_Error.Container_Is_Full
-            }
+            // No mid-probe bail-out: count < half_capacity (checked on entry)
+            // guarantees an empty slot exists, so the loop always terminates.
+            // Returning here after a Robin Hood swap would drop the displaced
+            // item and corrupt the map.
         }
     }
 

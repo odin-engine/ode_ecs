@@ -169,6 +169,11 @@ package ode_ecs
 
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
+        // A re-init'd struct (issue #8) may carry bits/suspended from its
+        // previous life; terminate does not reset them.
+        uni_bits__clear(&self.bits)
+        self.suspended = false
+
         self.db = db
 
         // Store filter

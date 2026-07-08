@@ -66,10 +66,16 @@ package ode_ecs
         }
 
         self.dense = view__dense_resolve(self.view)
-        
+
         // Recalculate end_now if original end_row was zero, which means end_row should be view_len()
         if self.orig_end_row == 0 {
             self.end_row = view_len(self.view)
+        } else {
+            // Explicit end_row: the view may have shrunk since init — clamp so
+            // the iterator never walks cleared rows past the current length.
+            self.end_row = min(self.orig_end_row, view_len(self.view))
+            // A batch that now starts past the end is simply empty.
+            if self.end_row < self.start_row do self.end_row = self.start_row
         }
 
         // We need to be careful here, because len of view might have changed

@@ -118,11 +118,14 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        if raw.len >= self.cap do return oc.Core_Error.Container_Is_Full 
-
         eidptr := oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
 
         if eidptr != nil do return nil // already added
+
+        // Capacity only matters when actually inserting — re-adding an
+        // existing tag on a full table must still be a no-op (see the same
+        // ordering in table__add_component)
+        if raw.len >= self.cap do return oc.Core_Error.Container_Is_Full
 
         // Update rows
         #no_bounds_check {

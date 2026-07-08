@@ -363,7 +363,7 @@ package ode_ecs
         return true
     }
 
-    compact_table__init :: proc(self: ^Compact_Table($T), db: ^Database, cap: int, loc := #caller_location) -> Error {
+    compact_table__init :: proc(self: ^Compact_Table($T), db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
@@ -376,7 +376,7 @@ package ode_ecs
 
         self.type_info = type_info_of(typeid_of(T))
 
-        compact_table_base__init(&self.base, db, cap) or_return 
+        compact_table_base__init(&self.base, db, cap, subscribers_cap) or_return
 
         self.rows = make([]T, cap, db.allocator) or_return
         

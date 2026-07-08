@@ -45,6 +45,11 @@ package ode_ecs
     tiny_table_base__init :: proc(self: ^Tiny_Table_Base, db: ^Database) -> Error {
         shared_table__init(&self.shared, Table_Type.Tiny_Table, db)
 
+        // Unlike Table/Compact_Table, whose subscriber arrays are re-allocated
+        // fresh on init, this fixed array survives terminate + re-init
+        // (issue #8) and would keep notifying views from a previous life.
+        self.subscribers = {}
+
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
 

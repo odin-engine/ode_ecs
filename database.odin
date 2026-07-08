@@ -58,7 +58,11 @@ package ode_ecs
         }
 
         if entities_cap <= 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
-        
+
+        // A re-init'd struct (issue #8) may still be paused from its previous
+        // life; terminate does not reset the flag.
+        self.tail_swap_paused = false
+
         self.allocator = allocator
 
         oc.ix_gen_factory__init(&self.id_factory, entities_cap, self.allocator) or_return
@@ -152,6 +156,10 @@ package ode_ecs
 
         // bump_gen so entity ids held across the clear are detected as expired
         oc.ix_gen_factory__clear(&self.id_factory, bump_gen = true)
+
+        // clear returns the database to its post-init state; a pause taken
+        // before the clear must not leak into the new data
+        self.tail_swap_paused = false
 
         return err
     }
