@@ -2,7 +2,7 @@
 
 ### 0. Why did you build it?
 
-I built it for my own MMORPG project. It is minimal, low-level, well-tested, and fast—exactly what I want an ECS to be. I wanted to avoid overengineered libraries that unpredictably tank frame-to-frame stability. At the same time, I didn't want a full-blown in-memory relational database; there is simply no need for that level of complexity. An ECS is essentially a stripped-down, high-performance, in-memory relational database (RDB). That's it. It isn't a new concept at all, and it maps beautifully to standard RDB principles. In my view, if a game's data structure is complex enough to benefit from a relational database, it's complex enough to warrant an ECS.
+I built it for my own MMORPG project. It is minimal, low-level, well-tested, and fast—exactly what I want an ECS to be. I wanted to avoid overengineered libraries that unpredictably tank frame-to-frame stability. 
 
 ### 1. Thread safety?
 
