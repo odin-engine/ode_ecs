@@ -3,6 +3,7 @@
 * [Database](database.md)
 * [Tables](tables.md)
 * [View](view.md)
+* [Group](group.md)
 * [Relations](relations.md)
 * [Frequently Asked Questions (F.A.Q)](faq.md)
 

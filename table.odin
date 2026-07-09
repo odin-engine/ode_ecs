@@ -33,6 +33,11 @@ package ode_ecs
         // as &rows[rid] on lookup, so a tail swap patches a rid, not a pointer.
         eid_to_rid: []u32,
 
+        // Group that owns this table (at most one), nil when not owned.
+        // See group.odin: the owner keeps group members in the aligned prefix
+        // [0, owner.len) of rows, so add/remove paths below notify it.
+        owner: ^Group,
+
         cap: int,
 
         // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
@@ -61,6 +66,9 @@ package ode_ecs
     @(private)
     table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP) -> Error {
         shared_table__init(&self.shared, Table_Type.Table, db)
+
+        // a re-init'd struct (issue #8) may carry an owner from its previous life
+        self.owner = nil
 
         self.cap = cap
 
@@ -158,6 +166,33 @@ package ode_ecs
     }
 
     @(private)
+    // Swap two live rows (component data + both index directions) and notify
+    // subscribed views of the address changes. Used by group maintenance
+    // (group.odin); must not be called while tail swap is paused (rows must
+    // stay put) — group hooks defer to a rebuild instead.
+    table_raw__swap_rows :: proc(self: ^Table_Raw, #any_int rid_a: int, #any_int rid_b: int) #no_bounds_check {
+        if rid_a == rid_b do return
+
+        pa := table_raw__rid_to_ptr(self, rid_a)
+        pb := table_raw__rid_to_ptr(self, rid_b)
+        slice.ptr_swap_non_overlapping(pa, pb, self.type_info.size)
+
+        eid_a := self.rid_to_eid[rid_a]
+        eid_b := self.rid_to_eid[rid_b]
+        self.rid_to_eid[rid_a] = eid_b
+        self.rid_to_eid[rid_b] = eid_a
+        self.eid_to_rid[eid_a.ix] = u32(rid_b)
+        self.eid_to_rid[eid_b.ix] = u32(rid_a)
+
+        for view in self.subscribers.items {
+            if !view.suspended {
+                view__update_component_address(view, self, eid_a, pb)
+                view__update_component_address(view, self, eid_b, pa)
+            }
+        }
+    }
+
+    @(private)
     // #no_bounds_check: callers validate eid via database__is_entity_correct,
     // and len(eid_to_rid) == db.id_factory.cap
     table_raw__get_component_by_entity :: #force_inline proc "contextless" (self: ^Table_Raw, eid: entity_id) -> rawptr #no_bounds_check {
@@ -169,6 +204,13 @@ package ode_ecs
     @(private)
     table_raw__terminate :: proc(self: ^Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
+
+        // A group missing one of its owned tables is meaningless — invalidate it
+        // (it still owns its allocations; terminate it to release them).
+        if self.owner != nil {
+            self.owner.state = Object_State.Invalid
+            self.owner = nil
+        }
 
         // Clear this table's bit from all entities: the id may be reused by a
         // future table, and a stale bit would make destroy_entity fail on it.
@@ -201,6 +243,20 @@ package ode_ecs
 
         T_size := self.type_info.size
         target := table_raw__rid_to_ptr(self, target_rid)
+
+        // Group maintenance: a member losing an owned component leaves the group —
+        // swap its rows out of the prefix (in every owned table) before this
+        // table's own tail swap runs. Members sit at rid < owner.len by invariant.
+        // While tail swap is paused rows must not move: mark dirty, rebuild on resume.
+        if self.owner != nil && int(target_rid) < self.owner.len {
+            if self.db.tail_swap_paused {
+                self.owner.dirty = true
+            } else {
+                group__swap_out(self.owner, target_eid)
+                target_rid = self.eid_to_rid[target_eid.ix]
+                target = table_raw__rid_to_ptr(self, target_rid)
+            }
+        }
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
@@ -344,6 +400,12 @@ package ode_ecs
         }
 
         slice.fill(self.eid_to_rid, TABLE_NO_RID)
+
+        // an empty owned table means no entity can match the owner group
+        if self.owner != nil {
+            self.owner.len = 0
+            self.owner.dirty = false
+        }
        
         if zero_components && self.cap > 0 && self.rows != nil {
             raw := (^runtime.Raw_Slice)(&self.rows)
@@ -449,6 +511,17 @@ package ode_ecs
             database__add_component(self.db, eid, self.id)
 
             raw.len += 1
+
+            // Group maintenance: if the entity now has every owned component, swap
+            // its rows into the group prefix (deferred while tail swap is paused).
+            // Before the subscriber loop so views record the final addresses.
+            if self.owner != nil {
+                group__on_add(self.owner, eid)
+                // the swap may have moved the new row — re-derive the returned pointer
+                #no_bounds_check {
+                    component = &self.rows[self.eid_to_rid[eid.ix]]
+                }
+            }
         } else {
             #no_bounds_check {
                 component = &self.rows[rid]

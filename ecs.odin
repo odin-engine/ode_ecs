@@ -83,6 +83,15 @@ package ode_ecs
         view_dense_slice        :: view__dense_slice                // Components in view-row order as one contiguous slice (nil if view is not dense-aligned)
     
     //
+    // Group (owned group — enforced dense alignment, see group.odin)
+    //
+        group_init          :: group__init                          // Take exclusive ownership of tables; members stay in an aligned prefix
+        group_terminate     :: group__terminate
+        group_len           :: group__len                           // Number of entities in the group
+        group_dense_slice   :: group__dense_slice                   // Members' components of one owned table as a contiguous slice, always aligned
+        group_rebuild       :: group__rebuild                       // Rebuild membership from scratch (normally maintained incrementally)
+
+    //
     // Iterator
     //
         iterator_init       :: iterator__init
@@ -248,6 +257,7 @@ package ode_ecs
             table__memory_usage,
             compact_table__memory_usage,
             view__memory_usage,
+            group__memory_usage,
             tiny_table__memory_usage,
             tag_table__memory_usage,
             relations_table__memory_usage,
@@ -259,6 +269,7 @@ package ode_ecs
             table__is_valid,
             compact_table__is_valid,
             view__is_valid,
+            group__is_valid,
             tiny_table__is_valid,
             tag_table__is_valid,
             relations_table__is_valid,
@@ -312,6 +323,8 @@ package ode_ecs
             Relations_Table_Already_Exists,   // only one Relations_Table per Database
             Relations_Table_Not_Created,      // relation procs require relations_table__init first
             Relation_Cycle,                   // set_parent would make an entity its own ancestor
+            Only_Table_Can_Be_Owned_By_Group, // groups cannot own Compact_Table/Tiny_Table/Tag_Table
+            Table_Already_Owned_By_Group,     // a table can have at most one owner group
         }
 
         Error :: union #shared_nil {

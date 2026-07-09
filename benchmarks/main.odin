@@ -20,6 +20,11 @@
                             column (pointer path)
         iter_mixed_1col_sl  same single-column read via view_dense_slice — possible
                             because alignment is tracked per column, not per view
+        iter_group_slice    both columns of the same population via an owned group
+                            (group_dense_slice) — enforced alignment, raw SoA sweep
+        churn_vel           add+remove a 2nd component, no group (baseline)
+        churn_vel_group     same, with an owned group over both tables — every
+                            add/remove pays the group's swap maintenance
         get_random          shuffled random get_component by entity (Table)
         get_random_compact  shuffled random get_component by entity (Compact_Table)
         get_random_compact_miss  same, against a half-populated Compact_Table
@@ -114,6 +119,11 @@ package ode_ecs_benchmarks
     m_velocities: ecs.Table(Velocity)
     m_both: ecs.View
 
+    group_db: ecs.Database
+    g_positions: ecs.Table(Position)
+    g_velocities: ecs.Table(Velocity)
+    g_group: ecs.Group
+
 main :: proc() {
     rand.reset(SEED)
 
@@ -129,6 +139,9 @@ main :: proc() {
     bench_iter_mixed_it()
     bench_iter_mixed_1col()
 
+    setup_group_db()
+    bench_iter_group_slice()
+
     bench_get_random()
     bench_get_random_compact()
     bench_get_random_compact_miss()
@@ -136,6 +149,7 @@ main :: proc() {
 
     bench_churn()
     bench_churn_partial()
+    bench_churn_group()
 
     bench_destroy(8)
     bench_destroy(32)
@@ -363,6 +377,60 @@ bench_iter_mixed_1col :: proc() {
     report("iter_mixed_1col_sl", best, ops)
 }
 
+setup_group_db :: proc() {
+    if ecs.init(&group_db, N, context.allocator) != nil do panic("group db init failed")
+    if ecs.table_init(&g_positions, &group_db, N) != nil do panic("g_positions init failed")
+    if ecs.table_init(&g_velocities, &group_db, N) != nil do panic("g_velocities init failed")
+    if ecs.group_init(&g_group, &group_db, {&g_positions, &g_velocities}) != nil do panic("group init failed")
+
+    // same population as the mixed db: every entity has Position, every 2nd also
+    // Velocity — but here the group keeps the matching half in an aligned prefix
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&group_db)
+        if err != nil do panic("create_entity failed")
+
+        p, perr := ecs.add_component(&g_positions, eid)
+        if perr != nil do panic("add position failed")
+        p.x = f32(i)
+
+        if i % 2 == 0 {
+            v, verr := ecs.add_component(&g_velocities, eid)
+            if verr != nil do panic("add velocity failed")
+            v.dx = 1
+        }
+    }
+
+    if ecs.group_len(&g_group) != N / 2 do panic("unexpected group size")
+}
+
+// Same work as iter_mixed_it (sum a Position and a Velocity field of every
+// pos+vel entity), but through the group's always-aligned prefix: a raw SoA
+// sweep with no per-row pointer records and no alignment rescans.
+bench_iter_group_slice :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+    ops := ecs.group_len(&g_group)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        ps := ecs.group_dense_slice(&g_group, &g_positions)
+        vs := ecs.group_dense_slice(&g_group, &g_velocities)
+        if ps == nil || vs == nil do panic("expected group slices")
+        for i in 0..<len(ps) {
+            s += ps[i].x + vs[i].dx
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("iter_group_slice", best, ops)
+}
+
 //
 // Random access
 //
@@ -548,6 +616,67 @@ bench_churn_partial :: proc() {
     report("churn_partial (2 views)", best, CHURN_N * 2)
 
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
+}
+
+// The price of group maintenance on structural churn: every add of the 2nd
+// component joins the group (a row swap per owned table), every remove leaves it.
+// Run once without a group as the baseline, once with.
+bench_churn_group :: proc() {
+    run :: proc(name: string, with_group: bool) {
+        churn_db: ecs.Database
+        churn_pos: ecs.Table(Position)
+        churn_vel: ecs.Table(Velocity)
+        churn_group: ecs.Group
+
+        if ecs.init(&churn_db, CHURN_N, context.allocator) != nil do panic("churn db init failed")
+        if ecs.table_init(&churn_pos, &churn_db, CHURN_N) != nil do panic("churn pos init failed")
+        if ecs.table_init(&churn_vel, &churn_db, CHURN_N) != nil do panic("churn vel init failed")
+        if with_group {
+            if ecs.group_init(&churn_group, &churn_db, {&churn_pos, &churn_vel}) != nil do panic("group init failed")
+        }
+
+        churn_eids := make([]ecs.entity_id, CHURN_N)
+        defer delete(churn_eids)
+
+        for i in 0..<CHURN_N {
+            eid, err := ecs.create_entity(&churn_db)
+            if err != nil do panic("create_entity failed")
+            p, perr := ecs.add_component(&churn_pos, eid)
+            if perr != nil do panic("add pos failed")
+            p.x = 1
+            churn_eids[i] = eid
+        }
+        rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+
+        sw: time.Stopwatch
+        best: i64 = max(i64)
+
+        for _ in 0..<REPS {
+            time.stopwatch_reset(&sw)
+            time.stopwatch_start(&sw)
+
+            for eid in churn_eids {
+                v, err := ecs.add_component(&churn_vel, eid)
+                if err != nil do panic("add failed")
+                v.dx = 1
+            }
+            for eid in churn_eids {
+                if ecs.remove_component(&churn_vel, eid) != nil do panic("remove failed")
+            }
+
+            time.stopwatch_stop(&sw)
+            best = min(best, elapsed_ns(&sw))
+        }
+        if with_group && ecs.group_len(&churn_group) != 0 do panic("group should be empty")
+        g_sink += f64(ecs.table_len(&churn_vel))
+
+        report(name, best, CHURN_N * 2)
+
+        if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
+    }
+
+    run("churn_vel (no group)", false)
+    run("churn_vel (group)", true)
 }
 
 //

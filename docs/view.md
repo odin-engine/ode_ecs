@@ -84,6 +84,8 @@ if pos_slice != nil && ai_slice != nil {
 
 Only `Table` columns participate (`Compact_Table`/`Tiny_Table`/`Tag_Table` columns never do). The slices are invalidated by any structural change — use them immediately, never store them.
 
+Alignment here is *detected*, so it can be lost (e.g. an entity removes one component but keeps the other). If you need slices that are **always** valid for a hot set of components, a [Group](group.md) enforces alignment instead of detecting it — at the cost of a row swap per membership change.
+
 ## Filters
 
 A filter is a proc passed to `view_init` that decides per entity whether it enters the view, on top of the component match:

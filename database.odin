@@ -25,6 +25,10 @@ package ode_ecs
 
         views: oc.Sparce_Arr(View),
 
+        // Owned groups (group.odin); each owns >= 1 table exclusively,
+        // so there can never be more groups than tables.
+        groups: oc.Dense_Arr(^Group),
+
         eid_to_bits: []Uni_Bits,
 
         // Optional parent/child relations, at most one per database.
@@ -42,9 +46,10 @@ package ode_ecs
         if self == nil do return false
         if self.state != Object_State.Normal do return false
         if !oc.ix_gen_factory__is_valid(&self.id_factory) do return false
-        if !oc.sparce_arr__is_valid(&self.tables) do return false 
+        if !oc.sparce_arr__is_valid(&self.tables) do return false
         if !oc.sparce_arr__is_valid(&self.views) do return false
-        if self.eid_to_bits == nil do return false 
+        if !oc.dense_arr__is_valid(&self.groups) do return false
+        if self.eid_to_bits == nil do return false
 
         return true
     }
@@ -68,6 +73,7 @@ package ode_ecs
         oc.ix_gen_factory__init(&self.id_factory, entities_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
         oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
+        oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
 
@@ -97,6 +103,13 @@ package ode_ecs
             }
         }
         oc.sparse_arr__terminate(&self.views, self.allocator) or_return
+
+        // Groups (before tables: releasing table ownership needs live table structs).
+        // group__terminate detaches the group from self.groups, so drain from the front.
+        for oc.dense_arr__len(&self.groups) > 0 {
+            group__terminate(self.groups.items[0]) or_return
+        }
+        oc.dense_arr__terminate(&self.groups, self.allocator) or_return
 
         // Shared Tables
         for table in self.tables.items {
@@ -293,6 +306,14 @@ package ode_ecs
             if err == nil do err = terr
         }
 
+        // Group membership changes were deferred while paused (rows could not
+        // move); rebuild dirty groups now that every table is packed.
+        for group in self.groups.items {
+            if group.state != Object_State.Normal || !group.dirty do continue
+            gerr := group__rebuild(group)
+            if err == nil do err = gerr
+        }
+
         return err
     }
 
@@ -407,6 +428,18 @@ package ode_ecs
     @(private)
     database__detach_table :: proc(self: ^Database, table: ^Shared_Table) {
         oc.sparse_arr__remove_by_index(&self.tables, cast(int) table.id)
+    }
+
+    @(private)
+    database__attach_group :: proc(self: ^Database, group: ^Group) -> Error {
+        _, err := oc.dense_arr__add(&self.groups, group)
+        return err
+    }
+
+    @(private)
+    database__detach_group :: proc(self: ^Database, group: ^Group) {
+        // Not_Found is fine: double-terminate protection
+        oc.dense_arr__remove_by_value(&self.groups, group)
     }
 
     @(private)
