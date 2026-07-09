@@ -16,21 +16,48 @@
         iter_dense_slice    view_dense_slice sweep (dense/aligned fast path)
         iter_dense_it       Iterator over a dense-aligned 2-column view
         iter_mixed_it       Iterator over a misaligned 2-column view (pointer path)
+        iter_mixed_1col_it  Iterator over the same view reading only the still-aligned
+                            column (pointer path)
+        iter_mixed_1col_sl  same single-column read via view_dense_slice — possible
+                            because alignment is tracked per column, not per view
         get_random          shuffled random get_component by entity (Table)
         get_random_compact  shuffled random get_component by entity (Compact_Table)
+        get_random_compact_miss  same, against a half-populated Compact_Table
+                            (50% lookups miss — exercises the Robin Hood probe exit)
         churn               add+remove a component with 2 subscribed views
+        churn_partial       add+remove a component with 2 subscribed two-table views
+                            that never match (entities lack the second component)
         destroy             create+destroy entities with 3 components, with
                             8 / 32 / 128 tables attached to the database
         rebuild             full view rebuild over N rows
 
-    Future (measure-first) candidates: merging the id-factory entry with
-    eid_to_bits into one per-entity record; rh_map probe distance early-exit;
-    per-column dense flags for mixed views.
-
-    Measured dead end (do not re-attempt without new evidence): an "unchecked"
-    get_component that skips entity validation showed zero gain at N=100K and
-    N=1M — the validation load and the component lookup are independent, so the
-    CPU overlaps them (memory-level parallelism); validation is effectively free.
+    Measured dead ends (do not re-attempt without new evidence):
+    - Merging the id-factory entry with eid_to_bits into one per-entity record
+      (generic Ix_Gen_Factory item {id, bits}): neutral at CHURN_N=10K, clear
+      LOSS at 500K shuffled — churn +20%, churn_partial +50% (interleaved A/B).
+      The split arrays' independent loads already overlap (memory-level
+      parallelism), so co-locating saves no latency; meanwhile u128 alignment
+      pads the 24 B record to 32 B, inflating the hot footprint by a third.
+    - An "unchecked" get_component that skips entity validation showed zero gain
+      at N=100K and N=1M — the validation load and the component lookup are
+      independent, so the CPU overlaps them (memory-level parallelism);
+      validation is effectively free.
+    - Per-column dense reads in Iterator (mask consulted when only some view
+      columns are aligned): cost the fully-dense loop ~60% and gained the mixed
+      loop nothing. Per-column alignment lives in view_dense_slice instead.
+    - Bits pre-filter on remove notifications (skip view__remove_record when
+      view.bits can't be a subset of the entity's bits): churn 10.9 -> 12.0,
+      churn_partial 9.4 -> 10.2 ns/op at CHURN_N=500K shuffled — its own
+      best-case scenario. The per-view eid_to_ptr probes are independent loads
+      the CPU overlaps (memory-level parallelism); the bits test adds a
+      dependent branch that serializes the loop.
+    - Rh_Map "high bits" Fibonacci hash ((k*C) >> shift instead of & mask):
+      hits 1.48 -> 1.8 ns/op, misses 5.3 -> 6.0. Entity indexes are dense
+      consecutive ints, and the low-bits multiplicative hash is a bijection on
+      any aligned power-of-2 key range — zero collisions, strictly better than
+      a "well-mixed" hash here. Likewise the Robin Hood probe-distance early
+      exit for misses: neutral at best (chains are already ~1 long), and the
+      extra per-probe hash pushed hit cost to 3.2 ns/op in one variant.
 */
 package ode_ecs_benchmarks
 
@@ -53,7 +80,7 @@ package ode_ecs_benchmarks
 // Config
 //
     N :: #config(BENCH_N, 100_000) // entities for iteration/lookup scenarios
-    CHURN_N :: 10_000   // entities for churn/destroy scenarios
+    CHURN_N :: #config(BENCH_CHURN_N, 10_000) // entities for churn/destroy scenarios
     REPS :: 9
     SEED :: 881982019898081
 
@@ -77,6 +104,7 @@ package ode_ecs_benchmarks
     positions: ecs.Table(Position)
     velocities: ecs.Table(Velocity)
     ais: ecs.Compact_Table(AI)
+    ais_half: ecs.Compact_Table(AI) // only every 2nd entity — for the miss benchmark
     both: ecs.View
     eids: []ecs.entity_id
     shuffled: []ecs.entity_id
@@ -99,12 +127,15 @@ main :: proc() {
 
     setup_mixed_db()
     bench_iter_mixed_it()
+    bench_iter_mixed_1col()
 
     bench_get_random()
     bench_get_random_compact()
+    bench_get_random_compact_miss()
     bench_rebuild()
 
     bench_churn()
+    bench_churn_partial()
 
     bench_destroy(8)
     bench_destroy(32)
@@ -123,6 +154,7 @@ setup_main_db :: proc() {
     if ecs.table_init(&positions, &db, N) != nil do panic("positions init failed")
     if ecs.table_init(&velocities, &db, N) != nil do panic("velocities init failed")
     if ecs.compact_table__init(&ais, &db, N) != nil do panic("ais init failed")
+    if ecs.compact_table__init(&ais_half, &db, N / 2) != nil do panic("ais_half init failed")
     if ecs.view_init(&both, &db, {&positions, &velocities}) != nil do panic("view init failed")
 
     eids = make([]ecs.entity_id, N)
@@ -145,6 +177,12 @@ setup_main_db :: proc() {
         a, aerr := ecs.add_component(&ais, eid)
         if aerr != nil do panic("add ai failed")
         a.neurons_count = i
+
+        if i % 2 == 0 {
+            ah, aherr := ecs.add_component(&ais_half, eid)
+            if aherr != nil do panic("add ai_half failed")
+            ah.neurons_count = i
+        }
 
         eids[i] = eid
     }
@@ -276,6 +314,55 @@ bench_iter_mixed_it :: proc() {
     report("iter_mixed_it", best, ops)
 }
 
+// A system that reads a single column of a misaligned view (e.g. only Velocity of the
+// pos+vel view). Before per-column alignment this was forced onto the pointer path;
+// now the still-aligned column is sliceable on its own.
+bench_iter_mixed_1col :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+    it: ecs.Iterator
+    ops := ecs.view_len(&m_both)
+
+    // pointer path baseline
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        if ecs.iterator_init(&it, &m_both) != nil do panic("iterator init failed")
+        for ecs.iterator_next(&it) {
+            v := ecs.get_component(&m_velocities, &it)
+            s += v.dx
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+    report("iter_mixed_1col_it", best, ops)
+
+    // per-column dense slice: velocities follow view-row order (they complete the
+    // entity), positions do not — so vel is sliceable while pos is not
+    best = max(i64)
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        vs := ecs.view_dense_slice(&m_both, &m_velocities)
+        if vs == nil do panic("expected vel column dense-aligned")
+        for i in 0..<len(vs) {
+            s += vs[i].dx
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+    if ecs.view_dense_slice(&m_both, &m_positions) != nil do panic("expected pos column misaligned")
+    report("iter_mixed_1col_sl", best, ops)
+}
+
 //
 // Random access
 //
@@ -316,6 +403,26 @@ bench_get_random_compact :: proc() {
     }
 
     report("get_random_compact", best, N)
+}
+
+bench_get_random_compact_miss :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: int = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in shuffled {
+            c := ecs.get_component(&ais_half, eid)
+            if c != nil do s += c.neurons_count
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_compact_miss", best, N)
 }
 
 //
@@ -384,6 +491,61 @@ bench_churn :: proc() {
     g_sink += f64(ecs.table_len(&churn_pos))
 
     report("churn (add+remove)", best, CHURN_N * 2)
+
+    if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
+}
+
+// Two-table views subscribed to the churned table, but the entities never have the
+// second component: every remove notifies both views about an entity that is not in
+// them. Measures the cost of pointless view notifications during removal.
+bench_churn_partial :: proc() {
+    churn_db: ecs.Database
+    churn_pos: ecs.Table(Position)
+    churn_aux: ecs.Table(Velocity)
+    view_a: ecs.View
+    view_b: ecs.View
+
+    if ecs.init(&churn_db, CHURN_N, context.allocator) != nil do panic("churn db init failed")
+    if ecs.table_init(&churn_pos, &churn_db, CHURN_N) != nil do panic("churn pos init failed")
+    if ecs.table_init(&churn_aux, &churn_db, CHURN_N) != nil do panic("churn aux init failed")
+    if ecs.view_init(&view_a, &churn_db, {&churn_pos, &churn_aux}) != nil do panic("view_a init failed")
+    if ecs.view_init(&view_b, &churn_db, {&churn_pos, &churn_aux}) != nil do panic("view_b init failed")
+
+    churn_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(churn_eids)
+
+    for i in 0..<CHURN_N {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+    // removals in scattered order (creation order would be prefetcher-friendly
+    // and hide the cost of the per-view random reads this scenario measures)
+    rand.shuffle(churn_eids)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        for eid in churn_eids {
+            p, err := ecs.add_component(&churn_pos, eid)
+            if err != nil do panic("add failed")
+            p.x = 1
+        }
+        for eid in churn_eids {
+            if ecs.remove_component(&churn_pos, eid) != nil do panic("remove failed")
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    if ecs.view_len(&view_a) != 0 || ecs.view_len(&view_b) != 0 do panic("views should stay empty")
+    g_sink += f64(ecs.table_len(&churn_pos))
+
+    report("churn_partial (2 views)", best, CHURN_N * 2)
 
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }

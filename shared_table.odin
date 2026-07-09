@@ -160,11 +160,11 @@ package ode_ecs
             case Table_Type.Unknown:
                 assert(false) // should not happen
             case Table_Type.Table:
-                return table_base__get_component_by_entity(cast(^Table_Base) self, eid)
+                return table_raw__get_component_by_entity(cast(^Table_Raw) self, eid)
             case Table_Type.Tiny_Table: 
                 return tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) self, eid)
             case Table_Type.Compact_Table:
-                return compact_table_base__get_component_by_entity(cast(^Compact_Table_Base) self, eid)
+                return compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
             case Table_Type.Tag_Table:
                 return nil // no component for tag_table
         } 

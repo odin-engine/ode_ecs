@@ -25,7 +25,10 @@ package ode_ecs
 
         type_info: ^runtime.Type_Info,
         rid_to_eid: []entity_id,
-        eid_to_ptr: oc_maps.Rh_Map(rawptr),
+        // eid.ix -> row id; 8-byte map items instead of 16 (see Rh_Map32). The
+        // component address is derived as &rows[rid] on lookup, so a tail swap
+        // patches a rid value here instead of a pointer.
+        eid_to_rid: oc_maps.Rh_Map32,
 
         cap: int,
 
@@ -42,8 +45,8 @@ package ode_ecs
         if self == nil do return false 
         if !shared_table__is_valid_internal(&self.shared) do return false 
         if self.type_info == nil do return false
-        if self.rid_to_eid == nil do return false 
-        if !oc_maps.rh_map__is_valid(&self.eid_to_ptr) do return false
+        if self.rid_to_eid == nil do return false
+        if !oc_maps.rh_map32__is_valid(&self.eid_to_rid) do return false
         if self.cap <= 0 do return false 
         if !oc.dense_arr__is_valid(&self.subscribers) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
@@ -60,7 +63,7 @@ package ode_ecs
         self.rid_to_eid = make([]entity_id, self.cap, db.allocator) or_return
 
         // load factor 0.5 and make it power of two
-        oc_maps.rh_map__init(&self.eid_to_ptr, math.next_power_of_two(self.cap * 2), db.allocator) or_return
+        oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
         oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
@@ -74,7 +77,7 @@ package ode_ecs
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
         delete(self.rid_to_eid, self.db.allocator) or_return
-        oc_maps.rh_map__terminate(&self.eid_to_ptr, self.db.allocator) or_return
+        oc_maps.rh_map32__terminate(&self.eid_to_rid, self.db.allocator) or_return
        
         return nil
     }
@@ -115,7 +118,7 @@ package ode_ecs
             total += size_of(self.rid_to_eid[0]) * len(self.rid_to_eid)
         }
 
-        total += oc_maps.rh_map__memory_usage(&self.eid_to_ptr)
+        total += oc_maps.rh_map32__memory_usage(&self.eid_to_rid)
 
         // rows
         total += self.type_info.size * self.cap
@@ -131,11 +134,6 @@ package ode_ecs
         return self.rid_to_eid[row_number]
     }
 
-    @(private)
-    compact_table_base__get_component_by_entity :: proc (self: ^Compact_Table_Base, eid: entity_id) -> rawptr {
-        return oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
-    }
-
 ///////////////////////////////////////////////////////////////////////////////
 // Compact_Table_Raw
 
@@ -143,6 +141,18 @@ package ode_ecs
     Compact_Table_Raw :: struct {
         using base: Compact_Table_Base,
         rows: []byte,
+    }
+
+    @(private)
+    compact_table_raw__rid_to_ptr :: #force_inline proc "contextless" (self: ^Compact_Table_Raw, #any_int rid: int) -> rawptr {
+        return rawptr(uintptr(raw_data(self.rows)) + uintptr(rid) * uintptr(self.type_info.size))
+    }
+
+    @(private)
+    compact_table_raw__get_component_by_entity :: proc (self: ^Compact_Table_Raw, eid: entity_id) -> rawptr {
+        rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix))
+        if rid == oc_maps.RH_MAP32_DELETED do return nil
+        return compact_table_raw__rid_to_ptr(self, rid)
     }
 
     @(private)
@@ -164,29 +174,28 @@ package ode_ecs
     }
 
     @(private)
-    // #no_bounds_check: row indexes derive from raw.len < cap or from pointers into rows
+    // #no_bounds_check: row indexes derive from raw.len < cap or from the rid map
     compact_table_raw__remove_component :: proc(self: ^Compact_Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        if raw.len <= 0 do return oc.Core_Error.Not_Found 
+        if raw.len <= 0 do return oc.Core_Error.Not_Found
 
-        target := oc_maps.rh_map__get(&self.eid_to_ptr, target_eid.ix)
+        target_rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(target_eid.ix))
 
         // Check if component exists
-        if target == nil do return oc.Core_Error.Not_Found
+        if target_rid == oc_maps.RH_MAP32_DELETED do return oc.Core_Error.Not_Found
 
         T_size := self.type_info.size
+        target := compact_table_raw__rid_to_ptr(self, target_rid)
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
         if self.db.tail_swap_paused {
-            target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
-
-            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
             mem.zero(target, T_size)
 
-            if target_rid == raw.len - 1 {
+            if int(target_rid) == raw.len - 1 {
                 raw.len -= 1
                 // absorb trailing holes so they never need packing
                 for raw.len > 0 && self.rid_to_eid[raw.len - 1].ix == DELETED_INDEX {
@@ -195,7 +204,7 @@ package ode_ecs
                 }
             } else {
                 self.holes_count += 1
-                if target_rid < self.first_hole_rid do self.first_hole_rid = target_rid
+                if int(target_rid) < self.first_hole_rid do self.first_hole_rid = int(target_rid)
             }
 
             for view in self.subscribers.items {
@@ -206,24 +215,19 @@ package ode_ecs
             return
         }
 
-        rows := raw_data(self.rows)
-
         tail_rid := raw.len - 1
-        tail_eid := self.rid_to_eid[tail_rid] 
+        tail_eid := self.rid_to_eid[tail_rid]
 
         assert(tail_eid.ix != DELETED_INDEX)
 
-        tail := oc_maps.rh_map__get(&self.eid_to_ptr, tail_eid.ix)
-        assert(tail != nil)
-        
-        target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
+        tail := compact_table_raw__rid_to_ptr(self, tail_rid)
 
         error : Error
 
         // Replace removed component with tail
-        if target == tail {
+        if int(target_rid) == tail_rid {
             // Remove indexes
-            error = oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            error = oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
             assert(error == nil) // should not happen because we already checked it does exist
 
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
@@ -233,15 +237,12 @@ package ode_ecs
             }
         }
         else {
-            tail_eid := self.rid_to_eid[tail_rid]
-            assert(tail_eid.ix != DELETED_INDEX)
-
             // DATA COPY
             mem.copy(target, tail, T_size)
 
             // Update tail indexes
-            oc_maps.rh_map__update(&self.eid_to_ptr, tail_eid.ix, target)
-            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.rh_map32__update(&self.eid_to_rid, u32(tail_eid.ix), target_rid)
+            oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
@@ -301,7 +302,7 @@ package ode_ecs
             moved_eid := self.rid_to_eid[back]
             self.rid_to_eid[front] = moved_eid
             self.rid_to_eid[back].ix = DELETED_INDEX
-            oc_maps.rh_map__update(&self.eid_to_ptr, moved_eid.ix, dst)
+            oc_maps.rh_map32__update(&self.eid_to_rid, u32(moved_eid.ix), u32(front))
             mem.zero(src, T_size)
 
             for view in self.subscribers.items {
@@ -331,7 +332,7 @@ package ode_ecs
             for i := 0; i < len(self.rid_to_eid); i+=1 do self.rid_to_eid[i].ix = DELETED_INDEX
         }
 
-        oc_maps.rh_map__clear(&self.eid_to_ptr)
+        oc_maps.rh_map32__clear(&self.eid_to_rid)
        
         if zero_components && self.cap > 0 && self.rows != nil {
             raw := (^runtime.Raw_Slice)(&self.rows)
@@ -370,6 +371,7 @@ package ode_ecs
             assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
             assert(cap > 0, loc = loc)
             assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(db.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
         }
 
         if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero
@@ -407,10 +409,10 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        component = cast(^T) oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
+        rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix))
 
         // Check if component already exist
-        if component == nil {
+        if rid == oc_maps.RH_MAP32_DELETED {
             // Capacity only matters when actually inserting — re-adding an
             // existing component on a full table must still report Component_Already_Exist
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
@@ -424,14 +426,17 @@ package ode_ecs
                 self.rid_to_eid[raw.len] = eid
             }
 
-            // Add eid_to_ptr
-            oc_maps.rh_map__add(&self.eid_to_ptr, eid.ix, component) or_return
+            // Add eid_to_rid
+            oc_maps.rh_map32__add(&self.eid_to_rid, u32(eid.ix), u32(raw.len)) or_return
 
             // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)
 
             raw.len += 1
         } else {
+            #no_bounds_check {
+                component = &self.rows[rid]
+            }
             err = API_Error.Component_Already_Exist
         }
 
@@ -483,7 +488,7 @@ package ode_ecs
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
-        return cast(^T) oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
+        return cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
     }
 
     @(require_results)
@@ -497,7 +502,7 @@ package ode_ecs
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return false
 
-        return oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix) != nil
+        return oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED
     }
 
     compact_table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Compact_Table($T), #any_int row_number: int) -> entity_id {

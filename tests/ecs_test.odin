@@ -376,9 +376,9 @@ package ode_ecs__tests
             ai.IQ = 66
             ai2.IQ = 42
 
-            // Remove components
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.rows[0])
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[1])
+            // Remove components (max(u32) in eid_to_rid means "no component")
+            testing.expect(t, positions.eid_to_rid[eid_1.ix] == 0) // row 0
+            testing.expect(t, positions.eid_to_rid[eid_2.ix] == 1) // row 1
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
             testing.expect(t, ecs.table_len(&positions) == 2)
@@ -391,8 +391,8 @@ package ode_ecs__tests
             testing.expect(t, pos2.x == 0)
             testing.expect(t, pos2.y == 0)
 
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[0])
+            testing.expect(t, positions.eid_to_rid[eid_1.ix] == max(u32))
+            testing.expect(t, positions.eid_to_rid[eid_2.ix] == 0) // tail-swapped into row 0
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 1)
@@ -400,8 +400,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
             testing.expect(t, ecs.remove_component(&positions, eid_2) == nil)
 
-            testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, positions.eid_to_ptr[eid_2.ix] == nil)
+            testing.expect(t, positions.eid_to_rid[eid_1.ix] == max(u32))
+            testing.expect(t, positions.eid_to_rid[eid_2.ix] == max(u32))
             testing.expect(t, positions.rid_to_eid[0].ix == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.table_len(&positions) == 0)

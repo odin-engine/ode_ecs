@@ -57,7 +57,12 @@ package ode_core
         self.created_count = 0
         self.freed_count = 0
         delete(self.freed, allocator) or_return
-        return delete(self.items, allocator)
+        self.freed = nil
+        delete(self.items, allocator) or_return
+        // nil (not just freed) so a terminated factory reads as empty instead
+        // of dangling — is_valid and any later range over items stay safe
+        self.items = nil
+        return runtime.Allocator_Error.None
     }
 
     @(require_results)

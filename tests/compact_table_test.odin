@@ -300,10 +300,8 @@ package ode_ecs__tests
             ai2.IQ = 42
 
             // Remove components
-            //testing.expect(t, positions.eid_to_ptr[eid_1.ix] == &positions.rows[0])
-            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_1.ix) == &positions.rows[0])
-            //testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[1])
-            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[1])
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == 0) // row 0
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 1) // row 1
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
             testing.expect(t, ecs.compact_table__len(&positions) == 2)
@@ -316,10 +314,8 @@ package ode_ecs__tests
             testing.expect(t, pos2.x == 0)
             testing.expect(t, pos2.y == 0)
 
-            //testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
-            //testing.expect(t, positions.eid_to_ptr[eid_2.ix] == &positions.rows[0])
-            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_2.ix) == &positions.rows[0])  
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == oc_maps.RH_MAP32_DELETED)
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 0) // tail-swapped into row 0
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.compact_table__len(&positions) == 1)
@@ -327,10 +323,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.remove_component(&positions, eid_1) == oc.Core_Error.Not_Found)
             testing.expect(t, ecs.remove_component(&positions, eid_2) == nil)
 
-            //testing.expect(t, positions.eid_to_ptr[eid_1.ix] == nil)
-            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_1.ix) == nil)
-            //testing.expect(t, positions.eid_to_ptr[eid_2.ix] == nil)
-            testing.expect(t, oc_maps.rh_map__get(&positions.eid_to_ptr, eid_2.ix) == nil)
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == oc_maps.RH_MAP32_DELETED)
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == oc_maps.RH_MAP32_DELETED)
             testing.expect(t, positions.rid_to_eid[0].ix == ecs.DELETED_INDEX)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.compact_table__len(&positions) == 0)

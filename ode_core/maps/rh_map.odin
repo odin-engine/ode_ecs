@@ -420,6 +420,15 @@ package maps
         testing.expect(t, rh_map__add(&map2, 15, &h) == nil)
         testing.expect(t, rh_map__add(&map2, 18, &ii) == oc.Core_Error.Container_Is_Full) // should fail, map full
 
+        // misses inside a dense collision cluster (and on a full map) must
+        // still terminate and report absence
+        testing.expect(t, rh_map__get(&map2, 8) == nil)
+        testing.expect(t, rh_map__get(&map2, 24) == nil)
+        testing.expect(t, rh_map__get(&map2, 33) == nil)
+        testing.expect(t, rh_map__get(&map2, 65) == nil)
+        testing.expect(t, rh_map__remove(&map2, 8) == oc.Core_Error.Not_Found)
+        testing.expect(t, rh_map__remove(&map2, 33) == oc.Core_Error.Not_Found)
+
         //rh_map__debug_print(&map2)
 
         rh_map__clear(&map2)

@@ -95,6 +95,11 @@ package ode_ecs__tests
         dense__verify_view(t, &view, &pos, &vel)
         testing.expect(t, view.dense_state == ecs.View_Dense_State.Misaligned, "reversed add order must be detected as misaligned")
 
+        // Alignment is per column: view rows follow the pos add order, so the pos column
+        // is still dense while the reversed vel column is not.
+        testing.expect(t, ecs.view_dense_slice(&view, &pos) != nil, "pos column follows view row order and should stay sliceable")
+        testing.expect(t, ecs.view_dense_slice(&view, &vel) == nil, "reversed vel column must not be sliceable")
+
         // Values must come from the right entity
         it: ecs.Iterator
         testing.expect(t, ecs.iterator_init(&it, &view) == nil)
@@ -218,15 +223,21 @@ package ode_ecs__tests
         ecs.resume(&view)
         testing.expect(t, ecs.view_dense_slice(&view, &vel) != nil)
 
-        // Misalign (single-component removal) => nil, iterator still correct
+        // Misalign vel (single-component removal from pos): the pos table's tail swap
+        // mirrors the view's own tail swap, so the pos column stays aligned; the vel
+        // table did not move rows while the view did, so the vel column loses alignment.
         testing.expect(t, ecs.remove_component(&pos, eids[3]) == nil)
-        testing.expect(t, ecs.view_dense_slice(&view, &pos) == nil)
+        testing.expect(t, ecs.view_dense_slice(&view, &pos) != nil, "pos column mirrors the view's tail swap and stays sliceable")
+        testing.expect(t, ecs.view_dense_slice(&view, &vel) == nil, "vel column must lose alignment")
         dense__verify_view(t, &view, &pos, &vel)
 
-        // Rebuild cannot restore density here: the tables themselves are now misaligned
-        // with each other (pos tail-swapped, vel did not). The record path stays correct.
+        // Rebuild follows one table's row order: that column realigns, the other cannot —
+        // the tables themselves are now misaligned with each other (pos tail-swapped,
+        // vel did not). Exactly one slice works; the record path stays correct either way.
         testing.expect(t, ecs.rebuild(&view) == nil)
-        testing.expect(t, ecs.view_dense_slice(&view, &vel) == nil)
+        ps_rebuilt := ecs.view_dense_slice(&view, &pos)
+        vs_rebuilt := ecs.view_dense_slice(&view, &vel)
+        testing.expect(t, (ps_rebuilt != nil) != (vs_rebuilt != nil), "exactly one column can realign after rebuild")
         dense__verify_view(t, &view, &pos, &vel)
     }
 
