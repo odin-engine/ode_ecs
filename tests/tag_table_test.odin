@@ -251,11 +251,11 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
+// Deferred tail swap (pause_packing / resume_packing / pack)
 
     // While paused, untagging leaves holes and moves nothing; pack compacts them.
     @(test)
-    tag_table__pause_tail_swap__test :: proc(t: ^testing.T) {
+    tag_table__pause_packing__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
@@ -282,7 +282,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.tag_table__len(&is_alive) == 5)
         testing.expect(t, ecs.view_len(&view) == 5)
 
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
 
         // removing a middle entity leaves a hole, nothing moves
         testing.expect(t, ecs.untag(&is_alive, eids[2]) == nil)
@@ -317,7 +317,7 @@ package ode_ecs__tests
         }
 
         // normal tail-swap removal works after resume
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, ecs.untag(&is_alive, eids[1]) == nil)
         testing.expect(t, ecs.tag_table__len(&is_alive) == 0)
     }

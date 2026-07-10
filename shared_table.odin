@@ -194,7 +194,7 @@ package ode_ecs
     }
 
     // Compact holes left by removals made while tail swap was paused,
-    // see database__resume_tail_swap
+    // see database__resume_packing
     shared_table__pack :: proc (self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:

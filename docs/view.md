@@ -48,7 +48,7 @@ for ecs.iterator_next(&it) {
 }
 ```
 
-Mutating component **values** while iterating is fine. Structural changes (add/remove component, create/destroy entity) are not reflected by a running iterator — call `ecs.iterator_reset(&it)` after them, or avoid structural changes mid-loop (see [pause_tail_swap](database.md#pausing-tail-swap-mutating-tables-while-iterating) for removal-while-iterating patterns).
+Mutating component **values** while iterating is fine. Structural changes (add/remove component, create/destroy entity) are not reflected by a running iterator — call `ecs.iterator_reset(&it)` after them, or avoid structural changes mid-loop (see [pause_packing](database.md#pausing-tail-swap-mutating-tables-while-iterating) for removal-while-iterating patterns).
 
 ### Batched iteration
 

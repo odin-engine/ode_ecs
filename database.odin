@@ -38,7 +38,7 @@ package ode_ecs
         // When true, removing a component from any Table/Compact_Table/Tiny_Table
         // clears it in place (leaving a hole) instead of tail-swapping, so table
         // rows and component pointers stay stable while iterating.
-        // See database__pause_tail_swap / database__resume_tail_swap.
+        // See database__pause_packing / database__resume_packing.
         tail_swap_paused: bool,
     }
 
@@ -278,7 +278,7 @@ package ode_ecs
     // the row becomes a hole (get_entity for it returns ix == DELETED_INDEX), no other
     // component moves, and subscribed views are still notified. This makes it safe to
     // remove components/destroy entities while iterating table rows.
-    database__pause_tail_swap :: proc(self: ^Database) {
+    database__pause_packing :: proc(self: ^Database) {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Normal)
@@ -289,7 +289,7 @@ package ode_ecs
 
     // Resume tail swapping and pack every table that accumulated holes, so the
     // normal removal path never encounters a hole. O(tables) when nothing was removed.
-    database__resume_tail_swap :: proc(self: ^Database) -> Error {
+    database__resume_packing :: proc(self: ^Database) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Normal)

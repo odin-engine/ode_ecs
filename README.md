@@ -328,12 +328,12 @@ for ecs.table_len(&my_tags_table) > 0 {
 ```
 Or pause tail swapping for the duration of the iteration — see the next section.
 
-### Mutating tables while iterating: pause_tail_swap / resume_tail_swap / pack
+### Mutating tables while iterating: pause_packing / resume_packing / pack
 
-`ecs.pause_tail_swap(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX`, and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
+`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX`, and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
 
 ```Odin
-ecs.pause_tail_swap(&db)
+ecs.pause_packing(&db)
 
 for i in 0..<ecs.table_len(&monsters) {
     eid := ecs.get_entity(&monsters, i)
@@ -343,10 +343,10 @@ for i in 0..<ecs.table_len(&monsters) {
     if monster.hp <= 0 do ecs.destroy_entity(&db, eid) // safe: nothing moves
 }
 
-ecs.resume_tail_swap(&db) // packs all tables with holes and re-enables tail swap
+ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 ```
 
-`ecs.resume_tail_swap(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
+`ecs.resume_packing(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
 
 ### TIP: Be aware that component locations might shift within tables.
 

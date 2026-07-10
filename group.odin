@@ -14,9 +14,9 @@
     remove_component/destroy_entity that breaks one) pays O(owned tables) row
     swaps. A table can be owned by at most one group.
 
-    Deferred tail swap (database__pause_tail_swap): group maintenance would move
+    Deferred tail swap (database__pause_packing): group maintenance would move
     rows, which pause forbids, so membership changes while paused only mark the
-    group dirty; database__resume_tail_swap rebuilds dirty groups after packing.
+    group dirty; database__resume_packing rebuilds dirty groups after packing.
     While dirty, group_dense_slice returns nil.
 */
 package ode_ecs
@@ -42,7 +42,7 @@ package ode_ecs
         len: int,
 
         // membership changed while tail swap was paused; prefix can no longer be
-        // trusted until database__resume_tail_swap (or group__rebuild) fixes it
+        // trusted until database__resume_packing (or group__rebuild) fixes it
         dirty: bool,
     }
 
@@ -169,7 +169,7 @@ package ode_ecs
 
     // Rebuild the group prefix from scratch — O(smallest owned table) matches, each
     // paying O(owned tables) swaps. Normally never needed (membership is maintained
-    // incrementally); database__resume_tail_swap calls it for dirty groups. While
+    // incrementally); database__resume_packing calls it for dirty groups. While
     // tail swap is paused rows must not move, so it only marks the group dirty.
     group__rebuild :: proc(self: ^Group) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid

@@ -78,18 +78,18 @@ Rules of thumb:
 
 Views and groups coexist on the same tables: group swaps notify subscribed views, which keep resolving correctly (a view over owned tables will usually run on its pointer path, since the group reorders rows underneath it).
 
-## Removing while iterating (`pause_tail_swap`)
+## Removing while iterating (`pause_packing`)
 
-Group maintenance moves rows, which is exactly what [`pause_tail_swap`](database.md#pausing-tail-swap-mutating-tables-while-iterating) forbids. So while the tail swap is paused, membership changes are **deferred**: the group is marked *dirty*, `group_dense_slice` returns `nil`, and `resume_tail_swap` rebuilds the group right after packing the tables:
+Group maintenance moves rows, which is exactly what [`pause_packing`](database.md#pausing-tail-swap-mutating-tables-while-iterating) forbids. So while the tail swap is paused, membership changes are **deferred**: the group is marked *dirty*, `group_dense_slice` returns `nil`, and `resume_packing` rebuilds the group right after packing the tables:
 
 ```odin
-ecs.pause_tail_swap(&my_ecs)
+ecs.pause_packing(&my_ecs)
 
 for /* iterating rows */ {
     ecs.remove_component(&velocities, eid) // ok: cleared in place, group goes dirty
 }
 
-ecs.resume_tail_swap(&my_ecs) // packs tables, then rebuilds dirty groups
+ecs.resume_packing(&my_ecs) // packs tables, then rebuilds dirty groups
 // group slices are valid again
 ```
 

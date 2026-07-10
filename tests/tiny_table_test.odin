@@ -948,11 +948,11 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
+// Deferred tail swap (pause_packing / resume_packing / pack)
 
     // While paused, removals leave holes and move nothing; pack compacts them.
     @(test)
-    tiny_table__pause_tail_swap__test :: proc(t: ^testing.T) {
+    tiny_table__pause_packing__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
@@ -981,7 +981,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&positions) == 5)
         testing.expect(t, ecs.view_len(&view) == 5)
 
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
 
         p1 := ecs.get_component(&positions, eids[1])
         p4 := ecs.get_component(&positions, eids[4])
@@ -1027,7 +1027,7 @@ package ode_ecs__tests
         }
 
         // normal tail-swap removal works after resume
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 0)
     }

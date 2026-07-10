@@ -81,10 +81,10 @@ eid := ecs.get_entity(&my_ecs, index)   // alive entity by internal index (0 ..<
 
 ## Pausing tail swap (mutating tables while iterating)
 
-Normally, removing a component tail-swaps the last row into the vacated slot, which moves another entity's component. That makes removal during iteration unsafe. `pause_tail_swap` defers this:
+Normally, removing a component tail-swaps the last row into the vacated slot, which moves another entity's component. That makes removal during iteration unsafe. `pause_packing` defers this:
 
 ```odin
-ecs.pause_tail_swap(&my_ecs)
+ecs.pause_packing(&my_ecs)
 
 for i in 0..<ecs.table_len(&monsters) {
     eid := ecs.get_entity(&monsters, i)
@@ -94,10 +94,10 @@ for i in 0..<ecs.table_len(&monsters) {
     if monster.hp <= 0 do ecs.destroy_entity(&my_ecs, eid) // safe: nothing moves
 }
 
-ecs.resume_tail_swap(&my_ecs) // packs all tables with holes, re-enables tail swap
+ecs.resume_packing(&my_ecs) // packs all tables with holes, re-enables tail swap
 ```
 
-While paused, removals clear components **in place**, leaving holes: no row moves, component pointers stay stable, and views are still notified. `get_entity` for a hole returns an ID with `ix == ecs.DELETED_INDEX`, and `table_len` keeps reporting the full row span including holes. `resume_tail_swap` packs every table that accumulated holes. You can also call `ecs.pack(&table)` on an individual table mid-pause (holes do not free capacity until packed).
+While paused, removals clear components **in place**, leaving holes: no row moves, component pointers stay stable, and views are still notified. `get_entity` for a hole returns an ID with `ix == ecs.DELETED_INDEX`, and `table_len` keeps reporting the full row span including holes. `resume_packing` packs every table that accumulated holes. You can also call `ecs.pack(&table)` on an individual table mid-pause (holes do not free capacity until packed).
 
 ## Utilities
 

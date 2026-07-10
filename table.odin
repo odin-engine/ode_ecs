@@ -539,7 +539,7 @@ package ode_ecs
     }
 
     // Compact holes left by removals made while tail swap was paused
-    // (see database__pause_tail_swap). Callable mid-pause too.
+    // (see database__pause_packing). Callable mid-pause too.
     table__pack :: proc(self: ^Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)

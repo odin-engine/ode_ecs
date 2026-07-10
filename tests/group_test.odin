@@ -202,7 +202,7 @@ package ode_ecs__tests
         }
         testing.expect(t, ecs.group_len(&group) == 10)
 
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
 
         // a member losing a component while paused defers group maintenance:
         // rows must not move, the group goes dirty and slices turn nil
@@ -215,7 +215,7 @@ package ode_ecs__tests
         np, _ := ecs.add_component(&pos, neid); np^ = { f64(neid.ix), 1 }
         nv, _ := ecs.add_component(&vel, neid); nv^ = { f64(neid.ix), 2 }
 
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
 
         // resume packs the holes and rebuilds the group
         testing.expect(t, ecs.group_len(&group) == 9) // 10 - eids[3] - eids[7] + neid
@@ -360,11 +360,11 @@ package ode_ecs__tests
         group__verify(t, &group, &pos, &vel)
 
         // one paused block over the final state
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
         removed := 0
         for i := 0; i < len(alive) && removed < 10; i += 3 {
             if ecs.remove_component(&vel, alive[i]) == nil do removed += 1
         }
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
         group__verify(t, &group, &pos, &vel)
     }

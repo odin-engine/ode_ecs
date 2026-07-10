@@ -110,7 +110,7 @@ package ode_ecs__tests
 
         // Terminate while paused, then re-init
         testing.expect(t, ecs.init(&db, 10, allocator) == nil)
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
         testing.expect(t, ecs.terminate(&db) == nil)
 
         testing.expect(t, ecs.init(&db, 10, allocator) == nil)
@@ -127,7 +127,7 @@ package ode_ecs__tests
         testing.expect_value(t, ecs.table_len(&positions), 1)
 
         // clear() returns the database to its post-init state, unpaused
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
         testing.expect(t, ecs.clear(&db) == nil)
         testing.expect(t, db.tail_swap_paused == false)
 

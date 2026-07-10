@@ -77,7 +77,7 @@ for ecs.table_len(&my_table) > 0 {
 }
 ```
 
-…or use `pause_tail_swap` / `resume_tail_swap` — see the [Database doc](database.md#pausing-tail-swap-mutating-tables-while-iterating).
+…or use `pause_packing` / `resume_packing` — see the [Database doc](database.md#pausing-tail-swap-mutating-tables-while-iterating).
 
 ### Copying and moving components between tables
 

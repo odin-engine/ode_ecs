@@ -246,7 +246,7 @@ package ode_ecs
     tag_table__remove_component :: tag_table__remove_tag
 
     // Compact holes left by removals made while tail swap was paused
-    // (see database__pause_tail_swap). Callable mid-pause too.
+    // (see database__pause_packing). Callable mid-pause too.
     tag_table__pack :: proc(self: ^Tag_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)

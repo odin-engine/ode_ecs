@@ -1437,12 +1437,12 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
+// Deferred tail swap (pause_packing / resume_packing / pack)
 
     // While paused, removals leave holes and move nothing: component pointers
     // stay stable, len keeps the row span, views are still notified.
     @(test)
-    pause_tail_swap__table__test :: proc(t: ^testing.T) {
+    pause_packing__table__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
@@ -1471,7 +1471,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&positions) == 5)
         testing.expect(t, ecs.view_len(&view) == 5)
 
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
 
         p1 := ecs.get_component(&positions, eids[1])
         p4 := ecs.get_component(&positions, eids[4])
@@ -1517,7 +1517,7 @@ package ode_ecs__tests
         }
 
         // normal tail-swap removal works after resume
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 0)
     }
@@ -1525,7 +1525,7 @@ package ode_ecs__tests
     // Database-level pause: destroy entities while iterating a table; every
     // component table accumulates holes; resume packs them all.
     @(test)
-    pause_tail_swap__database__test :: proc(t: ^testing.T) {
+    pause_packing__database__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
@@ -1571,7 +1571,7 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.view_len(&view) == 6)
 
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
 
         // destroy every other entity while iterating the table's rows
         destroyed := 0
@@ -1596,7 +1596,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(&view) == 3)
 
         // resume packs every component table
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, positions.holes_count == 0)
         testing.expect(t, ais.holes_count == 0)
         testing.expect(t, tiny_positions.holes_count == 0)
@@ -1628,7 +1628,7 @@ package ode_ecs__tests
     // Dense fast path across a pause/pack cycle: unavailable while the view and
     // table diverge, healed by rebuild.
     @(test)
-    pause_tail_swap__dense_view__test :: proc(t: ^testing.T) {
+    pause_packing__dense_view__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
@@ -1657,14 +1657,14 @@ package ode_ecs__tests
         dense := ecs.view_dense_slice(&view, &positions)
         testing.expect(t, len(dense) == 4)
 
-        ecs.pause_tail_swap(&db)
+        ecs.pause_packing(&db)
         testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
 
         // the view tail-swapped its rows while the table kept a hole -> not aligned
         dense = ecs.view_dense_slice(&view, &positions)
         testing.expect(t, dense == nil)
 
-        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.resume_packing(&db) == nil)
 
         // rebuild restores alignment
         testing.expect(t, ecs.rebuild(&view) == nil)
