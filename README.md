@@ -21,7 +21,7 @@ A minimal, data-oriented, high-performance Entity-Component-System written in Od
 
 1. **Scalable Performance** — Performance should not degrade as the number of component types increases. (Sadly, many ECS libraries suffer from this degradation without mentioning it).
 2. **Performance by Default** — If we can achieve higher performance at the cost of slightly more memory, we choose performance by default. In modern game development, an ECS consumes negligible memory compared to other assets. If users need to optimize memory, they can easily swap standard `Tables` for `Compact_Tables` or `Tiny_Tables`.
-3. **Frame-to-Frame Stability** — Performance must remain as stable as possible from frame to frame. This means zero hidden memory allocations, no unexpected memory copies, and no unpredictable branches inside loops.
+3. **Frame-to-Frame Stability** — Performance must remain as stable as possible from frame to frame. This means zero hidden memory allocations, no unexpected memory copies, and no unpredictable CPU consumption.
 4. **Tailored Internals** — We rely on custom data structures (such as custom maps) that are explicitly optimized for our specific use case, rather than generic standard library collections.
 
 # How to install
