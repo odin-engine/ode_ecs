@@ -233,6 +233,7 @@ package ode_ecs
             table__pack,
             compact_table__pack,
             tiny_table__pack,
+            tag_table__pack,
         }
 
         table_len           :: proc {

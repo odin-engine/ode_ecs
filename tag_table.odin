@@ -25,7 +25,12 @@ package ode_ecs
         rows: []entity_id,                          // rid_to_eid
         eid_to_ptr: oc_maps.Rh_Map(^entity_id),     // pointer to cell in rows
 
-        cap: int, 
+        cap: int,
+
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
+        // A hole is a row with rows[rid].ix == DELETED_INDEX inside [0, len).
+        holes_count: int,
+        first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
         subscribers: oc.Dense_Arr(^View),
     }
@@ -160,11 +165,43 @@ package ode_ecs
         target_ptr := oc_maps.rh_map__get(&self.eid_to_ptr, target_eid.ix)
 
         // Check if exists
-        if target_ptr == nil do return oc.Core_Error.Not_Found 
+        if target_ptr == nil do return oc.Core_Error.Not_Found
+
+        // Deferred tail swap: clear the tag in place, leaving a hole.
+        // Nothing moves, so nothing needs to stay stable while iterating.
+        if self.db.tail_swap_paused {
+            target_rid := int(uintptr(target_ptr) - uintptr(&self.rows[0])) / size_of(entity_id)
+
+            error := oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            assert(error == nil) // should not happen because we already checked it does exist
+
+            self.rows[target_rid].ix = DELETED_INDEX
+
+            if target_rid == raw.len - 1 {
+                raw.len -= 1
+                // absorb trailing holes so they never need packing
+                for raw.len > 0 && self.rows[raw.len - 1].ix == DELETED_INDEX {
+                    raw.len -= 1
+                    self.holes_count -= 1
+                }
+            } else {
+                self.holes_count += 1
+                if target_rid < self.first_hole_rid do self.first_hole_rid = target_rid
+            }
+
+            for view in self.subscribers.items {
+                if !view.suspended do view__remove_record(view, target_eid)
+            }
+
+            // Update eid_to_bits in db
+            database__remove_component(self.db, target_eid, self.id)
+
+            return nil
+        }
 
         tail_rid := raw.len - 1
         tail_ptr := &self.rows[tail_rid]
-        
+
         error : Error
         
         if target_ptr == tail_ptr {
@@ -208,6 +245,53 @@ package ode_ecs
 
     tag_table__remove_component :: tag_table__remove_tag
 
+    // Compact holes left by removals made while tail swap was paused
+    // (see database__pause_tail_swap). Callable mid-pause too.
+    tag_table__pack :: proc(self: ^Tag_Table) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+        if self.holes_count <= 0 {
+            self.first_hole_rid = max(int)
+            return nil
+        }
+
+        raw := (^runtime.Raw_Slice)(&self.rows)
+
+        front := self.first_hole_rid
+        back := raw.len - 1
+
+        for self.holes_count > 0 {
+            // shrink span past trailing holes
+            for back >= 0 && self.rows[back].ix == DELETED_INDEX {
+                back -= 1
+                self.holes_count -= 1
+            }
+            if self.holes_count <= 0 do break
+
+            // next hole from the front; guaranteed to exist below back
+            for self.rows[front].ix != DELETED_INDEX do front += 1
+
+            // move the last live row's tag into the hole
+            moved_eid := self.rows[back]
+            self.rows[front] = moved_eid
+            self.rows[back].ix = DELETED_INDEX
+
+            oc_maps.rh_map__update(&self.eid_to_ptr, moved_eid.ix, &self.rows[front])
+
+            back -= 1
+            front += 1
+            self.holes_count -= 1
+        }
+
+        raw.len = back + 1
+        self.first_hole_rid = max(int)
+
+        return nil
+    }
+
     tag_table__clear :: proc (self: ^Tag_Table) -> Error {
         if !tag_table__is_valid(self) do return API_Error.Object_Invalid
 
@@ -218,6 +302,9 @@ package ode_ecs
         (^runtime.Raw_Slice)(&self.rows).len = 0
 
         oc_maps.rh_map__clear(&self.eid_to_ptr)
+
+        self.holes_count = 0
+        self.first_hole_rid = max(int)
 
         return nil
     }

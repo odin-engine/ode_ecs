@@ -206,7 +206,7 @@ package ode_ecs
             case Table_Type.Compact_Table:
                 return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
             case Table_Type.Tag_Table:
-                return nil // no component data, tag rows keep tail swapping — never has holes
+                return tag_table__pack(cast(^Tag_Table) self)
         }
 
         assert(false) // should not happen

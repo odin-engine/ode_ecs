@@ -273,12 +273,11 @@ package ode_ecs
         return oc.ix_gen_factory__is_expired(&self.id_factory, eid)
     }
 
-    // Pause tail swapping in all component tables (Table, Compact_Table, Tiny_Table).
+    // Pause tail swapping in all tables (Table, Compact_Table, Tiny_Table, Tag_Table).
     // While paused, remove_component/destroy_entity clear the component in place —
     // the row becomes a hole (get_entity for it returns ix == DELETED_INDEX), no other
     // component moves, and subscribed views are still notified. This makes it safe to
     // remove components/destroy entities while iterating table rows.
-    // Note: Tag_Table stores no component data; its rows keep tail swapping.
     database__pause_tail_swap :: proc(self: ^Database) {
         when VALIDATIONS {
             assert(self != nil)

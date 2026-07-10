@@ -250,3 +250,75 @@ package ode_ecs__tests
             testing.expect(t, is_chair_alive)
     }
 
+///////////////////////////////////////////////////////////////////////////////
+// Deferred tail swap (pause_tail_swap / resume_tail_swap / pack)
+
+    // While paused, untagging leaves holes and moves nothing; pack compacts them.
+    @(test)
+    tag_table__pause_tail_swap__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        is_alive: ecs.Tag_Table
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tag_table__init(&is_alive, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&is_alive}) == nil)
+
+        eids: [5]ecs.entity_id
+        for i in 0..<5 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            testing.expect(t, ecs.add_tag(&is_alive, eid) == nil)
+            eids[i] = eid
+        }
+
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 5)
+        testing.expect(t, ecs.view_len(&view) == 5)
+
+        ecs.pause_tail_swap(&db)
+
+        // removing a middle entity leaves a hole, nothing moves
+        testing.expect(t, ecs.untag(&is_alive, eids[2]) == nil)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 4)
+        testing.expect(t, is_alive.holes_count == 1)
+        testing.expect(t, ecs.get_entity(&is_alive, 2).ix == ecs.DELETED_INDEX) // hole marker
+        testing.expect(t, ecs.get_entity(&is_alive, 1) == eids[1]) // stable (tail swap would have moved it)
+        testing.expect(t, ecs.view_len(&view) == 4) // views are still notified
+
+        // removing the tail row shrinks the span without leaving a hole
+        testing.expect(t, ecs.untag(&is_alive, eids[4]) == nil)
+        testing.expect(t, is_alive.holes_count == 1)
+
+        // removing the new tail absorbs the trailing hole at row 2 as well
+        testing.expect(t, ecs.untag(&is_alive, eids[3]) == nil)
+        testing.expect(t, is_alive.holes_count == 0)
+
+        // punch a hole and pack explicitly (pack is usable mid-pause)
+        testing.expect(t, ecs.untag(&is_alive, eids[0]) == nil)
+        testing.expect(t, is_alive.holes_count == 1)
+
+        testing.expect(t, ecs.pack(&is_alive) == nil)
+        testing.expect(t, is_alive.holes_count == 0)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 1)
+        testing.expect(t, ecs.get_entity(&is_alive, 0) == eids[1]) // survivor moved into the hole
+        testing.expect(t, ecs.view_len(&view) == 1)
+
+        it: ecs.Iterator
+        testing.expect(t, ecs.iterator_init(&it, &view) == nil)
+        for ecs.iterator_next(&it) {
+            testing.expect(t, ecs.get_entity(&it) == eids[1])
+        }
+
+        // normal tail-swap removal works after resume
+        testing.expect(t, ecs.resume_tail_swap(&db) == nil)
+        testing.expect(t, ecs.untag(&is_alive, eids[1]) == nil)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 0)
+    }
+
