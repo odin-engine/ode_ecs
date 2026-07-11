@@ -60,10 +60,8 @@ package ode_ecs
         create_entity           :: database__create_entity
         destroy_entity          :: database__destroy_entity
         is_entity_expired       :: database__is_entity_expired    // Generation of entity in database does not match the one in provided entity_id
-        pause_packing           :: database__pause_packing        // Removals clear components in place (holes) instead of tail swapping — safe to remove while iterating tables
-        resume_packing          :: database__resume_packing       // Resume tail swapping; packs every table that accumulated holes
-        pause_tail_swap         :: database__pause_packing       
-        resume_tail_swap        :: database__resume_packing       
+        pause_tail_swap         :: database__pause_packing
+        resume_tail_swap        :: database__resume_packing
 
     //
     // Table 
@@ -230,12 +228,38 @@ package ode_ecs
         }
 
         // Compact holes left by removals made while tail swap was paused,
-        // see pause_packing / resume_packing
+        // see pause_packing / resume_packing. Callable mid-pause too.
         pack                :: proc {
             table__pack,
             compact_table__pack,
             tiny_table__pack,
             tag_table__pack,
+            group__pack,
+        }
+
+        // Pause tail swapping — at the Database (all tables + all groups), a
+        // single table (rejected with API_Error.Cannot_Pause_Table_Owned_By_Group
+        // if owned by a Group), or a Group (all tables it owns, as one atomic
+        // unit) level. Table/group-level pause is independent of the
+        // database-wide pause — useful to isolate one table or group (e.g. from
+        // another thread) without deferring packing everywhere.
+        pause_packing       :: proc {
+            database__pause_packing,
+            table__pause_packing,
+            compact_table__pause_packing,
+            tiny_table__pause_packing,
+            tag_table__pause_packing,
+            group__pause_packing,
+        }
+
+        // Resume tail swapping and pack whatever holes accumulated at that level.
+        resume_packing      :: proc {
+            database__resume_packing,
+            table__resume_packing,
+            compact_table__resume_packing,
+            tiny_table__resume_packing,
+            tag_table__resume_packing,
+            group__resume_packing,
         }
 
         table_len           :: proc {
@@ -328,6 +352,7 @@ package ode_ecs
             Relation_Cycle,                   // set_parent would make an entity its own ancestor
             Only_Table_Can_Be_Owned_By_Group, // groups cannot own Compact_Table/Tiny_Table/Tag_Table
             Table_Already_Owned_By_Group,     // a table can have at most one owner group
+            Cannot_Pause_Table_Owned_By_Group, // pause/resume_packing reject a table owned by a Group; pause/resume the Group instead
         }
 
         Error :: union #shared_nil {

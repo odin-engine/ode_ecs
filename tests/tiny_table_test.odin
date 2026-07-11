@@ -1031,3 +1031,46 @@ package ode_ecs__tests
         testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 0)
     }
+
+    // Table-level pause: pausing the table directly defers only its own
+    // removals, independent of the database-wide flag.
+    @(test)
+    tiny_table__pause_packing_standalone__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Tiny_Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tiny_table__init(&positions, &db) == nil)
+
+        eids: [3]ecs.entity_id
+        for i in 0..<3 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            p, aerr := ecs.add_component(&positions, eid)
+            testing.expect(t, aerr == nil)
+            p.x = i + 1
+            eids[i] = eid
+        }
+
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+        testing.expect(t, db.tail_swap_paused == false)
+
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 3)
+        testing.expect(t, positions.holes_count == 1)
+        testing.expect(t, ecs.get_entity(&positions, 1).ix == ecs.DELETED_INDEX)
+
+        testing.expect(t, ecs.resume_packing(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 2)
+
+        testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+    }

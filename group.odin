@@ -44,6 +44,10 @@ package ode_ecs
         // membership changed while tail swap was paused; prefix can no longer be
         // trusted until database__resume_packing (or group__rebuild) fixes it
         dirty: bool,
+
+        // Deferred tail swap for this group's owned tables only, independent
+        // of db.tail_swap_paused. See group__pause_packing.
+        pause_packing: bool,
     }
 
     // Is group valid and ready to use (initialized and everything is ok)
@@ -91,6 +95,7 @@ package ode_ecs
         uni_bits__clear(&self.bits)
         self.len = 0
         self.dirty = false
+        self.pause_packing = false
 
         self.db = db
 
@@ -134,6 +139,7 @@ package ode_ecs
         uni_bits__clear(&self.bits)
         self.len = 0
         self.dirty = false
+        self.pause_packing = false
 
         // Leave the group in Not_Initialized state (not Terminated) so the same
         // struct can be re-init'd without zeroing it first. See issue #8.
@@ -174,7 +180,7 @@ package ode_ecs
     group__rebuild :: proc(self: ^Group) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
-        if self.db.tail_swap_paused {
+        if group__is_packing_paused(self) {
             self.dirty = true
             return nil
         }
@@ -214,8 +220,69 @@ package ode_ecs
         return total
     }
 
+    // Pause tail swapping for every table this group owns, as one atomic unit,
+    // independent of the database-wide pause_packing and of other groups. Lets
+    // one group's tables be isolated from a concurrent database-wide (or
+    // another group's) pause/resume cycle — e.g. one thread mutates/iterates
+    // this group's tables while another thread's database-wide pause/resume
+    // runs on unrelated tables.
+    group__pause_packing :: proc(self: ^Group) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = true
+        return nil
+    }
+
+    // Resume tail swapping for this group: pack every owned table (clears
+    // holes), then rebuild the group prefix if membership changed while paused.
+    group__resume_packing :: proc(self: ^Group) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = false
+
+        err: Error
+        for table in self.tables {
+            terr := table_raw__pack(table)
+            if err == nil do err = terr
+        }
+
+        gerr := group__rebuild(self)
+        if err == nil do err = gerr
+
+        return err
+    }
+
+    // Pack every table this group owns (compact holes left while paused).
+    // Callable mid-pause too, like table-level pack.
+    group__pack :: proc(self: ^Group) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        err: Error
+        for table in self.tables {
+            terr := table_raw__pack(table)
+            if err == nil do err = terr
+        }
+        return err
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Private
+
+    @(private)
+    // Is packing (tail swap) currently deferred for this group's owned tables
+    // — either by a database-wide pause or by this group's own pause_packing.
+    group__is_packing_paused :: #force_inline proc "contextless" (self: ^Group) -> bool {
+        return self.db.tail_swap_paused || self.pause_packing
+    }
 
     @(private)
     // Move entity's rows into the prefix at position len (in every owned table),
@@ -245,7 +312,7 @@ package ode_ecs
         // full match? (needs every owned component)
         if !uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) do return
 
-        if self.db.tail_swap_paused {
+        if group__is_packing_paused(self) {
             // rows must not move while paused — rebuild on resume
             self.dirty = true
             return

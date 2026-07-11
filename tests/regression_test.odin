@@ -134,6 +134,137 @@ package ode_ecs__tests
         testing.expect(t, ecs.terminate(&db) == nil)
     }
 
+    // A database-wide resume must not silently clear an independently-paused
+    // table: it still packs the table (safe, matches pack's "mid-pause"
+    // guarantee), but the table's own pause_packing flag survives so a later
+    // removal on it still defers — one actor's database-wide resume must not
+    // break another actor's independent table-level pause.
+    @(test)
+    table_pause_survives_database_resume__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, 10, allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+
+        eids: [3]ecs.entity_id
+        for i in 0..<3 {
+            eids[i], _ = ecs.create_entity(&db)
+            _, _ = ecs.add_component(&positions, eids[i])
+        }
+
+        ecs.pause_packing(&db)
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+        testing.expect(t, positions.holes_count == 1)
+
+        // db-wide resume packs the still-individually-paused table...
+        testing.expect(t, ecs.resume_packing(&db) == nil)
+        testing.expect(t, db.tail_swap_paused == false)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 2)
+
+        // ...but does not clear the table's own pause: a later removal on it
+        // still defers via a hole instead of tail-swapping
+        testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
+        testing.expect(t, positions.holes_count == 1)
+        testing.expect(t, ecs.table_len(&positions) == 2) // row span unchanged: hole, not tail-swapped
+
+        testing.expect(t, ecs.resume_packing(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+    }
+
+    // Same as table_pause_survives_database_resume__test, but for a Group:
+    // a database-wide resume packs the group's owned tables (rebuild is a
+    // deferred no-op while the group is still independently paused) without
+    // clearing the group's own pause_packing.
+    @(test)
+    group_pause_survives_database_resume__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        pos: ecs.Table(Group_Pos)
+        vel: ecs.Table(Group_Vel)
+        group: ecs.Group
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, 10, allocator) == nil)
+        testing.expect(t, ecs.table_init(&pos, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&vel, &db, 10) == nil)
+        testing.expect(t, ecs.group_init(&group, &db, {&pos, &vel}) == nil)
+
+        eids: [3]ecs.entity_id
+        for i in 0..<3 {
+            eids[i], _ = ecs.create_entity(&db)
+            p, _ := ecs.add_component(&pos, eids[i]); p^ = { f64(eids[i].ix), 1 }
+            v, _ := ecs.add_component(&vel, eids[i]); v^ = { f64(eids[i].ix), 2 }
+        }
+        testing.expect(t, ecs.group_len(&group) == 3)
+
+        ecs.pause_packing(&db)
+        testing.expect(t, ecs.pause_packing(&group) == nil)
+
+        // membership change deferred by the group's own pause
+        testing.expect(t, ecs.remove_component(&vel, eids[1]) == nil)
+        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil)
+
+        // db-wide resume packs owned tables but the group stays dirty: it is
+        // still independently paused, so group__rebuild re-defers
+        testing.expect(t, ecs.resume_packing(&db) == nil)
+        testing.expect(t, db.tail_swap_paused == false)
+        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "group must still be dirty: its own pause survived")
+
+        testing.expect(t, ecs.resume_packing(&group) == nil)
+        testing.expect(t, ecs.group_len(&group) == 2)
+        group__verify(t, &group, &pos, &vel)
+    }
+
+    // Shared_Table.pause_packing must be reset on re-init (issue #8 pattern),
+    // but preserved across a data-only clear() — clear resets row data, not
+    // caller-set mode.
+    @(test)
+    table_pause_packing_reinit_clear__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+
+        // Terminate while table-paused, then re-init: flag must reset
+        testing.expect(t, ecs.init(&db, 10, allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+        testing.expect(t, ecs.terminate(&db) == nil)
+
+        testing.expect(t, ecs.init(&db, 10, allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, positions.pause_packing == false)
+
+        // clear() is a data-only reset: the pause must survive it
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+        testing.expect(t, ecs.clear(&positions) == nil)
+        testing.expect(t, positions.pause_packing == true)
+
+        testing.expect(t, ecs.resume_packing(&positions) == nil)
+        testing.expect(t, ecs.terminate(&db) == nil)
+    }
+
     // Tiny_Table's fixed subscribers array must be cleared on re-init:
     // it used to keep notifying views from a previous life.
     @(test)

@@ -169,7 +169,7 @@ package ode_ecs
 
         // Deferred tail swap: clear the tag in place, leaving a hole.
         // Nothing moves, so nothing needs to stay stable while iterating.
-        if self.db.tail_swap_paused {
+        if shared_table__is_packing_paused(cast(^Shared_Table) self) {
             target_rid := int(uintptr(target_ptr) - uintptr(&self.rows[0])) / size_of(entity_id)
 
             error := oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
@@ -290,6 +290,29 @@ package ode_ecs
         self.first_hole_rid = max(int)
 
         return nil
+    }
+
+    // Pause tail swapping for this table only, independent of the
+    // database-wide pause_packing.
+    tag_table__pause_packing :: proc(self: ^Tag_Table) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = true
+        return nil
+    }
+
+    // Resume tail swapping for this table and pack the holes it accumulated.
+    tag_table__resume_packing :: proc(self: ^Tag_Table) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = false
+        return tag_table__pack(self)
     }
 
     tag_table__clear :: proc (self: ^Tag_Table) -> Error {

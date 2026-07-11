@@ -190,7 +190,7 @@ package ode_ecs
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
-        if self.db.tail_swap_paused {
+        if shared_table__is_packing_paused(cast(^Shared_Table) self) {
             oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
             mem.zero(target, T_size)
@@ -318,6 +318,22 @@ package ode_ecs
         self.first_hole_rid = max(int)
 
         return nil
+    }
+
+    @(private)
+    compact_table_raw__pause_packing :: proc(self: ^Compact_Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = true
+        return nil
+    }
+
+    @(private)
+    compact_table_raw__resume_packing :: proc(self: ^Compact_Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = false
+        return compact_table_raw__pack(self)
     }
 
     compact_table_raw__len :: #force_inline proc "contextless" (self: ^Compact_Table_Raw) -> int {
@@ -456,6 +472,23 @@ package ode_ecs
             assert(self != nil)
         }
         return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
+    }
+
+    // Pause tail swapping for this table only, independent of the
+    // database-wide pause_packing.
+    compact_table__pause_packing :: proc(self: ^Compact_Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return compact_table_raw__pause_packing(cast(^Compact_Table_Raw) self)
+    }
+
+    // Resume tail swapping for this table and pack the holes it accumulated.
+    compact_table__resume_packing :: proc(self: ^Compact_Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return compact_table_raw__resume_packing(cast(^Compact_Table_Raw) self)
     }
 
     compact_table__remove_component :: proc(self: ^Compact_Table($T), eid: entity_id, loc:= #caller_location) -> Error {

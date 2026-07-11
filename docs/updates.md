@@ -1,10 +1,11 @@
 # Updates Timeline
 
-**v1.2.3**
-* \*new\* Defer tail-swap feature (pause/resume/pack).
-* \*new\* Relations_Table (parent/child entity relations) feature.
+**July 2026**
+* \*new\* [Groups](group.md)
+* \*new\* Defer tail-swap feature (pause_packing/resume_packing/pack) ([Database](database.md), [Group](group.md) and [Table](tables.md) levels).
+* \*new\* [Relations_Table](relations.md) (parent/child entity relations) feature.
 * Added a dense (aligned) path optimization for Views (~2x speed increase if the view and tables are aligned).
-* Other speed optimizations.
+* Micro-optimizations.
 * Improvements and bug fixes.
 
 **v1.2.2**

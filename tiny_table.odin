@@ -135,7 +135,7 @@ package ode_ecs
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
-        if self.db.tail_swap_paused {
+        if shared_table__is_packing_paused(cast(^Shared_Table) self) {
             target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
 
             oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
@@ -292,6 +292,22 @@ package ode_ecs
         return nil
     }
 
+    @(private)
+    tiny_table_raw__pause_packing :: proc(self: ^Tiny_Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = true
+        return nil
+    }
+
+    @(private)
+    tiny_table_raw__resume_packing :: proc(self: ^Tiny_Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+
+        self.pause_packing = false
+        return tiny_table_raw__pack(self)
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny_Table
 
@@ -390,6 +406,23 @@ package ode_ecs
             assert(self != nil)
         }
         return tiny_table_raw__pack(cast(^Tiny_Table_Raw) self)
+    }
+
+    // Pause tail swapping for this table only, independent of the
+    // database-wide pause_packing.
+    tiny_table__pause_packing :: proc(self: ^Tiny_Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return tiny_table_raw__pause_packing(cast(^Tiny_Table_Raw) self)
+    }
+
+    // Resume tail swapping for this table and pack the holes it accumulated.
+    tiny_table__resume_packing :: proc(self: ^Tiny_Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return tiny_table_raw__resume_packing(cast(^Tiny_Table_Raw) self)
     }
 
     // Remove component for entity `eid`

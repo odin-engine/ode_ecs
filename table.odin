@@ -229,6 +229,16 @@ package ode_ecs
     }
 
     @(private)
+    // Is packing (tail swap) currently deferred for this table — a table
+    // owned by a Group defers to the group's own pause state (rows must move
+    // in lock-step across every table the group owns); a standalone table
+    // checks the database-wide flag or its own pause_packing.
+    table_raw__is_packing_paused :: #force_inline proc "contextless" (self: ^Table_Raw) -> bool {
+        if self.owner != nil do return group__is_packing_paused(self.owner)
+        return shared_table__is_packing_paused(cast(^Shared_Table) self)
+    }
+
+    @(private)
     // #no_bounds_check: callers validate target_eid (len(eid_to_rid) == db.id_factory.cap);
     // all row indexes derive from raw.len < cap or from the rid index
     table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) #no_bounds_check {
@@ -249,7 +259,7 @@ package ode_ecs
         // table's own tail swap runs. Members sit at rid < owner.len by invariant.
         // While tail swap is paused rows must not move: mark dirty, rebuild on resume.
         if self.owner != nil && int(target_rid) < self.owner.len {
-            if self.db.tail_swap_paused {
+            if table_raw__is_packing_paused(self) {
                 self.owner.dirty = true
             } else {
                 group__swap_out(self.owner, target_eid)
@@ -260,7 +270,7 @@ package ode_ecs
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
-        if self.db.tail_swap_paused {
+        if table_raw__is_packing_paused(self) {
             self.eid_to_rid[target_eid.ix] = TABLE_NO_RID
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
             mem.zero(target, T_size)
@@ -385,6 +395,24 @@ package ode_ecs
         self.first_hole_rid = max(int)
 
         return nil
+    }
+
+    @(private)
+    table_raw__pause_packing :: proc(self: ^Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+        if self.owner != nil do return API_Error.Cannot_Pause_Table_Owned_By_Group
+
+        self.pause_packing = true
+        return nil
+    }
+
+    @(private)
+    table_raw__resume_packing :: proc(self: ^Table_Raw) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+        if self.owner != nil do return API_Error.Cannot_Pause_Table_Owned_By_Group
+
+        self.pause_packing = false
+        return table_raw__pack(self)
     }
 
     table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
@@ -545,6 +573,26 @@ package ode_ecs
             assert(self != nil)
         }
         return table_raw__pack(cast(^Table_Raw) self)
+    }
+
+    // Pause tail swapping for this table only, independent of the
+    // database-wide pause_packing. Rejected with
+    // API_Error.Cannot_Pause_Table_Owned_By_Group if the table is owned by a
+    // Group — pause/resume the Group instead (group__pause_packing), since
+    // group membership requires every owned table to move rows in lock-step.
+    table__pause_packing :: proc(self: ^Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return table_raw__pause_packing(cast(^Table_Raw) self)
+    }
+
+    // Resume tail swapping for this table and pack the holes it accumulated.
+    table__resume_packing :: proc(self: ^Table($T)) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        return table_raw__resume_packing(cast(^Table_Raw) self)
     }
 
     table__remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {

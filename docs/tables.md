@@ -77,7 +77,7 @@ for ecs.table_len(&my_table) > 0 {
 }
 ```
 
-…or use `pause_packing` / `resume_packing` — see the [Database doc](database.md#pausing-tail-swap-mutating-tables-while-iterating).
+…or use `pause_packing` / `resume_packing` — see the [Database doc](database.md#pausing-tail-swap-mutating-tables-while-iterating). These also work on a single table directly (`ecs.pause_packing(&my_table)`), independent of the database-wide pause — see [Pause scope: Database, Table, or Group](database.md#pause-scope-database-table-or-group). Rejected with `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group` if the table is owned by a [Group](group.md) — pause the group instead.
 
 ### Copying and moving components between tables
 
@@ -98,6 +98,8 @@ ecs.table_len(&positions)      // number of components currently stored
 ecs.table_cap(&positions)      // capacity
 ecs.clear(&positions)          // remove all rows, keep the table initialized
 ecs.pack(&positions)           // compact holes left while tail swap was paused
+ecs.pause_packing(&positions)  // defer this table's removals to holes, independent of the database-wide pause
+ecs.resume_packing(&positions) // resume and pack this table
 ecs.memory_usage(&positions)   // bytes
 ecs.is_valid(&positions)
 ```

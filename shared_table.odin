@@ -14,8 +14,13 @@ package ode_ecs
     Shared_Table :: struct {
         state: Object_State,
         type: Table_Type,
-        id: table_id, 
-        db: ^Database, 
+        id: table_id,
+        db: ^Database,
+
+        // Deferred tail swap for this table only, independent of
+        // db.tail_swap_paused. See shared_table__is_packing_paused,
+        // table__pause_packing/compact_table__pause_packing/etc.
+        pause_packing: bool,
     }
 
     @(private)
@@ -63,6 +68,7 @@ package ode_ecs
         self.type = Table_Type.Unknown
         self.id  = DELETED_INDEX
         self.db = nil
+        self.pause_packing = false
     }
 
     shared_table__is_valid :: proc(self: ^Shared_Table) -> bool {
@@ -211,6 +217,12 @@ package ode_ecs
 
         assert(false) // should not happen
         return API_Error.Unexpected_Error
+    }
+
+    // Is packing (tail swap) currently deferred for this table — either by a
+    // database-wide pause or by this table's own pause_packing.
+    shared_table__is_packing_paused :: #force_inline proc "contextless" (self: ^Shared_Table) -> bool {
+        return self.db.tail_swap_paused || self.pause_packing
     }
 
     shared_table__clear :: proc (self: ^Shared_Table) -> Error {

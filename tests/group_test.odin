@@ -222,6 +222,84 @@ package ode_ecs__tests
         group__verify(t, &group, &pos, &vel)
     }
 
+    // Pausing/resuming a table owned by a Group directly is rejected: group
+    // membership requires every owned table to move rows in lock-step, so an
+    // owned table cannot be paused independently — pause the Group instead.
+    @(test)
+    group__pause_owned_table_rejected__test :: proc(t: ^testing.T) {
+        db: ecs.Database
+        pos: ecs.Table(Group_Pos)
+        vel: ecs.Table(Group_Vel)
+        group: ecs.Group
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, 100) == nil)
+        testing.expect(t, ecs.table_init(&pos, &db, 100) == nil)
+        testing.expect(t, ecs.table_init(&vel, &db, 100) == nil)
+        testing.expect(t, ecs.group_init(&group, &db, {&pos, &vel}) == nil)
+
+        eid, _ := ecs.create_entity(&db)
+        p, _ := ecs.add_component(&pos, eid); p^ = { f64(eid.ix), 1 }
+        v, _ := ecs.add_component(&vel, eid); v^ = { f64(eid.ix), 2 }
+        testing.expect(t, ecs.group_len(&group) == 1)
+
+        testing.expect(t, ecs.pause_packing(&pos) == ecs.API_Error.Cannot_Pause_Table_Owned_By_Group)
+        testing.expect(t, ecs.resume_packing(&pos) == ecs.API_Error.Cannot_Pause_Table_Owned_By_Group)
+        testing.expect(t, pos.pause_packing == false, "rejected pause must not mutate table state")
+
+        // normal tail-swap removal (and group maintenance) still works
+        testing.expect(t, ecs.remove_component(&vel, eid) == nil)
+        testing.expect(t, ecs.group_len(&group) == 0)
+    }
+
+    // Group-level pause: pausing the group defers membership maintenance for
+    // all of its owned tables as one unit, independent of the database-wide
+    // flag; resume packs every owned table and rebuilds the prefix. pack is
+    // usable mid-pause without rebuilding.
+    @(test)
+    group__pause_resume_group_level__test :: proc(t: ^testing.T) {
+        db: ecs.Database
+        pos: ecs.Table(Group_Pos)
+        vel: ecs.Table(Group_Vel)
+        group: ecs.Group
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, 100) == nil)
+        testing.expect(t, ecs.table_init(&pos, &db, 100) == nil)
+        testing.expect(t, ecs.table_init(&vel, &db, 100) == nil)
+        testing.expect(t, ecs.group_init(&group, &db, {&pos, &vel}) == nil)
+
+        eids: [10]ecs.entity_id
+        for i in 0..<10 {
+            eids[i], _ = ecs.create_entity(&db)
+            p, _ := ecs.add_component(&pos, eids[i]); p^ = { f64(eids[i].ix), 1 }
+            v, _ := ecs.add_component(&vel, eids[i]); v^ = { f64(eids[i].ix), 2 }
+        }
+        testing.expect(t, ecs.group_len(&group) == 10)
+
+        testing.expect(t, ecs.pause_packing(&group) == nil)
+        testing.expect(t, db.tail_swap_paused == false, "group-level pause must not touch the database-wide flag")
+
+        // a member losing a component while group-paused defers group
+        // maintenance: rows must not move, the group goes dirty
+        testing.expect(t, ecs.remove_component(&vel, eids[3]) == nil)
+        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "dirty group must not hand out slices")
+        testing.expect(t, pos.holes_count == 0, "no hole yet: eids[3] was still inside the prefix")
+
+        // punch a real (non-tail) hole in pos so pack has something to do
+        testing.expect(t, ecs.remove_component(&pos, eids[5]) == nil)
+        testing.expect(t, pos.holes_count == 1)
+
+        // pack mid-pause compacts holes without rebuilding the group
+        testing.expect(t, ecs.pack(&group) == nil)
+        testing.expect(t, pos.holes_count == 0)
+        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "still dirty: pack does not rebuild")
+
+        testing.expect(t, ecs.resume_packing(&group) == nil)
+        testing.expect(t, ecs.group_len(&group) == 8) // 10 - eids[3] - eids[5]
+        group__verify(t, &group, &pos, &vel)
+    }
+
     @(test)
     group__db_clear__test :: proc(t: ^testing.T) {
         db: ecs.Database

@@ -5,17 +5,17 @@ A minimal, data-oriented, high-performance Entity-Component-System written in Od
 
 # Features
 
-- Simple and type-safe API.
-- High-performance — if you find a better-performing ECS written in Odin, please open an issue and let me know.
-- Everything is preallocated (no hidden memory reallocations during a game loop).  
-- All important operations are **O(1)**, with no hidden linked lists.  
-- Supports custom allocators.  
-- No additional data is stored with components, ensuring maximum cache efficiency.  
-- Iteration over components or views is as fast as possible (no iteration over empty or deleted components; data is 100% dense for optimal caching).  
-- Supports an unlimited number of component types (default is 128).  
-- zlib License (even more permissive than both the MIT License and the BSD 3-Clause License).
-- [Documentation](docs/_index.md) 
-- and more.
+* **Simple and type-safe API.**
+* **High performance** — if you find a better-performing ECS written in Odin, please open an issue and let me know.
+* **Preallocated design** — zero hidden memory allocations during the game loop.
+* **$O(1)$ operations** — all core operations are constant time, with no hidden linked lists.
+* **Custom allocator support.**
+* **Maximum cache efficiency** — no additional metadata is stored alongside components.
+* **Ultra-fast iterations** — iterating over components or views is highly optimized (no skipping empty or deleted slots; data is 100% dense for optimal cache locality).
+* **Unlimited component types** (default maximum is 128, easily configured).
+* **Permissive zlib License** (even more open than MIT or BSD 3-Clause).
+* **Well-[tested](tests/)** and micro-optimized.
+* **Comprehensive [documentation](docs/_index.md).**
 
 ## Philosophy behind ODE_ECS
 
@@ -347,6 +347,24 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 ```
 
 `ecs.resume_packing(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
+
+#### Pausing a single table or group
+
+`pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
+
+```Odin
+ecs.pause_packing(&monsters)          // pause just this table
+ecs.remove_component(&monsters, eid)  // leaves a hole, other tables tail-swap as normal
+ecs.resume_packing(&monsters)         // packs just this table
+
+ecs.pause_packing(&group)             // pause every table this group owns, as one unit
+ecs.remove_component(&vel, eid)       // membership change deferred, rows in every owned table stay put
+ecs.resume_packing(&group)            // packs owned tables and rebuilds the group prefix
+```
+
+A table owned by a `Group` cannot be paused on its own — a group moves rows across all of its owned tables in lock-step, so pausing one would desync that invariant. `ecs.pause_packing`/`ecs.resume_packing` on such a table return `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group`; pause the `Group` instead.
+
+Table-level and group-level pauses compose with (OR into) the database-wide pause and with each other: a database-wide `resume_packing` still packs every table, but does not forcibly clear a table's or group's own independent pause — that pause stays in effect until its own `resume_packing` is called.
 
 ### TIP: Be aware that component locations might shift within tables.
 

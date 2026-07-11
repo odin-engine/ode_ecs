@@ -2,7 +2,7 @@
 
 ### 0. Why did you build it?
 
-I built it for my own MMORPG project. It is minimal, low-level, well-tested, and fast—exactly what I want an ECS to be. I wanted to avoid overengineered libraries that unpredictably tank frame-to-frame stability. 
+I built it for my own MMORPG project. It is minimal, low-level, well-tested, and fast — exactly what I want an ECS to be. I wanted to avoid overengineered libraries that unpredictably tank frame-to-frame stability. 
 
 ### 1. Thread safety?
 

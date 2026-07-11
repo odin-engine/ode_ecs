@@ -1522,6 +1522,51 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&positions) == 0)
     }
 
+    // Table-level pause: pausing one standalone (ungrouped) table defers only
+    // that table's removals, independent of the database-wide flag.
+    @(test)
+    pause_packing__standalone_table__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+
+        eids: [3]ecs.entity_id
+        for i in 0..<3 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            p, aerr := ecs.add_component(&positions, eid)
+            testing.expect(t, aerr == nil)
+            p.x = i + 1
+            eids[i] = eid
+        }
+
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+        testing.expect(t, db.tail_swap_paused == false) // pausing a table does not touch the database-wide flag
+
+        // removing a middle row leaves a hole, nothing moves
+        testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 3) // len is the row span, holes included
+        testing.expect(t, positions.holes_count == 1)
+        testing.expect(t, ecs.get_entity(&positions, 1).ix == ecs.DELETED_INDEX) // hole marker
+
+        testing.expect(t, ecs.resume_packing(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 2)
+
+        // normal tail-swap removal works after resume
+        testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+    }
+
     // Database-level pause: destroy entities while iterating a table; every
     // component table accumulates holes; resume packs them all.
     @(test)

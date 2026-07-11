@@ -95,6 +95,24 @@ ecs.resume_packing(&my_ecs) // packs tables, then rebuilds dirty groups
 
 If nothing group-relevant changed during the pause, the group stays clean and its slices remain valid throughout.
 
+### Pausing just this group
+
+`pause_packing`/`resume_packing`/`pack` also work directly on a `Group`, independent of the database-wide pause — the same deferred-dirty/rebuild mechanics as above, but scoped to only this group's owned tables:
+
+```odin
+ecs.pause_packing(&my_group)
+
+for /* iterating rows */ {
+    ecs.remove_component(&velocities, eid) // deferred, group goes dirty — other tables/groups unaffected
+}
+
+ecs.resume_packing(&my_group) // packs this group's owned tables, then rebuilds it
+```
+
+This is useful to isolate one group from a concurrent database-wide (or another group's) pause/resume cycle — e.g. one thread mutates this group's tables while another thread runs a database-wide pause elsewhere. The two compose (OR together): if the database is also paused, the group stays deferred until *both* its own `resume_packing` and the database-wide one have run. `ecs.pack(&my_group)` packs the group's owned tables mid-pause without rebuilding (the group stays dirty until an explicit `resume_packing`).
+
+A `Table` owned by this group cannot be paused on its own (`ecs.pause_packing(&owned_table)` returns `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group`) — pausing one owned table without the others would desync the lock-step row alignment the group depends on. Pause the group instead.
+
 ## Lifecycle
 
 Groups follow the same lifecycle rules as views:
