@@ -1,5 +1,6 @@
 # Docs
 
+* [README.md](../README.md)
 * [Database](database.md)
 * [Tables](tables.md)
 * [View](view.md)
