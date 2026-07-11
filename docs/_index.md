@@ -12,25 +12,25 @@
 
 I highly recommend going through the [samples](../samples) to learn about ODE_ECS functionality. I tried to demonstrate all the main features in the samples.
 
-* [Sample01](../samples/sample01/main.odin) – A basic sample with 100,000 entities that demonstrates how to use tables and views.
-* [Sample02](../samples/sample02/main.odin) – Demonstrates how to optimize your ECS (Approach 1 vs. Approach 2).
-* [Sample03](../samples/sample03/main.odin) – Demonstrates the benefits of the View approach versus the Archetype approach in ECS.
-* [Sample04](../samples/sample04/main.odin) – Demonstrates:
+* [Sample01](/samples/sample01/main.odin) – A basic sample with 100,000 entities that demonstrates how to use tables and views.
+* [Sample02](/samples/sample02/main.odin) – Demonstrates how to optimize your ECS (Approach 1 vs. Approach 2).
+* [Sample03](/samples/sample03/main.odin) – Demonstrates the benefits of the View approach versus the Archetype approach in ECS.
+* [Sample04](/samples/sample04/main.odin) – Demonstrates:
 
     * How to use `Tiny_Table`
     * How to use a View on top of different table types (`Tiny_Table`, `Table`, and `Compact_Table`)
     * An example of a tags table
     * An example of a bool table
 
-* [Sample05](../samples/sample05/main.odin) – Compares `Table` vs. `Compact_Table`, and `Tiny_Table` vs. `Compact_Table` vs. `Table`.
-* [Sample06](../samples/sample06/main.odin) – Demonstrates how to use `Tag_Table` and View filtering.
+* [Sample05](/samples/sample05/main.odin) – Compares `Table` vs. `Compact_Table`, and `Tiny_Table` vs. `Compact_Table` vs. `Table`.
+* [Sample06](/samples/sample06/main.odin) – Demonstrates how to use `Tag_Table` and View filtering.
 
 
 # How to read source code
 
-To check the main **ODE\_ECS** procedures, you can go to [ecs.odin](../ecs.odin) and scroll down to the **aliases** section. Those are the main or most commonly used procedures, though not all of them.
+To check the main **ODE\_ECS** procedures, you can go to [ecs.odin](/ecs.odin) and scroll down to the **aliases** section. Those are the main or most commonly used procedures, though not all of them.
 
-If you want to find all procedures related to a specific object—for example, **Table** (or [View](../view.odin), [Iterator](../iterator.odin), [Tiny\_Table](../tiny_table.odin), [Compact\_Table](../compact_table.odin), etc.)—you can go to its respective file. For **Table**, that would be [table.odin](../table.odin).
+If you want to find all procedures related to a specific object—for example, **Table** (or [View](/view.odin), [Iterator](/iterator.odin), [Tiny\_Table](/tiny_table.odin), [Compact\_Table](/compact_table.odin), etc.)—you can go to its respective file. For **Table**, that would be [table.odin](/table.odin).
 
 Scroll down to the **Table** section (ignore the **Table\_Base** and **Table\_Raw** objects/sections), and there you’ll find all of the public **Table** procedures along with their implementations.
 
