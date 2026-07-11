@@ -65,7 +65,9 @@ You can have as many ECS databases in your game as you want:
     ecs.init(&ecs2, entities_cap=200)
 ```  
 
-The other two main types of objects in ODE_ECS are tables and views.  
+`Database`s share **nothing** and can use different allocators.
+
+The other main types of objects in ODE_ECS are tables, views and [groups](docs/group.md).  
 
 ---
 
