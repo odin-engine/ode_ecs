@@ -15,7 +15,7 @@
 * More tests related to View filters
 
 **v1.2.1**
-- \*new\* **Tag_Table** – used when you only want to tag an entity; can be useful with views.
+- \*new\* **[Tag_Table](tables.md)** – used when you only want to tag an entity; can be useful with views.
 - \*new\* **View filter** – an additional way to filter entities for a View.
 - **Iterator bug fix** 
 - **Improved object validation**.
