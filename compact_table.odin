@@ -198,7 +198,7 @@ package ode_ecs
             if int(target_rid) == raw.len - 1 {
                 raw.len -= 1
                 // absorb trailing holes so they never need packing
-                for raw.len > 0 && self.rid_to_eid[raw.len - 1].ix == DELETED_INDEX {
+                for raw.len > 0 && is_deleted(self.rid_to_eid[raw.len - 1]) {
                     raw.len -= 1
                     self.holes_count -= 1
                 }
@@ -218,7 +218,7 @@ package ode_ecs
         tail_rid := raw.len - 1
         tail_eid := self.rid_to_eid[tail_rid]
 
-        assert(tail_eid.ix != DELETED_INDEX)
+        assert(!is_deleted(tail_eid))
 
         tail := compact_table_raw__rid_to_ptr(self, tail_rid)
 
@@ -285,14 +285,14 @@ package ode_ecs
 
         for self.holes_count > 0 {
             // shrink span past trailing holes
-            for back >= 0 && self.rid_to_eid[back].ix == DELETED_INDEX {
+            for back >= 0 && is_deleted(self.rid_to_eid[back]) {
                 back -= 1
                 self.holes_count -= 1
             }
             if self.holes_count <= 0 do break
 
             // next hole from the front; guaranteed to exist below back
-            for self.rid_to_eid[front].ix != DELETED_INDEX do front += 1
+            for !is_deleted(self.rid_to_eid[front]) do front += 1
 
             // move the last live row into the hole
             dst := rawptr(uintptr(rows) + uintptr(front) * uintptr(T_size))

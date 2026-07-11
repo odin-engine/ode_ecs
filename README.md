@@ -330,14 +330,14 @@ Or pause tail swapping for the duration of the iteration — see the next sectio
 
 ### Mutating tables while iterating: pause_packing / resume_packing / pack
 
-`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX`, and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
+`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_deleted`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
 
 ```Odin
 ecs.pause_packing(&db)
 
 for i in 0..<ecs.table_len(&monsters) {
     eid := ecs.get_entity(&monsters, i)
-    if eid.ix == ecs.DELETED_INDEX do continue // hole (already removed this frame)
+    if ecs.is_deleted(eid) do continue // hole (already removed this frame)
 
     monster := ecs.get_component(&monsters, eid)
     if monster.hp <= 0 do ecs.destroy_entity(&db, eid) // safe: nothing moves

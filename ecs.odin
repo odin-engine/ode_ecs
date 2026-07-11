@@ -336,3 +336,10 @@ package ode_ecs
             oc.Error, 
             runtime.Allocator_Error
         }
+
+///////////////////////////////////////////////////////////////////////////////
+// Globals
+
+    is_deleted :: #force_inline proc "contextless" (e: entity_id) -> bool {
+        return e.ix == DELETED_INDEX;
+    }

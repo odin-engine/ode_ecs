@@ -185,12 +185,12 @@ package ode_ecs
         // Cycle check: walk up parent's ancestor chain; if we reach child,
         // parenting would close a cycle. O(depth), before any mutation.
         p := self.parent[parent.ix]
-        for p.ix != DELETED_INDEX {
+        for !is_deleted(p) {
             if p == child do return API_Error.Relation_Cycle
             p = self.parent[p.ix]
         }
 
-        if old_parent.ix != DELETED_INDEX {
+        if !is_deleted(old_parent) {
             relations_table__unlink_child(self, old_parent, child)
         } else if self.count >= self.cap {
             return oc.Core_Error.Container_Is_Full
@@ -211,7 +211,7 @@ package ode_ecs
         database__is_entity_correct(self.db, child) or_return
 
         old_parent := self.parent[child.ix]
-        if old_parent.ix == DELETED_INDEX do return oc.Core_Error.Not_Found
+        if is_deleted(old_parent) do return oc.Core_Error.Not_Found
 
         relations_table__unlink_child(self, old_parent, child)
 
@@ -235,7 +235,7 @@ package ode_ecs
 
         n := 0
         c := self.first_child[parent.ix]
-        for c.ix != DELETED_INDEX {
+        for !is_deleted(c) {
             self.scratch[n] = c
             n += 1
             c = self.next_sibling[c.ix]
@@ -270,7 +270,7 @@ package ode_ecs
     relations_table__has_relations :: proc(self: ^Relations_Table, eid: entity_id) -> (res: bool, err: Error) #no_bounds_check {
         database__is_entity_correct(self.db, eid) or_return
 
-        return self.parent[eid.ix].ix != DELETED_INDEX || self.first_child[eid.ix].ix != DELETED_INDEX, nil
+        return !is_deleted(self.parent[eid.ix]) || !is_deleted(self.first_child[eid.ix]), nil
     }
 
     // Does `eid` relate to `target` directly — as its child or its parent?
@@ -291,7 +291,7 @@ package ode_ecs
 
         self.next_sibling[child.ix] = head
         self.prev_sibling[child.ix].ix = DELETED_INDEX
-        if head.ix != DELETED_INDEX do self.prev_sibling[head.ix] = child
+        if !is_deleted(head) do self.prev_sibling[head.ix] = child
 
         self.first_child[parent.ix] = child
         self.parent[child.ix] = parent
@@ -306,10 +306,10 @@ package ode_ecs
         prev := self.prev_sibling[child.ix]
         next := self.next_sibling[child.ix]
 
-        if prev.ix != DELETED_INDEX do self.next_sibling[prev.ix] = next
+        if !is_deleted(prev) do self.next_sibling[prev.ix] = next
         else do self.first_child[parent.ix] = next
 
-        if next.ix != DELETED_INDEX do self.prev_sibling[next.ix] = prev
+        if !is_deleted(next) do self.prev_sibling[next.ix] = prev
 
         self.parent[child.ix].ix = DELETED_INDEX
         self.next_sibling[child.ix].ix = DELETED_INDEX
@@ -325,10 +325,10 @@ package ode_ecs
     @(private)
     relations_table__unlink_entity :: proc "contextless" (self: ^Relations_Table, eid: entity_id) #no_bounds_check {
         p := self.parent[eid.ix]
-        if p.ix != DELETED_INDEX do relations_table__unlink_child(self, p, eid)
+        if !is_deleted(p) do relations_table__unlink_child(self, p, eid)
 
         c := self.first_child[eid.ix]
-        for c.ix != DELETED_INDEX {
+        for !is_deleted(c) {
             next := self.next_sibling[c.ix]
 
             self.parent[c.ix].ix = DELETED_INDEX

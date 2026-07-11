@@ -362,7 +362,7 @@ package ode_ecs
 
         for i:= 0; i < shared_table__len(min_table); i+=1 {
             eid = shared_table__get_entity_by_row_number(min_table, i)
-            if eid.ix == DELETED_INDEX do continue // hole (removal while tail swap was paused)
+            if is_deleted(eid) do continue // hole (removal while tail swap was paused)
 
             // check if view bits is subset of entity bits
             if view_entity_match(self, eid) {

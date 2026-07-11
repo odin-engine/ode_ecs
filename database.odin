@@ -208,7 +208,7 @@ package ode_ecs
                 tail := 0
                 #no_bounds_check {
                     c := rt.first_child[eid.ix]
-                    for c.ix != DELETED_INDEX {
+                    for !is_deleted(c) {
                         rt.scratch[tail] = c
                         tail += 1
                         c = rt.next_sibling[c.ix]
@@ -216,7 +216,7 @@ package ode_ecs
 
                     for head := 0; head < tail; head += 1 {
                         c = rt.first_child[rt.scratch[head].ix]
-                        for c.ix != DELETED_INDEX {
+                        for !is_deleted(c) {
                             rt.scratch[tail] = c
                             tail += 1
                             c = rt.next_sibling[c.ix]
