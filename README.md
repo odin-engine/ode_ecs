@@ -8,7 +8,7 @@ A minimal, data-oriented, high-performance Entity-Component-System written in Od
 * **Simple and type-safe API.**
 * **High performance** — if you find a better-performing ECS written in Odin, please open an issue and let me know.
 * **Preallocated design** — zero hidden memory allocations during the game loop.
-* **$O(1)$ operations** — all core operations are constant time, with no hidden linked lists.
+* **$O(1)$ operations** — all core operations(create/destroy entity, add/remove component, etc.) are constant time, with no hidden linked lists.
 * **Custom allocator support.**
 * **Maximum cache efficiency** — no additional metadata is stored alongside components.
 * **Ultra-fast iterations** — iterating over components or views is highly optimized (no skipping empty or deleted slots; data is 100% dense for optimal cache locality).
