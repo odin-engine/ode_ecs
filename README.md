@@ -310,7 +310,11 @@ The cascade is iterative (no recursion) and destroys the deepest entities first;
 
 ---
 
-# Tips
+# Mutating tables (destroying entities/removing components) while iterating over them
+
+### TIP: Be aware that component locations might shift within tables.
+
+ODE_ECS performs tail swaps (packing) when you remove components from a table (mutating a table) to optimize iteration speeds and avoid empty slots. This means you should avoid re-using pointers to components after a table has been mutated (e.g., by removing the component or its owning entity). Instead, save and use entity IDs to retrieve the updated component pointer after each table mutation. (Exception: while packing is paused, pointers stay stable until the table is packed.)
 
 ### TIP: Avoid mutating tables while iterating over them 
 
@@ -328,7 +332,7 @@ for ecs.table_len(&my_tags_table) > 0 {
     ecs.destroy_entity(&my_db, d)   
 }
 ```
-Or pause tail swapping for the duration of the iteration — see the next section.
+Or pause packing (tail swaping) for the duration of the iteration — see the next section.
 
 ### Mutating tables while iterating: pause_packing / resume_packing / pack
 
@@ -367,10 +371,6 @@ ecs.resume_packing(&group)            // packs owned tables and rebuilds the gro
 A table owned by a `Group` cannot be paused on its own — a group moves rows across all of its owned tables in lock-step, so pausing one would desync that invariant. `ecs.pause_packing`/`ecs.resume_packing` on such a table return `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group`; pause the `Group` instead.
 
 Table-level and group-level pauses compose with (OR into) the database-wide pause and with each other: a database-wide `resume_packing` still packs every table, but does not forcibly clear a table's or group's own independent pause — that pause stays in effect until its own `resume_packing` is called.
-
-### TIP: Be aware that component locations might shift within tables.
-
-ODE_ECS performs tail swaps when you remove components from a table (mutating a table) to optimize iteration speeds and avoid empty slots. This means you should avoid re-using pointers to components after a table has been mutated (e.g., by removing the component or its owning entity). Instead, save and use entity IDs to retrieve the updated component pointer after each table mutation. (Exception: while tail swapping is paused, pointers stay stable until the table is packed.)
 
 ---
 
