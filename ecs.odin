@@ -366,5 +366,5 @@ package ode_ecs
 // Globals
 
     is_deleted :: #force_inline proc "contextless" (e: entity_id) -> bool {
-        return e.ix == DELETED_INDEX;
+        return e.ix == DELETED_INDEX
     }
