@@ -231,46 +231,8 @@ Besides included tables, `ecs.view_init` takes an optional `excludes` list — t
     err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
 ```
 
-### 🔎View Filter
-
-A view filter is a `proc` that you can pass to `ecs.view_init` to filter view data. It allows you to create views based on any custom logic.
-
-```odin
-    view: ecs.View
-
-    My_User_Data :: struct {
-        human_eid: ecs.entity_id,
-        chair_eid: ecs.entity_id,
-    }
-
-    // if this proc returns true, the entity (and its components) will be added to the view
-    my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
-        if user_data == nil do return false
-
-        eid := ecs.get_entity(row)
-        data := (^My_User_Data)(user_data)
-
-        // using entities saved in user_data
-        if eid == data.human_eid || eid == data.chair_eid do return true 
-
-        return false
-    }
-
-    my_user_data := My_User_Data{
-        human_eid = human,
-        chair_eid = chair,
-    }
-
-    view.user_data = &my_user_data  // set user_data!
-
-    err = ecs.view_init(&view, &db, {&is_alive_table}, my_filter)
-```
-
-The `my_filter` proc determines whether an entity (and its components) will be added to the view.
-
-The filter runs when view membership *changes*, not when component values change. After mutating data a filter depends on, re-evaluate one entity with `ecs.rerun_views_filters(&table, eid)`, or the whole view in one sweep with `ecs.refilter(&view)` (cheaper than `rebuild` — no clear, surviving rows stay put).
-
-Check [Sample06](/samples/sample06/main.odin) for an example of how to use a View filter.
+### 🔎View Filters
+Read about View filters [here](/docs/view.md#filters).
 
 ---
 ## 🏷️Tag_Table
