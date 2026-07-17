@@ -64,6 +64,15 @@ package ode_ecs
         resume_tail_swap        :: database__resume_packing
 
     //
+    // Serialization (binary snapshot of a whole Database, see serialization.odin)
+    //
+        serialized_size         :: database__serialized_size    // Exact buffer size serialize will need for the current state
+        serialize               :: database__serialize          // Write a snapshot into a caller-provided buffer (zero allocations)
+        deserialize             :: database__deserialize        // Load a snapshot into an initialized database with a matching schema
+        save_to_file            :: database__save_to_file       // serialize + write to a file
+        load_from_file          :: database__load_from_file     // read a file + deserialize
+
+    //
     // Table 
     //
         table_init              :: table__init
@@ -364,6 +373,14 @@ package ode_ecs
             Table_Already_Owned_By_Group,     // a table can have at most one owner group
             Cannot_Pause_Table_Owned_By_Group, // pause/resume_packing reject a table owned by a Group; pause/resume the Group instead
             Table_Cannot_Be_Included_And_Excluded, // view_init got the same table in `includes` and `excludes`
+            Snapshot_Invalid,                 // bad magic/endianness, truncated or corrupt snapshot buffer
+            Snapshot_Version_Mismatch,        // snapshot was written by an incompatible library version
+            Snapshot_Schema_Mismatch,         // tables/types of the target database differ from the saved ones
+            Snapshot_Capacity_Too_Small,      // target entities_cap/table cap/relations cap cannot hold the saved data
+            Snapshot_Component_Not_POD,       // component contains pointers/slices/strings; pass allow_non_pod to serialize anyway
+            Cannot_Serialize_While_Packing_Paused, // resume_packing first so tables hold no holes
+            Serialize_Buffer_Too_Small,       // size the buffer with serialized_size
+            File_Error,                       // save_to_file/load_from_file could not open/read/write the file
         }
 
         Error :: union #shared_nil {

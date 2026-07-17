@@ -13,6 +13,7 @@ A minimal, data-oriented, high-performance Entity-Component-System written in Od
 * **Maximum cache efficiency** — no additional metadata is stored alongside components.
 * **Ultra-fast iterations** — iterating over components or views is highly optimized (no skipping empty or deleted slots; data is 100% dense for optimal cache locality).
 * **Unlimited component types** (default maximum is 128, easily configured).
+* **Binary snapshots** — save/load a whole `Database` (entities, components, tags, relations) to a buffer or file; saved `entity_id`s stay valid after loading.
 * **Permissive zlib License** (even more open than MIT or BSD 3-Clause).
 * **Well-[tested](/tests/)** and micro-optimized.
 * **Comprehensive [documentation](/docs/_index.md).**
@@ -371,6 +372,33 @@ ecs.resume_packing(&group)            // packs owned tables and rebuilds the gro
 A table owned by a `Group` cannot be paused on its own — a group moves rows across all of its owned tables in lock-step, so pausing one would desync that invariant. `ecs.pause_packing`/`ecs.resume_packing` on such a table return `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group`; pause the `Group` instead.
 
 Table-level and group-level pauses compose with (OR into) the database-wide pause and with each other: a database-wide `resume_packing` still packs every table, but does not forcibly clear a table's or group's own independent pause — that pause stays in effect until its own `resume_packing` is called.
+
+---
+
+# Saving and loading (snapshots)
+
+A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags and parent/child relations. Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
+
+```odin
+// to/from a file (the only allocation is a temporary buffer):
+ecs.save_to_file(&db, "world.snap")
+ecs.load_from_file(&db, "world.snap")
+
+// or zero-allocation, into your own buffer:
+size, _ := ecs.serialized_size(&db)
+buf := make([]byte, size)
+written, _ := ecs.serialize(&db, buf)
+// ... write buf[:written] wherever you want ...
+ecs.deserialize(&db, buf[:written])
+```
+
+Rules:
+
+* **Load into a matching schema.** `deserialize` requires an already-initialized `Database` with the same tables initialized in the same order (and the same init/terminate history, so table ids coincide), the same component types, and capacities that are **at least** as large as the saved data (`entities_cap` and table caps may be larger). Anything else fails with `Snapshot_Schema_Mismatch` / `Snapshot_Capacity_Too_Small` — the buffer is fully validated before anything is mutated, so a failed load never leaves the database in a torn state.
+* **Components must be POD** — plain old data (POD) with no pointers, slices, strings, maps or dynamic arrays inside (component rows are copied as raw bytes). `serialize` rejects non-POD component types with `Snapshot_Component_Not_POD`; pass `allow_non_pod = true` to blob-copy them anyway (only meaningful if you fix such fields up yourself after loading). Per-table custom serialization callbacks are planned for a future version.
+* **Pack before saving.** While packing is paused (or tables still hold holes), `serialize` returns `Cannot_Serialize_While_Packing_Paused` — call `resume_packing`/`pack` first.
+* Entity generations are 8-bit: an `entity_id` held across exactly 256 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_entity_expired` to catch them.
+* The format is versioned and validated (magic, endianness, version); a corrupt or truncated buffer fails with `Snapshot_Invalid` without touching the database.
 
 ---
 
