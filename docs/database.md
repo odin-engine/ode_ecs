@@ -4,7 +4,7 @@ A **`Database`** is the "world" object of ODE_ECS — it owns entities, componen
 
 All memory is preallocated when the database (and its tables/views) are initialized. Nothing reallocates during the game loop.
 
-See also: [Tables](tables.md) · [Views](view.md) · [Relations](relations.md) · [Groups](group.md)
+See also: [Tables](tables.md) · [Views](view.md) · [Relations](relations.md) · [Groups](group.md)  · [Command Buffer](command_buffer.md)
 
 ## Initialization
 

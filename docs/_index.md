@@ -1,4 +1,4 @@
-# Docs
+# 📄 Docs
 
 * [README.md](/README.md)
 * [Database](database.md)
@@ -6,7 +6,8 @@
 * [View](view.md)
 * [Group](group.md)
 * [Relations](relations.md)
-* [Frequently Asked Questions (F.A.Q)](faq.md)
+* [Command Buffer](command_buffer.md)
+* ❓[Frequently Asked Questions (F.A.Q)](faq.md)
 
 # Samples
 
@@ -55,5 +56,5 @@ Compiler flags that matter for release builds of your game:
 
 - ODE_ECS vs moecs vs odecs benchmark is [here](https://github.com/zm69/ecs_bench).
 
-# When to open an issue ticket
+# ‼️When to open an issue ticket
 If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.

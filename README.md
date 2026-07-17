@@ -1,9 +1,9 @@
 ![alt text](https://github.com/odin-engine/imgs/blob/main/ode_ecs_v1.png?raw=true)
-# ODE_ECS (Entity-Component-System)
+# ⚡ODE_ECS (Entity-Component-System)
 
 A minimal, data-oriented, high-performance Entity-Component-System written in Odin.
 
-# Features
+## Features
 
 * **Simple and type-safe API.**
 * **High performance** — if you find a better-performing ECS written in Odin, please open an issue and let me know.
@@ -72,7 +72,7 @@ The other main types of objects in ODE_ECS are tables, views and [groups](/docs/
 
 ---
 
-### **Table**  
+## **Table**  
 
 A component **_Table_** is a dense array of components of the same type. I named it "table" because it is very similar to the concept of a table in relational databases. Each different type of component requires a separate table. For example, you might have a `positions` table for `Position` components and an `ais` table for `AI` components.  
 
@@ -145,7 +145,7 @@ Using an entity, you can access its other components:
 
 ---
 
-### **View**  
+## 🪟**View**  
 
 A **_View_** is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
 To initialize a view for entities with both `Position` and `AI` components, you can do this:  
@@ -222,9 +222,58 @@ For the absolute fastest iteration, `view_dense_slice` returns the raw component
 
 The slices are invalidated by any structural change (adding/removing components, creating/destroying entities) — use them immediately, do not store them.
 
----
+### View Excludes
 
-### Tag_Table
+Besides included tables, `ecs.view_init` takes an optional `excludes` list — the view keeps only entities that have a component in **none** of the excluded tables ("has `Position` but NOT `Stunned`"). It is auto-maintained (adding/removing the excluded component updates the view) and costs a single bitset test, so prefer it over an equivalent filter proc:
+
+```odin
+    // All entities with a Position that are NOT tagged stunned
+    err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
+```
+
+### View Filter
+
+A view filter is a `proc` that you can pass to `ecs.view_init` to filter view data. It allows you to create views based on any custom logic.
+
+```odin
+    view: ecs.View
+
+    My_User_Data :: struct {
+        human_eid: ecs.entity_id,
+        chair_eid: ecs.entity_id,
+    }
+
+    // if this proc returns true, the entity (and its components) will be added to the view
+    my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
+        if user_data == nil do return false
+
+        eid := ecs.get_entity(row)
+        data := (^My_User_Data)(user_data)
+
+        // using entities saved in user_data
+        if eid == data.human_eid || eid == data.chair_eid do return true 
+
+        return false
+    }
+
+    my_user_data := My_User_Data{
+        human_eid = human,
+        chair_eid = chair,
+    }
+
+    view.user_data = &my_user_data  // set user_data!
+
+    err = ecs.view_init(&view, &db, {&is_alive_table}, my_filter)
+```
+
+The `my_filter` proc determines whether an entity (and its components) will be added to the view.
+
+The filter runs when view membership *changes*, not when component values change. After mutating data a filter depends on, re-evaluate one entity with `ecs.rerun_views_filters(&table, eid)`, or the whole view in one sweep with `ecs.refilter(&view)` (cheaper than `rebuild` — no clear, surviving rows stay put).
+
+Check [Sample06](/samples/sample06/main.odin) for an example of how to use a View filter.
+
+---
+## Tag_Table
 
 `Tag_Table` is a variation of `Table`, but it doesn’t contain any components. A `Tag_Table` only “tags” entities. You can create a `Tag_Table` like this:
 
@@ -265,7 +314,7 @@ You can iterate over tagged entities like this:
 
 ---
 
-### Relations_Table (parent/child entity relations)
+## Relations_Table (parent/child entity relations)
 
 `Relations_Table` is an optional table that adds parent/child relations between entities: every entity can have at most one parent and any number of children. Like everything else in ODE_ECS, all of its memory is preallocated at init and every operation is a direct array access (adding, removing and re-parenting are all **O(1)**). Only one `Relations_Table` can be created per `Database`:
 
@@ -311,7 +360,7 @@ The cascade is iterative (no recursion) and destroys the deepest entities first;
 
 ---
 
-# Mutating tables (destroying entities/removing components) while iterating over them
+## Mutating tables (destroying entities/removing components) while iterating over them
 
 ### TIP: Be aware that component locations might shift within tables.
 
@@ -355,7 +404,7 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 
 `ecs.resume_packing(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
 
-#### Pausing a single table or group
+### Pausing a single table or group
 
 `pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
 
@@ -400,9 +449,7 @@ Semantics: a command whose entity id expired before it applied (destroyed by an 
 
 Threading: recording only writes to the buffer's own memory, so use **one Command_Buffer per thread (or per system)** and record concurrently without locks; `replay` mutates the database and must run single-threaded at the sync point, one buffer after another. Replay also composes with `pause_packing` (adds append past holes, removes leave holes).
 
----
-
-# Saving and loading (snapshots)
+## 💾Saving and loading (snapshots)
 
 A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags and parent/child relations. Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
 
@@ -472,56 +519,6 @@ If an entity has been destroyed via `ecs.destroy_entity()`, use `is_entity_expir
 
 This procedure compares the entity's generation (`gen`) against the database records. 
 
-### View Excludes
-
-Besides included tables, `ecs.view_init` takes an optional `excludes` list — the view keeps only entities that have a component in **none** of the excluded tables ("has `Position` but NOT `Stunned`"). It is auto-maintained (adding/removing the excluded component updates the view) and costs a single bitset test, so prefer it over an equivalent filter proc:
-
-```odin
-    // All entities with a Position that are NOT tagged stunned
-    err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
-```
-
-### View Filter
-
-A view filter is a `proc` that you can pass to `ecs.view_init` to filter view data. It allows you to create views based on any custom logic.
-
-```odin
-    view: ecs.View
-
-    My_User_Data :: struct {
-        human_eid: ecs.entity_id,
-        chair_eid: ecs.entity_id,
-    }
-
-    // if this proc returns true, the entity (and its components) will be added to the view
-    my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
-        if user_data == nil do return false
-
-        eid := ecs.get_entity(row)
-        data := (^My_User_Data)(user_data)
-
-        // using entities saved in user_data
-        if eid == data.human_eid || eid == data.chair_eid do return true 
-
-        return false
-    }
-
-    my_user_data := My_User_Data{
-        human_eid = human,
-        chair_eid = chair,
-    }
-
-    view.user_data = &my_user_data  // set user_data!
-
-    err = ecs.view_init(&view, &db, {&is_alive_table}, my_filter)
-```
-
-The `my_filter` proc determines whether an entity (and its components) will be added to the view.
-
-The filter runs when view membership *changes*, not when component values change. After mutating data a filter depends on, re-evaluate one entity with `ecs.rerun_views_filters(&table, eid)`, or the whole view in one sweep with `ecs.refilter(&view)` (cheaper than `rebuild` — no clear, surviving rows stay put).
-
-Check [Sample06](/samples/sample06/main.odin) for an example of how to use a View filter.
-
 ---
 ### Maximum Number of Component Types  
 
@@ -533,9 +530,9 @@ By default, the maximum number of component types is 128. However, you can have 
 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
 
-# Documentation
+# 📄 Documentation
 * [Updates Timeline](/docs/updates.md)    
 * [Documentation](/docs/_index.md)
 * [FAQ](/docs/faq.md)
 ---
-If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
+‼️If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
