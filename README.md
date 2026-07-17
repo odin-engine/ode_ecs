@@ -348,14 +348,14 @@ Or pause packing (tail swaping) for the duration of the iteration — see the ne
 
 ### Mutating tables while iterating: pause_packing / resume_packing / pack
 
-`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_deleted`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
+`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_not_set`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
 
 ```Odin
 ecs.pause_packing(&db)
 
 for i in 0..<ecs.table_len(&monsters) {
     eid := ecs.get_entity(&monsters, i)
-    if ecs.is_deleted(eid) do continue // hole (already removed this frame)
+    if ecs.is_not_set(eid) do continue // hole (already removed this frame)
 
     monster := ecs.get_component(&monsters, eid)
     if monster.hp <= 0 do ecs.destroy_entity(&db, eid) // safe: nothing moves
@@ -433,7 +433,7 @@ Rules:
 * **Load into a matching schema.** `deserialize` requires an already-initialized `Database` with the same tables initialized in the same order (and the same init/terminate history, so table ids coincide), the same component types, and capacities that are **at least** as large as the saved data (`entities_cap` and table caps may be larger). Anything else fails with `Snapshot_Schema_Mismatch` / `Snapshot_Capacity_Too_Small` — the buffer is fully validated before anything is mutated, so a failed load never leaves the database in a torn state.
 * **Components must be POD** — plain old data (POD) with no pointers, slices, strings, maps or dynamic arrays inside (component rows are copied as raw bytes). `serialize` rejects non-POD component types with `Snapshot_Component_Not_POD`; pass `allow_non_pod = true` to blob-copy them anyway (only meaningful if you fix such fields up yourself after loading). Per-table custom serialization callbacks are planned for a future version.
 * **Pack before saving.** While packing is paused (or tables still hold holes), `serialize` returns `Cannot_Serialize_While_Packing_Paused` — call `resume_packing`/`pack` first.
-* Entity generations are 8-bit: an `entity_id` held across exactly 256 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_entity_expired` to catch them.
+* Entity generations are 8-bit: an `entity_id` held across exactly 256 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_expired` to catch them.
 * The format is versioned and validated (magic, endianness, version); a corrupt or truncated buffer fails with `Snapshot_Invalid` without touching the database.
 
 ---
@@ -473,10 +473,10 @@ The `ix_gen` is defined like this:
 
 This approach is very useful because it ensures that if you save an entity ID somewhere and the entity is destroyed, any new entity created with the same index will have a different generation, letting you know it is not the same entity.  
 
-If an entity has been destroyed via `ecs.destroy_entity()`, use `is_entity_expired` to check its status:
+If an entity has been destroyed via `ecs.destroy_entity()`, use `is_expired` to check its status:
 
 ```odin
-    ecs.is_entity_expired(&db, my_entity_id) // returns true if the entity was destroyed
+    ecs.is_expired(&db, my_entity_id) // returns true if the entity expired (was destroyed)
 ```
 
 This procedure compares the entity's generation (`gen`) against the database records. 

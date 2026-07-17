@@ -196,7 +196,7 @@ package ode_ecs
         n := table_raw__len(min_table)
         for r := 0; r < n; r += 1 {
             eid := min_table.rid_to_eid[r] // current occupant (swaps below keep unvisited rows unvisited)
-            if is_deleted(eid) do continue // hole (removal while tail swap was paused)
+            if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
             if uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) {
                 group__swap_in(self, eid)

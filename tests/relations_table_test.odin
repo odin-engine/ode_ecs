@@ -353,7 +353,7 @@ package ode_ecs__tests
 
             // Default destroy: children are orphaned, p is unlinked from g
             testing.expect(t, ecs.destroy_entity(&db, p) == nil)
-            testing.expect(t, ecs.is_entity_expired(&db, p))
+            testing.expect(t, ecs.is_expired(&db, p))
 
             rel__no_parent(t, &db, c1)
             rel__no_parent(t, &db, c2)
@@ -421,10 +421,10 @@ package ode_ecs__tests
             testing.expect(t, ecs.destroy_entity(&db, root, destroy_children=true) == nil)
 
             for eid in ([]ecs.entity_id{ root, a, b, a1, a2, b1 }) {
-                testing.expect(t, ecs.is_entity_expired(&db, eid))
+                testing.expect(t, ecs.is_expired(&db, eid))
             }
             for eid in ([]ecs.entity_id{ r2, x, u }) {
-                testing.expect(t, !ecs.is_entity_expired(&db, eid))
+                testing.expect(t, !ecs.is_expired(&db, eid))
             }
 
             // Component/tag tables shrank by exactly the destroyed subtree
@@ -443,9 +443,9 @@ package ode_ecs__tests
             testing.expect(t, ecs.set_parent(&db, o, n) == nil)
 
             testing.expect(t, ecs.destroy_entity(&db, n, destroy_children=true) == nil)
-            testing.expect(t, ecs.is_entity_expired(&db, n))
-            testing.expect(t, ecs.is_entity_expired(&db, o))
-            testing.expect(t, !ecs.is_entity_expired(&db, m))
+            testing.expect(t, ecs.is_expired(&db, n))
+            testing.expect(t, ecs.is_expired(&db, o))
+            testing.expect(t, !ecs.is_expired(&db, m))
             rel__children_are(t, &db, m, {})
             testing.expect(t, ecs.table_len(&rt) == 1) // only x <- r2 left
     }

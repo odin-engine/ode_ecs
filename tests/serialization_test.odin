@@ -149,8 +149,8 @@ package ode_ecs__tests
 
             for i := 0; i < 20; i += 1 {
                 eid := eids[i]
-                expired_a := ecs.is_entity_expired(&a.db, eid)
-                expired_b := ecs.is_entity_expired(&b.db, eid)
+                expired_a := ecs.is_expired(&a.db, eid)
+                expired_b := ecs.is_expired(&b.db, eid)
                 testing.expect(t, expired_a == expired_b)
                 if expired_a do continue
 
@@ -184,7 +184,7 @@ package ode_ecs__tests
             // Relations
             for i := 0; i < 20; i += 1 {
                 eid := eids[i]
-                if ecs.is_entity_expired(&a.db, eid) do continue
+                if ecs.is_expired(&a.db, eid) do continue
 
                 parent_a, pa_err := ecs.parent_of(&a.db, eid)
                 parent_b, pb_err := ecs.parent_of(&b.db, eid)
@@ -264,9 +264,9 @@ package ode_ecs__tests
             testing.expect(t, ecs.deserialize(&db_b, buf) == nil)
 
             // The destroyed id is expired in B, live ids are not
-            testing.expect(t, ecs.is_entity_expired(&db_b, eids[2]))
-            testing.expect(t, !ecs.is_entity_expired(&db_b, eids[0]))
-            testing.expect(t, !ecs.is_entity_expired(&db_b, eids[4]))
+            testing.expect(t, ecs.is_expired(&db_b, eids[2]))
+            testing.expect(t, !ecs.is_expired(&db_b, eids[0]))
+            testing.expect(t, !ecs.is_expired(&db_b, eids[4]))
 
             // Creating a new entity behaves identically in A and B:
             // same recycled index, same bumped generation
@@ -366,7 +366,7 @@ package ode_ecs__tests
                 eid := ecs.get_entity(&it)
                 pos := ecs.get_component(&positions_b, &it)
                 testing.expect(t, pos.x >= 2) // tagged entities 0 and 1 excluded
-                testing.expect(t, !ecs.is_entity_expired(&db_b, eid))
+                testing.expect(t, !ecs.is_expired(&db_b, eid))
             }
     }
 
@@ -671,7 +671,7 @@ package ode_ecs__tests
             testing.expect(t, ecs.deserialize(&db, buf) == nil)
 
             testing.expect(t, ecs.entities_len(&db) == 3)
-            testing.expect(t, !ecs.is_entity_expired(&db, eids[1])) // alive again
+            testing.expect(t, !ecs.is_expired(&db, eids[1])) // alive again
 
             pos0 = ecs.get_component(&positions, eids[0])
             testing.expect(t, pos0 != nil && pos0.x == 100) // value restored

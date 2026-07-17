@@ -182,7 +182,7 @@ package ode_ecs
             if target_rid == self.len - 1 {
                 self.len -= 1
                 // absorb trailing holes so they never need packing
-                for self.len > 0 && is_deleted(self.rid_to_eid[self.len - 1]) {
+                for self.len > 0 && is_not_set(self.rid_to_eid[self.len - 1]) {
                     self.len -= 1
                     self.holes_count -= 1
                 }
@@ -204,7 +204,7 @@ package ode_ecs
         tail_rid := self.len - 1
         tail_eid := self.rid_to_eid[tail_rid]
 
-        assert(!is_deleted(tail_eid))
+        assert(!is_not_set(tail_eid))
 
         tail :=oc_maps.tt_map__get(&self.eid_to_ptr, tail_eid.ix)
         assert(tail != nil)
@@ -224,7 +224,7 @@ package ode_ecs
         }
         else {
             tail_eid := self.rid_to_eid[tail_rid]
-            assert(!is_deleted(tail_eid))
+            assert(!is_not_set(tail_eid))
 
             // DATA COPY
             mem.copy(target, tail, T_size)
@@ -352,14 +352,14 @@ package ode_ecs
 
         for self.holes_count > 0 {
             // shrink span past trailing holes
-            for back >= 0 && is_deleted(self.rid_to_eid[back]) {
+            for back >= 0 && is_not_set(self.rid_to_eid[back]) {
                 back -= 1
                 self.holes_count -= 1
             }
             if self.holes_count <= 0 do break
 
             // next hole from the front; guaranteed to exist below back
-            for !is_deleted(self.rid_to_eid[front]) do front += 1
+            for !is_not_set(self.rid_to_eid[front]) do front += 1
 
             // move the last live row into the hole
             dst := rawptr(uintptr(rows) + uintptr(front) * uintptr(T_size))

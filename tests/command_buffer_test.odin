@@ -96,7 +96,7 @@ package ode_ecs__tests
             testing.expect(t, ecs.command_buffer_len(&cb) == 0) // cleared after replay
 
             // destroyed entity gone; ai removed from one; spawn visible now
-            testing.expect(t, ecs.is_entity_expired(&db, eids[1]))
+            testing.expect(t, ecs.is_expired(&db, eids[1]))
             testing.expect(t, !ecs.has_component(&ais, eids[2]))
             testing.expect(t, ecs.has_component(&positions, eids[2]))
 
@@ -198,7 +198,7 @@ package ode_ecs__tests
             skipped, rerr = ecs.replay(&cb)
             testing.expect(t, rerr == nil)
             testing.expect(t, skipped == 2) // the add and the second destroy
-            testing.expect(t, ecs.is_entity_expired(&db, eid2))
+            testing.expect(t, ecs.is_expired(&db, eid2))
             testing.expect(t, ecs.table_len(&positions) == 0)
     }
 

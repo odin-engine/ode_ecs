@@ -438,7 +438,7 @@ package ode_ecs
 
         for i:= 0; i < shared_table__len(min_table); i+=1 {
             eid = shared_table__get_entity_by_row_number(min_table, i)
-            if is_deleted(eid) do continue // hole (removal while tail swap was paused)
+            if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
             // check if view bits is subset of entity bits
             if view_entity_match(self, eid) {
@@ -551,7 +551,7 @@ package ode_ecs
         eid: entity_id
         for i := 0; i < shared_table__len(min_table); i += 1 {
             eid = shared_table__get_entity_by_row_number(min_table, i)
-            if is_deleted(eid) do continue // hole (removal while tail swap was paused)
+            if is_not_set(eid) do continue // hole (removal while tail swap was paused)
             if self.eid_to_rid[eid.ix] != VIEW_NO_RID do continue // already a member
             if !view_entity_match(self, eid) do continue
 

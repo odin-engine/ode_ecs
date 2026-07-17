@@ -580,7 +580,7 @@ package ode_ecs
             for _ in 0..<4 { // parent, first_child, next_sibling, prev_sibling
                 links := snap_reader__entity_ids(&r, saved_cap) or_return
                 for e in links {
-                    if is_deleted(e) do continue
+                    if is_not_set(e) do continue
                     if e.ix < 0 || e.ix >= saved_cap do return API_Error.Snapshot_Invalid
                     if saved_items[e.ix] != e do return API_Error.Snapshot_Invalid
                 }

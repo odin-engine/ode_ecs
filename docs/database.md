@@ -63,7 +63,7 @@ When an entity is destroyed its index is recycled, but the generation is bumped.
 saved := robot                            // stored somewhere in game code
 ecs.destroy_entity(&my_ecs, robot)
 
-ecs.is_entity_expired(&my_ecs, saved)     // true — this ID refers to a destroyed entity
+ecs.is_expired(&my_ecs, saved)     // true — this ID refers to a destroyed entity
 ```
 
 Procedures that take an `entity_id` validate it and return `API_Error.Entity_Id_Expired` (or `Entity_Id_Out_of_Bounds`) for stale IDs.

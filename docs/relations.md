@@ -126,7 +126,7 @@ main :: proc() {
     // Ship explodes — turrets go with it
     ecs.destroy_entity(&my_ecs, ship, destroy_children = true)
 
-    ecs.is_entity_expired(&my_ecs, turret1) // true
+    ecs.is_expired(&my_ecs, turret1) // true
 }
 ```
 

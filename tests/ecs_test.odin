@@ -1252,13 +1252,13 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.clear(&db) == nil)
         testing.expect(t, ecs.entities_len(&db) == 0)
-        testing.expect(t, ecs.is_entity_expired(&db, old_eid))
+        testing.expect(t, ecs.is_expired(&db, old_eid))
 
         new_eid, err2 := ecs.create_entity(&db)
         testing.expect(t, err2 == nil)
         testing.expect(t, new_eid.ix == old_eid.ix)   // same slot...
         testing.expect(t, new_eid != old_eid)         // ...but different generation
-        testing.expect(t, ecs.is_entity_expired(&db, old_eid))
+        testing.expect(t, ecs.is_expired(&db, old_eid))
     }
 
     // Terminating a table must not strand its subscriber views:
@@ -1397,7 +1397,7 @@ package ode_ecs__tests
         // ...but the clear itself must be complete, not torn
         testing.expect(t, ecs.entities_len(&db) == 0)
         testing.expect(t, ecs.table_len(&positions) == 0)
-        testing.expect(t, ecs.is_entity_expired(&db, eid))
+        testing.expect(t, ecs.is_expired(&db, eid))
     }
 
     // destroy_entity iterates the entity's set bits; make sure table ids in the

@@ -59,7 +59,7 @@ package ode_ecs
         entities_len            :: database__entities_len
         create_entity           :: database__create_entity
         destroy_entity          :: database__destroy_entity
-        is_entity_expired       :: database__is_entity_expired    // Generation of entity in database does not match the one in provided entity_id
+        is_expired              :: database__is_entity_expired    // Generation of entity in database does not match the one in provided entity_id
         pause_tail_swap         :: database__pause_packing
         resume_tail_swap        :: database__resume_packing
 
@@ -158,6 +158,8 @@ package ode_ecs
     // Outdated aliases (will be removed in future)
     // 
         view_entity_match   :: view__components_match               // outdated, use view_components_match instead
+        is_entity_expired   :: database__is_entity_expired          // outdated, use is_expired instead
+        is_deleted          :: is_not_set                           // outdated, use is_not_set instead       
 
     //
     // Proc groups
@@ -426,6 +428,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Globals
 
-    is_deleted :: #force_inline proc "contextless" (e: entity_id) -> bool {
+    is_not_set :: #force_inline proc "contextless" (e: entity_id) -> bool {
         return e.ix == DELETED_INDEX
     }

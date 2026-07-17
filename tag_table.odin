@@ -190,7 +190,7 @@ package ode_ecs
             if target_rid == raw.len - 1 {
                 raw.len -= 1
                 // absorb trailing holes so they never need packing
-                for raw.len > 0 && is_deleted(self.rows[raw.len - 1]) {
+                for raw.len > 0 && is_not_set(self.rows[raw.len - 1]) {
                     raw.len -= 1
                     self.holes_count -= 1
                 }
@@ -228,7 +228,7 @@ package ode_ecs
 
         } else {
             tail_eid := tail_ptr^
-            assert(!is_deleted(tail_eid))
+            assert(!is_not_set(tail_eid))
 
             // Update tail indexes
             oc_maps.rh_map__update(&self.eid_to_ptr, tail_eid.ix, target_ptr)
@@ -282,14 +282,14 @@ package ode_ecs
 
         for self.holes_count > 0 {
             // shrink span past trailing holes
-            for back >= 0 && is_deleted(self.rows[back]) {
+            for back >= 0 && is_not_set(self.rows[back]) {
                 back -= 1
                 self.holes_count -= 1
             }
             if self.holes_count <= 0 do break
 
             // next hole from the front; guaranteed to exist below back
-            for !is_deleted(self.rows[front]) do front += 1
+            for !is_not_set(self.rows[front]) do front += 1
 
             // move the last live row's tag into the hole
             moved_eid := self.rows[back]
