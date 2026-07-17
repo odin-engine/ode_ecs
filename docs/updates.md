@@ -8,6 +8,7 @@
 * \*new\* [Groups](group.md)
 * \*new\* Defer tail-swap feature (pause_packing/resume_packing/pack) ([Database](database.md), [Group](group.md) and [Table](tables.md) levels).
 * \*new\* [Relations_Table](relations.md) (parent/child entity relations) feature.
+* \*new\* Saving and loading (snapshots).
 * Added a dense (aligned) path optimization for Views (~2x speed increase if the view and tables are aligned).
 * Micro-optimizations.
 * Improvements and bug fixes.
