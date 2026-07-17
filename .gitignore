@@ -41,3 +41,4 @@ ode_core/!out/.keep
 
 benchmarks/out/*
 !benchmarks/out/.keep
+*-autosave.kra

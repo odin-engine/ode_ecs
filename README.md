@@ -1,4 +1,4 @@
-![alt text](https://github.com/odin-engine/imgs/blob/main/ode_ecs_v1.png?raw=true)
+![alt text](/img/banner.png?raw=true)
 # ⚡ODE_ECS (Entity-Component-System)
 
 A minimal, data-oriented, high-performance Entity-Component-System written in Odin.
