@@ -373,6 +373,68 @@ package ode_ecs
         return
     }
 
+    @(private)
+    // Adds (or finds) the entity's row and returns a pointer to the component.
+    // If `data` is not nil it is copied into the component BEFORE the group hook
+    // and subscriber notifications run (view filters read component data through
+    // the row refs), and it also overwrites the existing value on the
+    // Component_Already_Exist path — "last write wins", used by Command_Buffer.
+    // #no_bounds_check: callers validate eid via database__is_entity_correct,
+    // len(eid_to_rid) == db.id_factory.cap; row indexes derive from raw.len < cap
+    table_raw__add_component :: proc(self: ^Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
+        raw := (^runtime.Raw_Slice)(&self.rows)
+
+        rid := self.eid_to_rid[eid.ix]
+
+        // Check if component already exist
+        if rid == TABLE_NO_RID {
+            // Capacity only matters when actually inserting — re-adding an
+            // existing component on a full table must still report Component_Already_Exist
+            if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
+
+            // Get component
+            component = table_raw__rid_to_ptr(self, raw.len)
+            if data != nil do mem.copy(component, data, self.type_info.size)
+
+            // Update eid_to_rid
+            self.eid_to_rid[eid.ix] = u32(raw.len)
+
+            // Update rid_to_eid
+            self.rid_to_eid[raw.len] = eid
+
+            // Update eid_to_bits in db
+            database__add_component(self.db, eid, self.id)
+
+            raw.len += 1
+
+            // Group maintenance: if the entity now has every owned component, swap
+            // its rows into the group prefix (deferred while tail swap is paused).
+            // Before the subscriber loop so views record the final addresses.
+            if self.owner != nil {
+                group__on_add(self.owner, eid)
+                // the swap may have moved the new row — re-derive the returned pointer
+                component = table_raw__rid_to_ptr(self, self.eid_to_rid[eid.ix])
+            }
+        } else {
+            component = table_raw__rid_to_ptr(self, rid)
+            if data != nil do mem.copy(component, data, self.type_info.size)
+            err = API_Error.Component_Already_Exist
+        }
+
+        // Notify subscribed views. Also runs on the already-exists path on purpose: it
+        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
+        for view in self.subscribers.items {
+            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
+
+        // Views excluding this table lose the entity (no-op if it wasn't a member)
+        for view in self.subscribers_excluding.items {
+            if !view.suspended do view__remove_record(view, eid)
+        }
+
+        return
+    }
+
     // Compact holes left by removals made while tail swap was paused: each hole is
     // filled with the current last live row — exactly holes_count moves, the minimum
     // possible (rows are unordered, so order does not need to be preserved).
@@ -539,67 +601,8 @@ package ode_ecs
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        raw := (^runtime.Raw_Slice)(&self.rows)
-
-        // #no_bounds_check: eid.ix validated by database__is_entity_correct above,
-        // len(eid_to_rid) == db.id_factory.cap
-        rid: u32 = ---
-        #no_bounds_check {
-            rid = self.eid_to_rid[eid.ix]
-        }
-
-        // Check if component already exist
-        if rid == TABLE_NO_RID {
-            // Capacity only matters when actually inserting — re-adding an
-            // existing component on a full table must still report Component_Already_Exist
-            if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
-
-            // #no_bounds_check: raw.len < cap == len(rows) == len(rid_to_eid) (checked above)
-            #no_bounds_check {
-                // Get component
-                component = &self.rows[raw.len]
-
-                // Update eid_to_rid
-                self.eid_to_rid[eid.ix] = u32(raw.len)
-
-                // Update rid_to_eid
-                self.rid_to_eid[raw.len] = eid
-            }
-
-            // Update eid_to_bits in db
-            database__add_component(self.db, eid, self.id)
-
-            raw.len += 1
-
-            // Group maintenance: if the entity now has every owned component, swap
-            // its rows into the group prefix (deferred while tail swap is paused).
-            // Before the subscriber loop so views record the final addresses.
-            if self.owner != nil {
-                group__on_add(self.owner, eid)
-                // the swap may have moved the new row — re-derive the returned pointer
-                #no_bounds_check {
-                    component = &self.rows[self.eid_to_rid[eid.ix]]
-                }
-            }
-        } else {
-            #no_bounds_check {
-                component = &self.rows[rid]
-            }
-            err = API_Error.Component_Already_Exist
-        }
-
-        // Notify subscribed views. Also runs on the already-exists path on purpose: it
-        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
-        for view in self.subscribers.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
-        }
-
-        // Views excluding this table lose the entity (no-op if it wasn't a member)
-        for view in self.subscribers_excluding.items {
-            if !view.suspended do view__remove_record(view, eid)
-        }
-
-        return
+        c, aerr := table_raw__add_component(cast(^Table_Raw) self, eid)
+        return cast(^T) c, aerr
     }
 
     // Compact holes left by removals made while tail swap was paused

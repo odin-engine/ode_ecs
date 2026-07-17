@@ -241,18 +241,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Table dispatch helpers
 
-    @(private)
-    shared_table__snapshot_type_info :: proc(table: ^Shared_Table) -> ^runtime.Type_Info {
-        #partial switch table.type {
-            case Table_Type.Table:
-                return (cast(^Table_Base) table).type_info
-            case Table_Type.Compact_Table:
-                return (cast(^Compact_Table_Base) table).type_info
-            case Table_Type.Tiny_Table:
-                return (cast(^Tiny_Table_Base) table).type_info
-        }
-        return nil // Tag_Table stores no component data
-    }
 
     @(private)
     shared_table__snapshot_holes_count :: proc(table: ^Shared_Table) -> int {
@@ -325,7 +313,7 @@ package ode_ecs
 
             n := shared_table__snapshot_len(table)
 
-            ti := shared_table__snapshot_type_info(table)
+            ti := shared_table__type_info(table)
             if ti != nil {
                 size = snap__align8(size + snapshot__name_len(ti))
                 size += n * size_of(entity_id)          // rid_to_eid
@@ -363,7 +351,7 @@ package ode_ecs
         if !allow_non_pod {
             for table in self.tables.items {
                 if table == nil do continue
-                ti := shared_table__snapshot_type_info(table)
+                ti := shared_table__type_info(table)
                 if ti != nil && !snapshot__type_is_pod(ti) do return 0, API_Error.Snapshot_Component_Not_POD
             }
         }
@@ -415,7 +403,7 @@ package ode_ecs
     @(private)
     shared_table__snapshot_write :: proc(table: ^Shared_Table, w: ^Snap_Writer) {
         n := shared_table__snapshot_len(table)
-        ti := shared_table__snapshot_type_info(table)
+        ti := shared_table__type_info(table)
 
         th := Snap_Table_Header{
             table_id   = i64(table.id),
@@ -554,7 +542,7 @@ package ode_ecs
             name_len := int(th.name_len)
             if name_len < 0 do return API_Error.Snapshot_Invalid
 
-            ti := shared_table__snapshot_type_info(table)
+            ti := shared_table__type_info(table)
             if ti != nil {
                 if int(th.comp_size) != ti.size || int(th.comp_align) != ti.align {
                     return API_Error.Snapshot_Schema_Mismatch

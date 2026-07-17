@@ -258,6 +258,62 @@ package ode_ecs
         return
     }
 
+    @(private)
+    // Adds (or finds) the entity's row and returns a pointer to the component.
+    // If `data` is not nil it is copied into the component BEFORE the subscriber
+    // notifications run (view filters read component data through the row refs),
+    // and it also overwrites the existing value on the Component_Already_Exist
+    // path — "last write wins", used by Command_Buffer.
+    // Contract: callers validate eid via database__is_entity_correct.
+    // The raw pointer math below matches &Tiny_Table(T).rows[len] — guaranteed
+    // by the offset_of #assert in tiny_table__init.
+    tiny_table_raw__add_component :: proc(self: ^Tiny_Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
+        component = oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
+
+        // Check if component already exist
+        if component == nil {
+            // Capacity only matters when actually inserting — re-adding an
+            // existing component on a full table must still report Component_Already_Exist
+            if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full
+
+            T_size := self.type_info.size
+
+            // Get component
+            component = rawptr(uintptr(&self.rows[0]) + uintptr(self.len) * uintptr(T_size))
+            if data != nil do mem.copy(component, data, T_size)
+
+            // Update eid_to_ptr
+            err = oc_maps.tt_map__add(&self.eid_to_ptr, eid.ix, component)
+            if err != nil do return nil, err
+
+            // Update rid_to_eid
+            self.rid_to_eid[self.len] = eid
+
+            // Update eid_to_bits in db
+            database__add_component(self.db, eid, self.id)
+
+            self.len += 1
+        } else {
+            if data != nil do mem.copy(component, data, self.type_info.size)
+            err = API_Error.Component_Already_Exist
+        }
+
+        // Notify subscribed views. Also runs on the already-exists path on purpose: it
+        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
+        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+            view := self.subscribers[i]
+            if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
+
+        // Views excluding this table lose the entity (no-op if it wasn't a member)
+        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+            view := self.subscribers_excluding[i]
+            if view != nil && !view.suspended do view__remove_record(view, eid)
+        }
+
+        return
+    }
+
     // clear data, nothing else
     @(private)
     tiny_table_raw__clear :: proc (self: ^Tiny_Table_Raw, zero_components := true) -> Error {
@@ -403,46 +459,8 @@ package ode_ecs
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        component = cast(^T) oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
-
-        // Check if component already exist
-        if component == nil {
-            // Capacity only matters when actually inserting — re-adding an
-            // existing component on a full table must still report Component_Already_Exist
-            if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full
-
-            // Get component
-            component = &self.rows[self.len]
-            
-            // Update eid_to_ptr
-            err = oc_maps.tt_map__add(&self.eid_to_ptr, eid.ix, cast(rawptr) component)
-            if err != nil do return nil, err
-
-            // Update rid_to_eid
-            self.rid_to_eid[self.len] = eid
-
-            // Update eid_to_bits in db
-            database__add_component(self.db, eid, self.id)
-
-            self.len += 1
-        } else {
-            err = API_Error.Component_Already_Exist
-        }
-
-        // Notify subscribed views. Also runs on the already-exists path on purpose: it
-        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
-        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
-            view := self.subscribers[i]
-            if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
-        }
-
-        // Views excluding this table lose the entity (no-op if it wasn't a member)
-        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
-            view := self.subscribers_excluding[i]
-            if view != nil && !view.suspended do view__remove_record(view, eid)
-        }
-
-        return
+        c, aerr := tiny_table_raw__add_component(cast(^Tiny_Table_Raw) self, eid)
+        return cast(^T) c, aerr
     }
 
     // Compact holes left by removals made while tail swap was paused

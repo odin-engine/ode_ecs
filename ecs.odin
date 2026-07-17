@@ -110,6 +110,36 @@ package ode_ecs
         iterator_reset      :: iterator__reset
 
     //
+    // Command_Buffer (deferred structural operations, see command_buffer.odin)
+    //
+        command_buffer_init      :: command_buffer__init          // Preallocate a buffer bound to a Database (commands_cap records, payload_cap bytes)
+        command_buffer_terminate :: command_buffer__terminate
+        command_buffer_len       :: command_buffer__len           // Number of recorded (not yet replayed) commands
+        command_buffer_cap       :: command_buffer__cap
+        replay                   :: command_buffer__replay        // Apply all commands in recorded order, then clear the buffer
+
+        cmd_destroy_entity  :: command_buffer__destroy_entity     // Record: destroy entity (optionally with children)
+        cmd_add_tag         :: command_buffer__add_tag            // Record: tag entity
+        cmd_tag             :: command_buffer__add_tag
+        cmd_remove_tag      :: command_buffer__remove_tag         // Record: untag entity
+        cmd_untag           :: command_buffer__remove_tag
+
+        // Record: add component with its value (copied into the buffer now,
+        // written into the table at replay; overwrites if it already exists)
+        cmd_add_component   :: proc {
+            command_buffer__add_component_for_table,
+            command_buffer__add_component_for_compact_table,
+            command_buffer__add_component_for_tiny_table,
+        }
+
+        // Record: remove component
+        cmd_remove_component :: proc {
+            command_buffer__remove_component_for_table,
+            command_buffer__remove_component_for_compact_table,
+            command_buffer__remove_component_for_tiny_table,
+        }
+
+    //
     // Relations (parent/child), require a Relations_Table on the database,
     // see relations_table__init
     //
@@ -244,6 +274,7 @@ package ode_ecs
             tiny_table__clear,
             tag_table__clear,
             relations_table__clear,
+            command_buffer__clear,
         }
 
         // Compact holes left by removals made while tail swap was paused,
@@ -307,6 +338,7 @@ package ode_ecs
             tiny_table__memory_usage,
             tag_table__memory_usage,
             relations_table__memory_usage,
+            command_buffer__memory_usage,
         }
 
         // Is object valid (initialized and everything is ok)
@@ -319,6 +351,7 @@ package ode_ecs
             tiny_table__is_valid,
             tag_table__is_valid,
             relations_table__is_valid,
+            command_buffer__is_valid,
         }
 
 ///////////////////////////////////////////////////////////////////////////////

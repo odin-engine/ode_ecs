@@ -7,6 +7,9 @@
 
 package ode_ecs
 
+// Base
+    import "base:runtime"
+
 ///////////////////////////////////////////////////////////////////////////////
 // Shared_Table - data shared between all tables
 
@@ -161,6 +164,19 @@ package ode_ecs
         return entity_id{ix = DELETED_INDEX}
     }
 
+    // Component type info of the table, nil for Tag_Table (no component data)
+    shared_table__type_info :: proc(self: ^Shared_Table) -> ^runtime.Type_Info {
+        #partial switch self.type {
+            case Table_Type.Table:
+                return (cast(^Table_Base) self).type_info
+            case Table_Type.Compact_Table:
+                return (cast(^Compact_Table_Base) self).type_info
+            case Table_Type.Tiny_Table:
+                return (cast(^Tiny_Table_Base) self).type_info
+        }
+        return nil
+    }
+
     shared_table__get_component :: proc (self: ^Shared_Table, eid: entity_id) -> rawptr {
         switch self.type {
             case Table_Type.Unknown:
@@ -178,6 +194,29 @@ package ode_ecs
         assert(false) // should not happen
         return nil
     } 
+
+    // Type-erased add. If `data` is not nil, it is copied into the component
+    // before subscriber notifications run (and overwrites the value when the
+    // component already exists — see the per-variant raw procs). Used by
+    // Command_Buffer replay. Contract: caller validates eid via
+    // database__is_entity_correct (Tag_Table re-validates internally, harmless).
+    shared_table__add_component :: proc (self: ^Shared_Table, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                return table_raw__add_component(cast(^Table_Raw) self, eid, data)
+            case Table_Type.Tiny_Table:
+                return tiny_table_raw__add_component(cast(^Tiny_Table_Raw) self, eid, data)
+            case Table_Type.Compact_Table:
+                return compact_table_raw__add_component(cast(^Compact_Table_Raw) self, eid, data)
+            case Table_Type.Tag_Table:
+                return nil, tag_table__add_tag(cast(^Tag_Table) self, eid) // no component data
+        }
+
+        assert(false) // should not happen
+        return nil, API_Error.Unexpected_Error
+    }
 
     shared_table__remove_component :: proc (self: ^Shared_Table, eid: entity_id) -> Error {
         switch self.type {

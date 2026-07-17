@@ -295,6 +295,59 @@ package ode_ecs
         return
     }
 
+    @(private)
+    // Adds (or finds) the entity's row and returns a pointer to the component.
+    // If `data` is not nil it is copied into the component BEFORE the subscriber
+    // notifications run (view filters read component data through the row refs),
+    // and it also overwrites the existing value on the Component_Already_Exist
+    // path — "last write wins", used by Command_Buffer.
+    // #no_bounds_check: callers validate eid via database__is_entity_correct;
+    // row indexes derive from raw.len < cap or from the rid map
+    compact_table_raw__add_component :: proc(self: ^Compact_Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
+        raw := (^runtime.Raw_Slice)(&self.rows)
+
+        rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix))
+
+        // Check if component already exist
+        if rid == oc_maps.RH_MAP32_DELETED {
+            // Capacity only matters when actually inserting — re-adding an
+            // existing component on a full table must still report Component_Already_Exist
+            if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
+
+            // Get component
+            component = compact_table_raw__rid_to_ptr(self, raw.len)
+            if data != nil do mem.copy(component, data, self.type_info.size)
+
+            // Update rid_to_eid
+            self.rid_to_eid[raw.len] = eid
+
+            // Add eid_to_rid
+            oc_maps.rh_map32__add(&self.eid_to_rid, u32(eid.ix), u32(raw.len)) or_return
+
+            // Update eid_to_bits in db
+            database__add_component(self.db, eid, self.id)
+
+            raw.len += 1
+        } else {
+            component = compact_table_raw__rid_to_ptr(self, rid)
+            if data != nil do mem.copy(component, data, self.type_info.size)
+            err = API_Error.Component_Already_Exist
+        }
+
+        // Notify subscribed views. Also runs on the already-exists path on purpose: it
+        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
+        for view in self.subscribers.items {
+            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
+
+        // Views excluding this table lose the entity (no-op if it wasn't a member)
+        for view in self.subscribers_excluding.items {
+            if !view.suspended do view__remove_record(view, eid)
+        }
+
+        return
+    }
+
     // Compact holes left by removals made while tail swap was paused,
     // see table_raw__pack for the algorithm
     @(private)
@@ -452,51 +505,8 @@ package ode_ecs
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        raw := (^runtime.Raw_Slice)(&self.rows)
-
-        rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix))
-
-        // Check if component already exist
-        if rid == oc_maps.RH_MAP32_DELETED {
-            // Capacity only matters when actually inserting — re-adding an
-            // existing component on a full table must still report Component_Already_Exist
-            if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
-
-            // #no_bounds_check: raw.len < cap == len(rows) == len(rid_to_eid) (checked above)
-            #no_bounds_check {
-                // Get component
-                component = &self.rows[raw.len]
-
-                // Update rid_to_eid
-                self.rid_to_eid[raw.len] = eid
-            }
-
-            // Add eid_to_rid
-            oc_maps.rh_map32__add(&self.eid_to_rid, u32(eid.ix), u32(raw.len)) or_return
-
-            // Update eid_to_bits in db
-            database__add_component(self.db, eid, self.id)
-
-            raw.len += 1
-        } else {
-            #no_bounds_check {
-                component = &self.rows[rid]
-            }
-            err = API_Error.Component_Already_Exist
-        }
-
-        // Notify subscribed views. Also runs on the already-exists path on purpose: it
-        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
-        for view in self.subscribers.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
-        }
-
-        // Views excluding this table lose the entity (no-op if it wasn't a member)
-        for view in self.subscribers_excluding.items {
-            if !view.suspended do view__remove_record(view, eid)
-        }
-
-        return
+        c, aerr := compact_table_raw__add_component(cast(^Compact_Table_Raw) self, eid)
+        return cast(^T) c, aerr
     }
 
     // Compact holes left by removals made while tail swap was paused
