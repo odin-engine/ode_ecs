@@ -77,7 +77,9 @@ package ode_ecs
         view_len                :: view__len                        // Number of rows in view
         view_cap                :: view__cap                        // Maximum number of rows of view
         rebuild                 :: view__rebuild                    // Rebuild view and fill it with entities matching view's tables
-        view_components_match   :: view__components_match           // Returns true if entity has components that would match this view, doesn't check filter
+        refilter                :: view__refilter                   // Re-evaluate the view's filter for all rows and candidates in one sweep (after bulk mutations)
+        rerun_filter            :: view__rerun_filter               // Rerun filter for one entity
+        view_components_match   :: view__components_match           // Returns true if entity has components that would match this view (includes AND excludes), doesn't check filter
         suspend                 :: view__suspend                    // Stop updating view when entities are created/destroyed or components/tags are added/removed
         resume                  :: view__resume                     // Resume updating view after calling suspend
         view_dense_slice        :: view__dense_slice                // Components in view-row order as one contiguous slice (nil if view is not dense-aligned)
@@ -161,6 +163,14 @@ package ode_ecs
             table__remove_component,
             compact_table__remove_component,
             tiny_table__remove_component,
+        }
+
+        // Rerun filters of views subscribed to a table, for one entity — call after
+        // mutating component data a view filter depends on (or use refilter for bulk)
+        rerun_views_filters :: proc {
+            table__rerun_views_filters,
+            compact_table__rerun_views_filters,
+            tiny_table__rerun_views_filters,
         }
 
         // Get component from different tables or iterator or view_row
@@ -353,6 +363,7 @@ package ode_ecs
             Only_Table_Can_Be_Owned_By_Group, // groups cannot own Compact_Table/Tiny_Table/Tag_Table
             Table_Already_Owned_By_Group,     // a table can have at most one owner group
             Cannot_Pause_Table_Owned_By_Group, // pause/resume_packing reject a table owned by a Group; pause/resume the Group instead
+            Table_Cannot_Be_Included_And_Excluded, // view_init got the same table in `includes` and `excludes`
         }
 
         Error :: union #shared_nil {

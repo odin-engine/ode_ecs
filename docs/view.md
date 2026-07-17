@@ -86,7 +86,30 @@ Only `Table` columns participate (`Compact_Table`/`Tiny_Table`/`Tag_Table` colum
 
 Alignment here is *detected*, so it can be lost (e.g. an entity removes one component but keeps the other). If you need slices that are **always** valid for a hot set of components, a [Group](group.md) enforces alignment instead of detecting it — at the cost of a row swap per membership change.
 
+## Excludes
+
+Besides the included tables, `view_init` takes an optional `excludes` list — an entity enters the view only if it has a component in **none** of the excluded tables ("has `Position` but NOT `Stunned`"):
+
+```odin
+positions: ecs.Table(Position)
+stunned:   ecs.Tag_Table
+view:      ecs.View
+
+// All entities with a Position that are NOT tagged stunned
+ecs.view_init(&view, &my_ecs, {&positions}, excludes = {&stunned})
+```
+
+Any table variant can be excluded. Excluded tables are **not** columns: they contribute no component data, don't affect `view_cap`, and can't be read through the view — they only gate membership. The view keeps itself up to date automatically: adding the excluded component (or tag) to a member removes it from the view, removing the component puts it back (if everything else still matches).
+
+Excludes cost one extra bitset test per membership check — prefer them over an equivalent proc filter, which costs an indirect call plus manual re-evaluation.
+
 ## Filters
+
+Three ways to narrow a view beyond "has all included components", fastest first:
+
+1. **`excludes`** (above) — for *structural* negation ("has A, not B"). Auto-maintained, one bitset test.
+2. **A `Tag_Table` in `includes`** — for predicates over *mutable data* that you can maintain explicitly. Instead of filtering on `health.hp > 0`, keep an `alive` tag and `add_tag`/`remove_tag` where `hp` changes; the view follows automatically.
+3. **A filter proc** (below) — when the predicate genuinely needs code. Costs an indirect call per candidate entity, and *you* must re-evaluate entities whose data changes.
 
 A filter is a proc passed to `view_init` that decides per entity whether it enters the view, on top of the component match:
 
@@ -127,10 +150,19 @@ The filter runs when membership *changes* (component added/removed etc.), not wh
 ```odin
 health := ecs.get_component(&healths, eid)
 health.hp = 0
-ecs.table__rerun_views_filters(&healths, eid) // re-runs filters of subscribed views for eid
+ecs.rerun_views_filters(&healths, eid) // re-runs filters of subscribed views for eid
 ```
 
-(`compact_table__rerun_views_filters` / `tiny_table__rerun_views_filters` for the other variants.)
+(A proc group over `table__rerun_views_filters` / `compact_table__rerun_views_filters` / `tiny_table__rerun_views_filters`.)
+
+After *bulk* mutations, re-evaluate the whole view in one sweep instead:
+
+```odin
+for eid in wave_of_damage { ecs.get_component(&healths, eid).hp -= 10 }
+ecs.refilter(&view) // removes rows that stopped matching, adds candidates that now match
+```
+
+`refilter` is cheaper than `rebuild`: it doesn't clear the view, surviving rows keep their positions (and their dense alignment), and only entities whose match actually changed move. It's a no-op on a view without a filter.
 
 See [Sample06](../samples/sample06/main.odin) for a complete filter example.
 

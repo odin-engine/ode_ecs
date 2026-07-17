@@ -25,6 +25,7 @@ package ode_ecs
         rid_to_eid: [TINY_TABLE__ROW_CAP]entity_id,
         eid_to_ptr: oc_maps.Tt_Map(TINY_TABLE__MAP_CAP, rawptr),
         subscribers: [TINY_TABLE__VIEWS_CAP]^View,
+        subscribers_excluding: [TINY_TABLE__VIEWS_CAP]^View, // views that EXCLUDE this table (see view__init excludes)
         len: int,
 
         // Deferred tail swap (db.tail_swap_paused) hole bookkeeping, see Table_Base
@@ -46,9 +47,10 @@ package ode_ecs
         shared_table__init(&self.shared, Table_Type.Tiny_Table, db)
 
         // Unlike Table/Compact_Table, whose subscriber arrays are re-allocated
-        // fresh on init, this fixed array survives terminate + re-init
+        // fresh on init, these fixed arrays survive terminate + re-init
         // (issue #8) and would keep notifying views from a previous life.
         self.subscribers = {}
+        self.subscribers_excluding = {}
 
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
@@ -60,6 +62,7 @@ package ode_ecs
     tiny_table_base__terminate :: proc(self: ^Tiny_Table_Base) ->Error {
 
         for view in self.subscribers do if view != nil do view.state = Object_State.Invalid
+        for view in self.subscribers_excluding do if view != nil do view.state = Object_State.Invalid
 
         // Clear this table's bit from all entities, see table_raw__terminate
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
@@ -88,11 +91,45 @@ package ode_ecs
         for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
             if self.subscribers[i] == view {
                 self.subscribers[i] = nil
-                return nil 
+                return nil
             }
         }
 
         return oc.Core_Error.Not_Found
+    }
+
+    @(private)
+    tiny_table_base__attach_exclude_subscriber :: proc(self: ^Tiny_Table_Base, view: ^View) -> Error {
+        for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
+            if self.subscribers_excluding[i] == nil {
+                self.subscribers_excluding[i] = view
+                return nil
+            }
+        }
+
+        return oc.Core_Error.Container_Is_Full
+    }
+
+    @(private)
+    tiny_table_base__detach_exclude_subscriber :: proc(self: ^Tiny_Table_Base, view: ^View) -> Error {
+        for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
+            if self.subscribers_excluding[i] == view {
+                self.subscribers_excluding[i] = nil
+                return nil
+            }
+        }
+
+        return oc.Core_Error.Not_Found
+    }
+
+    @(private)
+    // See table_base__notify_excluding_views
+    tiny_table_base__notify_excluding_views :: proc(self: ^Tiny_Table_Base, eid: entity_id) {
+        if self.db.destroying_eid_ix == eid.ix do return
+        for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+            view := self.subscribers_excluding[i]
+            if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
     }
 
     @(private)
@@ -160,6 +197,7 @@ package ode_ecs
             }
 
             database__remove_component(self.db, target_eid, self.id)
+            tiny_table_base__notify_excluding_views(self, target_eid)
             return
         }
 
@@ -214,6 +252,8 @@ package ode_ecs
 
         // Update eid_to_bits in db
         database__remove_component(self.db, target_eid, self.id)
+
+        tiny_table_base__notify_excluding_views(self, target_eid)
 
         return
     }
@@ -394,6 +434,12 @@ package ode_ecs
         for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
             view := self.subscribers[i]
             if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
+
+        // Views excluding this table lose the entity (no-op if it wasn't a member)
+        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+            view := self.subscribers_excluding[i]
+            if view != nil && !view.suspended do view__remove_record(view, eid)
         }
 
         return

@@ -417,6 +417,15 @@ If an entity has been destroyed via `ecs.destroy_entity()`, use `is_entity_expir
 
 This procedure compares the entity's generation (`gen`) against the database records. 
 
+### View Excludes
+
+Besides included tables, `ecs.view_init` takes an optional `excludes` list — the view keeps only entities that have a component in **none** of the excluded tables ("has `Position` but NOT `Stunned`"). It is auto-maintained (adding/removing the excluded component updates the view) and costs a single bitset test, so prefer it over an equivalent filter proc:
+
+```odin
+    // All entities with a Position that are NOT tagged stunned
+    err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
+```
+
 ### View Filter
 
 A view filter is a `proc` that you can pass to `ecs.view_init` to filter view data. It allows you to create views based on any custom logic.
@@ -453,6 +462,8 @@ A view filter is a `proc` that you can pass to `ecs.view_init` to filter view da
 ```
 
 The `my_filter` proc determines whether an entity (and its components) will be added to the view.
+
+The filter runs when view membership *changes*, not when component values change. After mutating data a filter depends on, re-evaluate one entity with `ecs.rerun_views_filters(&table, eid)`, or the whole view in one sweep with `ecs.refilter(&view)` (cheaper than `rebuild` — no clear, surviving rows stay put).
 
 Check [Sample06](/samples/sample06/main.odin) for an example of how to use a View filter.
 

@@ -264,7 +264,7 @@ package ode_ecs
     }
 
     @(private)
-    shared_table__detach_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error { 
+    shared_table__detach_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
                 assert(false) // should not happen
@@ -276,7 +276,45 @@ package ode_ecs
                 return compact_table_base__detach_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__detach_subscriber(cast(^Tag_Table)self, view)
-        } 
+        }
+
+        return API_Error.Unexpected_Error
+    }
+
+    @(private)
+    // A view that excludes this table subscribes here (not to `subscribers` — the
+    // table is not a view column, only membership notifications are needed).
+    shared_table__attach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                return table_base__attach_exclude_subscriber(cast(^Table_Base)self, view)
+            case Table_Type.Tiny_Table:
+                return tiny_table_base__attach_exclude_subscriber(cast(^Tiny_Table_Base)self, view)
+            case Table_Type.Compact_Table:
+                return compact_table_base__attach_exclude_subscriber(cast(^Compact_Table_Base)self, view)
+            case Table_Type.Tag_Table:
+                return tag_table__attach_exclude_subscriber(cast(^Tag_Table)self, view)
+        }
+
+        return API_Error.Unexpected_Error
+    }
+
+    @(private)
+    shared_table__detach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                return table_base__detach_exclude_subscriber(cast(^Table_Base)self, view)
+            case Table_Type.Tiny_Table:
+                return tiny_table_base__detach_exclude_subscriber(cast(^Tiny_Table_Base)self, view)
+            case Table_Type.Compact_Table:
+                return compact_table_base__detach_exclude_subscriber(cast(^Compact_Table_Base)self, view)
+            case Table_Type.Tag_Table:
+                return tag_table__detach_exclude_subscriber(cast(^Tag_Table)self, view)
+        }
 
         return API_Error.Unexpected_Error
     }

@@ -47,6 +47,7 @@ package ode_ecs
 
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
+        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
     }
 
     @(private)
@@ -59,8 +60,9 @@ package ode_ecs
         if self.cap <= 0 do return false
         if !oc.dense_arr__is_valid(&self.subscribers) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
+        if !oc.dense_arr__is_valid(&self.subscribers_excluding) do return false
 
-        return true 
+        return true
     }
 
     @(private)
@@ -82,12 +84,14 @@ package ode_ecs
 
         oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
+        oc.dense_arr__init(&self.subscribers_excluding, subscribers_cap, db.allocator) or_return
 
         return nil
     }
 
     @(private)
     table_base__terminate :: proc(self: ^Table_Base) -> Error {
+        oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
@@ -126,6 +130,28 @@ package ode_ecs
     }
 
     @(private)
+    table_base__attach_exclude_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        _, err := oc.dense_arr__add(&self.subscribers_excluding, view)
+        return err
+    }
+
+    @(private)
+    table_base__detach_exclude_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        return oc.dense_arr__remove_by_value(&self.subscribers_excluding, view)
+    }
+
+    @(private)
+    // After a component was removed from this table (eid_to_bits already updated),
+    // a view excluding this table may newly match the entity. Skipped while the
+    // entity itself is being destroyed — later removals would just evict it again.
+    table_base__notify_excluding_views :: proc(self: ^Table_Base, eid: entity_id) {
+        if self.db.destroying_eid_ix == eid.ix do return
+        for view in self.subscribers_excluding.items {
+            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
+    }
+
+    @(private)
     table_base__memory_usage :: proc (self: ^Table_Base) -> int {    
         total := size_of(self^)
 
@@ -142,6 +168,7 @@ package ode_ecs
 
         total += oc.dense_arr__memory_usage(&self.subscribers)
         total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
+        total += oc.dense_arr__memory_usage(&self.subscribers_excluding)
 
         return total
     }
@@ -204,6 +231,7 @@ package ode_ecs
     @(private)
     table_raw__terminate :: proc(self: ^Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
+        for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
 
         // A group missing one of its owned tables is meaningless — invalidate it
         // (it still owns its allocations; terminate it to release them).
@@ -292,6 +320,7 @@ package ode_ecs
             }
 
             database__remove_component(self.db, target_eid, self.id)
+            table_base__notify_excluding_views(self, target_eid)
             return
         }
 
@@ -338,6 +367,8 @@ package ode_ecs
 
         // Update eid_to_bits in db
         database__remove_component(self.db, target_eid, self.id)
+
+        table_base__notify_excluding_views(self, target_eid)
 
         return
     }
@@ -561,6 +592,11 @@ package ode_ecs
         // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for view in self.subscribers.items {
             if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+        }
+
+        // Views excluding this table lose the entity (no-op if it wasn't a member)
+        for view in self.subscribers_excluding.items {
+            if !view.suspended do view__remove_record(view, eid)
         }
 
         return

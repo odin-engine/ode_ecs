@@ -393,6 +393,53 @@ main :: proc() {
             }
         }
 
+    ///////////////////////////////////////////////////////////////////////////////
+    // View excludes example: "has Movement but is NOT tagged in is_alive_table".
+    // Unlike a filter proc, an excludes list is auto-maintained — tagging/untagging
+    // updates the view, no rerun needed.
+    //
+        view5: ecs.View
+
+        err = ecs.view_init(&view5, &db, {&movement_table}, excludes = {&is_alive_table})
+        if err != nil { report_error(err); return }
+
+        err = ecs.rebuild(&view5)
+        if err != nil { report_error(err); return }
+
+        it5: ecs.Iterator
+
+        fmt.println()
+        fmt.println("Entities with Movement that are NOT tagged alive (all three are tagged, so none):")
+        err = ecs.iterator_init(&it5, &view5)
+        if err != nil { report_error(err); return }
+        for ecs.iterator_next(&it5) {
+            eid = ecs.get_entity(&it5)
+
+            switch eid {
+                case human: fmt.println("Human")
+                case bird:  fmt.println("Bird")
+                case chair: fmt.println("Chair")
+            }
+        }
+
+        // Untag chair — it loses the excluded tag, so it enters the view automatically
+        err = ecs.untag(&is_alive_table, chair)
+        if err != nil { report_error(err); return }
+
+        fmt.println()
+        fmt.println("After untagging chair (auto-updated, no rebuild):")
+        err = ecs.iterator_reset(&it5)
+        if err != nil { report_error(err); return }
+        for ecs.iterator_next(&it5) {
+            eid = ecs.get_entity(&it5)
+
+            switch eid {
+                case human: fmt.println("Human")
+                case bird:  fmt.println("Bird")
+                case chair: fmt.println("Chair")
+            }
+        }
+
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

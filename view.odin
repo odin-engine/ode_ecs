@@ -113,10 +113,11 @@ package ode_ecs
     }
 
     View :: struct {
-        id: view_id, 
+        id: view_id,
         state: Object_State,
-        db: ^Database, 
+        db: ^Database,
         tables: oc.Dense_Arr(^Shared_Table), // includes tables, removing table invalidates View
+        excludes: oc.Dense_Arr(^Shared_Table), // excluded tables (see view__init), removing table invalidates View
 
         tid_to_cid: []view_column_id,  
         eid_to_ptr: []view_record_id, // currently its actually eid_to_rid, might be changed to eid_to_ptr in future
@@ -129,6 +130,7 @@ package ode_ecs
         cap: int,
 
         bits: Uni_Bits,
+        exclude_bits: Uni_Bits, // tables whose entities must NOT be in this view
         suspended: bool,
 
         // Whole-view summary of the per-column states, refreshed by view__dense_resolve
@@ -162,11 +164,17 @@ package ode_ecs
         return true
     }
 
+    // `includes` — an entity must have a component in every one of these tables to be
+    // in the view; they become the view's columns.
+    // `excludes` — an entity must have a component in none of these tables; they are
+    // not columns (no component data is read from them), membership only. Cheaper and
+    // auto-maintained, unlike a `filter` proc doing the same check.
     view__init :: proc(
-        self: ^View, 
-        db: ^Database, 
-        includes: []^Shared_Table, 
-        filter: proc(row: ^View_Row, user_data: rawptr = nil)->bool = nil, 
+        self: ^View,
+        db: ^Database,
+        includes: []^Shared_Table,
+        filter: proc(row: ^View_Row, user_data: rawptr = nil)->bool = nil,
+        excludes: []^Shared_Table = nil,
         loc := #caller_location
     ) -> Error {
         when VALIDATIONS {
@@ -177,9 +185,11 @@ package ode_ecs
 
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
-        // A re-init'd struct (issue #8) may carry bits/suspended from its
+        // A re-init'd struct (issue #8) may carry bits/suspended/excludes from its
         // previous life; terminate does not reset them.
         uni_bits__clear(&self.bits)
+        uni_bits__clear(&self.exclude_bits)
+        self.excludes = {}
         self.suspended = false
 
         self.db = db
@@ -194,6 +204,24 @@ package ode_ecs
         slice.sort(sorted_includes)
         uniq_tables := slice.unique(sorted_includes)
         self.tables_len = len(uniq_tables)
+
+        // Dedupe + validate excludes before anything below allocates, so an error
+        // here leaves nothing to free.
+        uniq_excludes: []^Shared_Table
+        sorted_excludes: []^Shared_Table
+        defer if sorted_excludes != nil do delete(sorted_excludes, db.allocator)
+        if excludes != nil && len(excludes) > 0 {
+            sorted_excludes = slice.clone(excludes, db.allocator) or_return
+            slice.sort(sorted_excludes)
+            uniq_excludes = slice.unique(sorted_excludes)
+
+            for table in uniq_excludes {
+                when VALIDATIONS {
+                    assert(shared_table__is_valid(table), loc = loc)
+                }
+                if slice.contains(uniq_tables, table) do return API_Error.Table_Cannot_Be_Included_And_Excluded
+            }
+        }
 
         oc.dense_arr__init(&self.tables, self.tables_len, db.allocator) or_return
 
@@ -225,6 +253,18 @@ package ode_ecs
             self.tid_to_cid[table.id] = cast(view_column_id)index
 
             uni_bits__add(&self.bits, table.id)
+        }
+
+        //
+        // excludes (not columns — membership only, so cap/tid_to_cid/rows are untouched)
+        //
+        if len(uniq_excludes) > 0 {
+            oc.dense_arr__init(&self.excludes, len(uniq_excludes), db.allocator) or_return
+
+            for table in uniq_excludes {
+                oc.dense_arr__add(&self.excludes, cast(^Shared_Table) table)
+                uni_bits__add(&self.exclude_bits, table.id)
+            }
         }
 
         //
@@ -272,6 +312,7 @@ package ode_ecs
         // Subscribe to tables
         //
         for table in uniq_tables do shared_table__attach_subscriber(table, self) or_return
+        for table in self.excludes.items do shared_table__attach_exclude_subscriber(table, self) or_return
 
         return nil
     }
@@ -293,6 +334,12 @@ package ode_ecs
             if derr != nil && derr != oc.Core_Error.Not_Found do return derr
         }
 
+        for table in self.excludes.items {
+            if table == nil || table.type == Table_Type.Unknown do continue
+            derr := shared_table__detach_exclude_subscriber(table, self)
+            if derr != nil && derr != oc.Core_Error.Not_Found do return derr
+        }
+
         // rows was allocated as one records_size block; its slice len holds the
         // row count, so delete() would free with the wrong size.
         if self.rows != nil {
@@ -305,6 +352,7 @@ package ode_ecs
         self.dense_cols = nil
 
         oc.dense_arr__terminate(&self.tables, self.db.allocator) or_return
+        if self.excludes.items != nil do oc.dense_arr__terminate(&self.excludes, self.db.allocator) or_return
 
         //
         // Detach from db
@@ -386,6 +434,7 @@ package ode_ecs
         total := size_of(self^)
 
         total += oc.dense_arr__memory_usage(&self.tables)
+        total += oc.dense_arr__memory_usage(&self.excludes)
 
         if self.tid_to_cid != nil {
             total += size_of(self.tid_to_cid[0]) * len(self.tid_to_cid)
@@ -406,9 +455,11 @@ package ode_ecs
         return total
     }
 
-    // Returns true if entity has components that would match this view, doesn't check filter
+    // Returns true if entity has components that would match this view (all included
+    // tables, no excluded table), doesn't check filter
     view__components_match :: #force_inline proc (self: ^View, eid: entity_id) -> bool {
-        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix])
+        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) &&
+               uni_bits__no_intersection(&self.exclude_bits, &self.db.eid_to_bits[eid.ix])
     }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
@@ -437,6 +488,52 @@ package ode_ecs
                                                             // if components do not match, row had been removed in other way
 
         return view__rerun_filter_private(self, eid)
+    }
+
+    // Re-evaluate the filter for every entity the view could contain, in one sweep:
+    // removes rows that stopped matching, adds candidates that now match. Use after
+    // bulk component mutations instead of per-entity rerun_views_filters. Unlike
+    // rebuild it does not clear the view, so surviving rows keep their positions
+    // (and their dense alignment, unless a removal actually moves rows).
+    // No-op for a view without a filter — membership is already exact.
+    view__refilter :: proc(self: ^View) -> Error {
+        if self.state != Object_State.Normal do return API_Error.Object_Invalid
+        if self.filter == nil do return nil
+
+        // Removals first, backwards: remove_record tail-swaps, so sweeping from the
+        // tail never moves an unvisited row into visited territory.
+        for i := view_len(self) - 1; i >= 0; i -= 1 {
+            record := view__get_row_private(self, i)
+            if !view__filter_match_private(self, record) {
+                view__remove_record_by_row(self, i, record)
+            }
+        }
+
+        // Additions: scan the smallest included table (as view__rebuild does) for
+        // entities that match components but were previously rejected by the filter.
+        min_records_count: int = max(int)
+        min_table: ^Shared_Table
+        for table in self.tables.items {
+            if shared_table__len(table) < min_records_count {
+                min_table = table
+                min_records_count = shared_table__len(table)
+            }
+        }
+
+        eid: entity_id
+        for i := 0; i < shared_table__len(min_table); i += 1 {
+            eid = shared_table__get_entity_by_row_number(min_table, i)
+            if is_deleted(eid) do continue // hole (removal while tail swap was paused)
+            if self.eid_to_ptr[eid.ix] != DELETED_INDEX do continue // already a member
+            if !view_entity_match(self, eid) do continue
+
+            view_row_raw__fill(self.temp_row, self, eid)
+            if view__filter_match_private(self, self.temp_row) {
+                view__add_record_prefilled(self, eid, self.temp_row) or_return
+            }
+        }
+
+        return nil
     }
 
     // Stop updating view when entities are created/destroyed or components/tags are added/removed  
@@ -630,6 +727,30 @@ package ode_ecs
     }
 
     @(private)
+    // Adds a record whose refs are already filled in `src` (the view's temp row):
+    // copies the prepared row instead of re-deriving every component address
+    // (view_row_raw__fill costs a lookup per column — a map probe for Compact_Table).
+    // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
+    view__add_record_prefilled :: proc(self: ^View, eid: entity_id, src: ^View_Row_Raw) -> Error #no_bounds_check {
+        raw := (^runtime.Raw_Slice)(&self.rows)
+
+        // Should never happen because view is capped at table cap
+        if raw.len >= self.cap do return API_Error.Cannot_Add_Record_To_View_Container_Is_Full
+        if self.eid_to_ptr[eid.ix] != DELETED_INDEX do return oc.Core_Error.Already_Exists
+
+        self.eid_to_ptr[eid.ix] = cast(view_record_id)raw.len
+
+        record := view__get_row_private(self, raw.len)
+        mem.copy(record, src, self.one_record_size)
+        record.eid = eid
+
+        view__dense_check_row_degrade(self, record, raw.len)
+        raw.len += 1
+
+        return nil
+    }
+
+    @(private)
     // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
     view__remove_record :: proc(self: ^View, eid: entity_id) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -662,16 +783,24 @@ package ode_ecs
     }
 
     @(private)
-    // Rerun filter for an entity
+    // Rerun filter for an entity. The row is filled at most once: for a non-member
+    // the row prepared for the filter test is copied into the view instead of
+    // being filled a second time.
     view__rerun_filter_private :: proc(self: ^View, eid: entity_id) -> Error {
-        if view__filter_match(self, eid) {
-            if self.eid_to_ptr[eid.ix] == DELETED_INDEX { // doesn't exist, add it
-                view__add_record(self, eid, false) or_return // add without filter test because we already know it matches
-            } // else already exists, nothing to do
-        } else { // doesn't match
-            if self.eid_to_ptr[eid.ix] != DELETED_INDEX { // exists, remove it
-                view__remove_record(self, eid) 
-            } // else doesn't exist, nothing to do
+        rid := self.eid_to_ptr[eid.ix]
+
+        if rid == DELETED_INDEX { // not a member yet
+            if self.temp_row == nil do return nil // something is wrong, should not happen
+            view_row_raw__fill(self.temp_row, self, eid)
+            if view__filter_match_private(self, self.temp_row) { // matches, add it
+                view__add_record_prefilled(self, eid, self.temp_row) or_return
+            } // else doesn't match, nothing to do
+        } else { // already a member
+            row_raw := view__get_row(self, rid)
+            if row_raw == nil do return nil // something is wrong, should not happen
+            if !view__filter_match_private(self, row_raw) { // doesn't match anymore, remove it
+                view__remove_record(self, eid)
+            } // else still matches, nothing to do
         }
 
         return nil

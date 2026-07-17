@@ -1,6 +1,10 @@
 # Updates Timeline
 
 **July 2026**
+* \*new\* View `excludes` — `view_init(..., excludes = {&table})` keeps entities that have a component in **none** of the excluded tables ("has A, not B"), auto-maintained, no filter proc needed. Works with every table variant.
+* \*new\* `refilter(&view)` — re-evaluates a view's filter for all rows and candidates in one sweep after bulk mutations (cheaper than `rebuild`: no clear, surviving rows stay put).
+* \*new\* `rerun_views_filters` proc group (over the per-table-variant procs).
+* View filter rerun path optimized: each re-evaluated row is now filled once instead of twice.
 * \*new\* [Groups](group.md)
 * \*new\* Defer tail-swap feature (pause_packing/resume_packing/pack) ([Database](database.md), [Group](group.md) and [Table](tables.md) levels).
 * \*new\* [Relations_Table](relations.md) (parent/child entity relations) feature.

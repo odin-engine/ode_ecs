@@ -40,6 +40,12 @@ package ode_ecs
         // rows and component pointers stay stable while iterating.
         // See database__pause_packing / database__resume_packing.
         tail_swap_paused: bool,
+
+        // eid.ix of the entity currently inside database__destroy_entity's component
+        // removal loop, DELETED_INDEX otherwise. Removing an excluded component could
+        // make the dying entity transiently match a view with excludes — the
+        // *__notify_excluding_views procs skip it while this is set.
+        destroying_eid_ix: int,
     }
 
     database__is_valid :: proc(self: ^Database) -> bool {
@@ -67,6 +73,7 @@ package ode_ecs
         // A re-init'd struct (issue #8) may still be paused from its previous
         // life; terminate does not reset the flag.
         self.tail_swap_paused = false
+        self.destroying_eid_ix = DELETED_INDEX
 
         self.allocator = allocator
 
@@ -234,6 +241,13 @@ package ode_ecs
         }
 
         bits := self.eid_to_bits[eid.ix]
+
+        // The removals below happen in table-id order, so an excluded component can
+        // go before an included one — without this guard the dying entity would
+        // transiently enter views that exclude that table (and their filters would
+        // observe it). No save/restore needed: destroy_children recursion completed above.
+        self.destroying_eid_ix = eid.ix
+        defer self.destroying_eid_ix = DELETED_INDEX
 
         // Iterate only the entity's set bits (the tables it belongs to) instead of
         // scanning every attached table — O(components), not O(TABLES_CAP)
