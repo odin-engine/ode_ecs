@@ -241,7 +241,11 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component_address(view, self, tail_eid, target_ptr)
+                    // tag columns carry no component data, but the notification also
+                    // feeds the dense safety net — derive the row id the moved tag
+                    // now occupies (same expression as the paused path above)
+                    target_rid := int(uintptr(target_ptr) - uintptr(raw_data(self.rows))) / size_of(entity_id)
+                    view__update_component_rid(view, self, tail_eid, target_rid)
                 }
             }
         }

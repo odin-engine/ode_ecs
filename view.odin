@@ -12,29 +12,54 @@ package ode_ecs
 
 // ODE
     import oc "ode_core"
+    import oc_maps "ode_core/maps"
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // View_Row_Raw - raw data of the row
 
+    // eid_to_rid value for "entity is not in this view" (mirrors TABLE_NO_RID)
+    @(private)
+    VIEW_NO_RID :: view_record_id(max(u32))
+
+    // A view row stores per-column table ROW IDS (u32), not component addresses:
+    // half the bytes per column, and the component address is derived as
+    // &table.rows[rid] on read. A table's rows array never reallocates (fixed
+    // cap at init), so rid + typed table is always enough.
     View_Row_Raw :: struct {
         eid: entity_id,
-        refs: [1] rawptr, // at least one component
-    } 
+        rids: [1] u32, // at least one column
+    }
 
     @(private)
-    // #no_bounds_check: eid validated upstream; refs has one slot per column
+    // #no_bounds_check: eid validated upstream; rids has one slot per column
     view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) #no_bounds_check {
         self.eid = eid
 
         // cid equals the column's position in view.tables.items by construction
         // (view__init sets tid_to_cid[table.id] = index), so no lookup is needed
         for table, cid in view.tables.items {
-            if table.type == Table_Type.Table {
-                // devirtualized fast path for the most common column type
-                self.refs[cid] = table_raw__get_component_by_entity(cast(^Table_Raw) table, eid)
-            } else {
-                self.refs[cid] = shared_table__get_component(table, eid)
+            switch table.type {
+                case Table_Type.Unknown:
+                    self.rids[cid] = u32(VIEW_NO_RID) // should not happen
+                case Table_Type.Table:
+                    // direct u32 load — the most common column type
+                    self.rids[cid] = (cast(^Table_Raw) table).eid_to_rid[eid.ix]
+                case Table_Type.Compact_Table:
+                    // RH_MAP32_DELETED == max(u32) == VIEW_NO_RID, no miss translation needed
+                    self.rids[cid] = oc_maps.rh_map32__get(&(cast(^Compact_Table_Raw) table).eid_to_rid, u32(eid.ix))
+                case Table_Type.Tiny_Table:
+                    raw := cast(^Tiny_Table_Raw) table
+                    ptr := oc_maps.tt_map__get(&raw.eid_to_ptr, eid.ix)
+                    if ptr == nil {
+                        self.rids[cid] = u32(VIEW_NO_RID)
+                    } else {
+                        self.rids[cid] = u32((uintptr(ptr) - uintptr(&raw.rows[0])) / uintptr(raw.type_info.size))
+                    }
+                case Table_Type.Tag_Table:
+                    // tags carry no component data; this slot is never read
+                    // (kept without a map probe, matching the old always-nil ref)
+                    self.rids[cid] = u32(VIEW_NO_RID)
             }
         }
     }
@@ -54,24 +79,29 @@ package ode_ecs
         raw: ^View_Row_Raw,
     }
 
+    // NOTE: unlike the old pointer-storing rows, these derive &table.rows[rid]
+    // unconditionally — they no longer return nil for a missing component. Rows
+    // are only read for entities whose included components all exist, so no
+    // caller relied on nil.
+
     @(private)
     view_row__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
-            return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
+            return &table.rows[view_row.raw.rids[view_row.view.tid_to_cid[table.id]]]
         }
     }
 
     @(private)
     view_row__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
-            return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
+            return &table.rows[view_row.raw.rids[view_row.view.tid_to_cid[table.id]]]
         }
     }
 
     @(private)
     view_row__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
-            return (^T)(view_row.raw.refs[view_row.view.tid_to_cid[table.id]])
+            return &table.rows[view_row.raw.rids[view_row.view.tid_to_cid[table.id]]]
         }
     }
 
@@ -89,7 +119,7 @@ package ode_ecs
     // A column is "aligned" when, for its Table (not Compact_Table/Tiny_Table/Tag_Table),
     // view row `r` references exactly `table.rows[r]`. When that holds, Iterator reads
     // that column's components directly from the table's dense array and skips the
-    // per-row pointer records (~3x faster reads). Alignment is tracked per column, so
+    // per-row rid records (~3x faster reads). Alignment is tracked per column, so
     // one misaligned table (or a Compact/Tiny/Tag column) doesn't push the other
     // columns onto the pointer path.
     //
@@ -104,13 +134,10 @@ package ode_ecs
         Misaligned,     // sticky until view__clear/view__rebuild
     }
 
-    View_Dense_Col :: struct {
-        base: uintptr,   // &table.rows[0]
-        stride: uintptr, // size_of(T), or 0 when the column is not a Table
-        // Invariant: state == Aligned implies stride != 0 (non-Table columns are kept
-        // Misaligned by view__clear/view__dense_resolve and never take the dense path).
-        state: View_Dense_State,
-    }
+    // With rid-based rows, per-column alignment is simply "rids[cid] == row index";
+    // no base/stride constants are needed, so a column's dense info is just its state.
+    // Invariant: state == Aligned implies the column is a Table (non-Table columns are
+    // kept Misaligned by view__clear/view__dense_resolve and never take the dense path).
 
     View :: struct {
         id: view_id,
@@ -120,7 +147,9 @@ package ode_ecs
         excludes: oc.Dense_Arr(^Shared_Table), // excluded tables (see view__init), removing table invalidates View
 
         tid_to_cid: []view_column_id,  
-        eid_to_ptr: []view_record_id, // currently its actually eid_to_rid, might be changed to eid_to_ptr in future
+        // eid.ix -> view row id (VIEW_NO_RID when absent); u32 entries instead of
+        // int halve this entities_cap-sized array (same trade as Table.eid_to_rid)
+        eid_to_rid: []view_record_id,
         
         rows: []byte,  // tail swap, order doesn't matter here
         one_record_size: int, 
@@ -137,11 +166,8 @@ package ode_ecs
         // (iterator init/reset). Aligned only when every Table column is aligned.
         dense_state: View_Dense_State,
 
-        // Per-column dense-alignment state and constants, indexed by cid. base/stride are
-        // valid for the view's lifetime: a Table's rows array is allocated once at
-        // table_init (fixed cap) and never reallocates. stride == 0 marks columns that
-        // never take part in the dense fast path (Compact_Table/Tiny_Table/Tag_Table).
-        dense_cols: []View_Dense_Col,
+        // Per-column dense-alignment state, indexed by cid.
+        dense_cols: []View_Dense_State,
 
         filter: proc(row: ^View_Row, user_data: rawptr)->bool, 
         user_data: rawptr, 
@@ -156,7 +182,7 @@ package ode_ecs
         if self.db == nil do return false
         if !oc.dense_arr__is_valid(&self.tables) do return false 
         if self.tid_to_cid == nil do return false 
-        if self.eid_to_ptr == nil do return false
+        if self.eid_to_rid == nil do return false
         if self.rows == nil do return false
         if self.one_record_size <= 0 do return false 
         if self.cap <= 0 do return false 
@@ -255,6 +281,12 @@ package ode_ecs
             uni_bits__add(&self.bits, table.id)
         }
 
+        when VALIDATIONS {
+            // view row ids must fit the u32 eid_to_rid entries (a tag-only view
+            // is not covered by the table-level cap asserts)
+            assert(self.cap < int(max(u32)), loc = loc)
+        }
+
         //
         // excludes (not columns — membership only, so cap/tid_to_cid/rows are untouched)
         //
@@ -270,23 +302,19 @@ package ode_ecs
         //
         // dense_cols
         //
-        self.dense_cols = make([]View_Dense_Col, self.tables_len, db.allocator) or_return
-        for table, index in uniq_tables {
-            if table.type == Table_Type.Table {
-                tr := cast(^Table_Raw) table
-                self.dense_cols[index] = { base = uintptr(raw_data(tr.rows)), stride = uintptr(tr.type_info.size) }
-            }
-        }
+        self.dense_cols = make([]View_Dense_State, self.tables_len, db.allocator) or_return
 
         //
-        // eid_to_ptr
+        // eid_to_rid
         //
-        self.eid_to_ptr = make([]view_record_id, db.id_factory.cap, db.allocator) or_return
-        
+        self.eid_to_rid = make([]view_record_id, db.id_factory.cap, db.allocator) or_return
+
         //
         // rows
         //
-        self.one_record_size = size_of(View_Row_Raw) + (self.tables_len - 1) * size_of(rawptr)  // -1 because one is already in struct
+        // eid (8 B, 8-aligned) + one u32 rid per column, padded so eid stays
+        // aligned across the packed records array
+        self.one_record_size = mem.align_forward_int(size_of(entity_id) + self.tables_len * size_of(u32), align_of(entity_id))
         self.records_size = (self.cap + 1) * self.one_record_size // +1 so we can use cap index row as temp row for filter match
 
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -346,7 +374,7 @@ package ode_ecs
             mem.free_with_size((^runtime.Raw_Slice)(&self.rows).data, self.records_size, self.db.allocator) or_return
             self.rows = nil
         }
-        delete(self.eid_to_ptr, self.db.allocator) or_return
+        delete(self.eid_to_rid, self.db.allocator) or_return
         delete(self.tid_to_cid, self.db.allocator) or_return
         delete(self.dense_cols, self.db.allocator) or_return
         self.dense_cols = nil
@@ -368,8 +396,8 @@ package ode_ecs
     view__clear :: proc(self: ^View) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
-        if self.eid_to_ptr != nil {
-            for i := 0; i < len(self.eid_to_ptr); i+=1 do self.eid_to_ptr[i] = DELETED_INDEX
+        if self.eid_to_rid != nil {
+            slice.fill(self.eid_to_rid, VIEW_NO_RID)
         }
 
         if len(self.rows) > 0 {
@@ -378,8 +406,8 @@ package ode_ecs
         }
 
         // empty view is trivially aligned; non-Table columns never align
-        for &col in self.dense_cols {
-            col.state = col.stride != 0 ? View_Dense_State.Aligned : View_Dense_State.Misaligned
+        #no_bounds_check for &col, cid in self.dense_cols {
+            col = self.tables.items[cid].type == Table_Type.Table ? View_Dense_State.Aligned : View_Dense_State.Misaligned
         }
         self.dense_state = View_Dense_State.Aligned
 
@@ -440,8 +468,8 @@ package ode_ecs
             total += size_of(self.tid_to_cid[0]) * len(self.tid_to_cid)
         }
 
-        if self.eid_to_ptr != nil {
-            total += size_of(self.eid_to_ptr[0]) * len(self.eid_to_ptr)
+        if self.eid_to_rid != nil {
+            total += size_of(self.eid_to_rid[0]) * len(self.eid_to_rid)
         }
 
         if self.rows != nil {
@@ -466,9 +494,9 @@ package ode_ecs
         if self == nil do return false
         if self.filter == nil do return true
 
-        rid := self.eid_to_ptr[eid.ix]
-        if rid == DELETED_INDEX {
-            if self.temp_row == nil do return false // something is wrong, should not happen 
+        rid := self.eid_to_rid[eid.ix]
+        if rid == VIEW_NO_RID {
+            if self.temp_row == nil do return false // something is wrong, should not happen
             view_row_raw__fill(self.temp_row, self, eid)
             return view__filter_match_private(self, self.temp_row)
 
@@ -524,7 +552,7 @@ package ode_ecs
         for i := 0; i < shared_table__len(min_table); i += 1 {
             eid = shared_table__get_entity_by_row_number(min_table, i)
             if is_deleted(eid) do continue // hole (removal while tail swap was paused)
-            if self.eid_to_ptr[eid.ix] != DELETED_INDEX do continue // already a member
+            if self.eid_to_rid[eid.ix] != VIEW_NO_RID do continue // already a member
             if !view_entity_match(self, eid) do continue
 
             view_row_raw__fill(self.temp_row, self, eid)
@@ -593,19 +621,19 @@ package ode_ecs
 
     view__get_component_for_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Table($T)) -> ^T {
         #no_bounds_check {
-            return (^T)(rec.refs[self.tid_to_cid[table.id]])
+            return &table.rows[rec.rids[self.tid_to_cid[table.id]]]
         }
     }
 
     view__get_component_for_compact_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Compact_Table($T)) -> ^T {
         #no_bounds_check {
-            return (^T)(rec.refs[self.tid_to_cid[table.id]])
+            return &table.rows[rec.rids[self.tid_to_cid[table.id]]]
         }
     }
 
     view__get_component_for_tiny_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Tiny_Table($T)) -> ^T {
         #no_bounds_check {
-            return (^T)(rec.refs[self.tid_to_cid[table.id]])
+            return &table.rows[rec.rids[self.tid_to_cid[table.id]]]
         }
     }
 
@@ -614,14 +642,14 @@ package ode_ecs
 
     @(private)
     // Verify one view row against each still-aligned column's dense invariant
-    // (refs[cid] must be exactly &table.rows[row_ix]) and degrade columns that no
-    // longer hold. Non-Table columns are never Aligned, so they are skipped implicitly.
+    // (rids[cid] must be exactly row_ix) and degrade columns that no longer
+    // hold. Non-Table columns are never Aligned, so they are skipped implicitly.
     view__dense_check_row_degrade :: proc "contextless" (self: ^View, record: ^View_Row_Raw, row_ix: int) {
         #no_bounds_check {
             for &col, cid in self.dense_cols {
-                if col.state != View_Dense_State.Aligned do continue
-                if uintptr(record.refs[cid]) != col.base + uintptr(row_ix) * col.stride {
-                    col.state = View_Dense_State.Misaligned
+                if col != View_Dense_State.Aligned do continue
+                if record.rids[cid] != u32(row_ix) {
+                    col = View_Dense_State.Misaligned
                 }
             }
         }
@@ -632,7 +660,7 @@ package ode_ecs
     // trusted and need a rescan; Misaligned columns stay sticky.
     view__dense_degrade_to_unknown :: #force_inline proc "contextless" (self: ^View) {
         for &col in self.dense_cols {
-            if col.state == View_Dense_State.Aligned do col.state = View_Dense_State.Unknown
+            if col == View_Dense_State.Aligned do col = View_Dense_State.Unknown
         }
     }
 
@@ -640,16 +668,13 @@ package ode_ecs
     // One column's alignment rescan, aborts on first mismatch. Called lazily
     // (iterator init/reset, view__dense_slice) when the column's state is Unknown.
     view__dense_col_rescan :: proc "contextless" (self: ^View, #any_int cid: int) -> bool {
-        col := self.dense_cols[cid]
-        if col.stride == 0 do return false
+        #no_bounds_check if self.tables.items[cid].type != Table_Type.Table do return false
 
         n := view_len(self)
-        addr := col.base
         #no_bounds_check {
             for r := 0; r < n; r += 1 {
                 record := view__get_row_private(self, r)
-                if uintptr(record.refs[cid]) != addr do return false
-                addr += col.stride
+                if record.rids[cid] != u32(r) do return false
             }
         }
         return true
@@ -660,11 +685,11 @@ package ode_ecs
     // dense fast path may be used.
     view__dense_resolve_col :: proc "contextless" (self: ^View, #any_int cid: int) -> bool {
         col := &self.dense_cols[cid]
-        if col.state == View_Dense_State.Unknown {
-            col.state = view__dense_col_rescan(self, cid) ? View_Dense_State.Aligned : View_Dense_State.Misaligned
+        if col^ == View_Dense_State.Unknown {
+            col^ = view__dense_col_rescan(self, cid) ? View_Dense_State.Aligned : View_Dense_State.Misaligned
         }
 
-        return col.state == View_Dense_State.Aligned && !self.suspended
+        return col^ == View_Dense_State.Aligned && !self.suspended
     }
 
     @(private)
@@ -672,12 +697,12 @@ package ode_ecs
     // Table columns are aligned (the whole-view dense fast path may be used).
     view__dense_resolve :: proc "contextless" (self: ^View) -> bool {
         all_aligned := true
-        for &col, cid in self.dense_cols {
-            if col.stride == 0 do continue
-            if col.state == View_Dense_State.Unknown {
-                col.state = view__dense_col_rescan(self, cid) ? View_Dense_State.Aligned : View_Dense_State.Misaligned
+        #no_bounds_check for &col, cid in self.dense_cols {
+            if self.tables.items[cid].type != Table_Type.Table do continue
+            if col == View_Dense_State.Unknown {
+                col = view__dense_col_rescan(self, cid) ? View_Dense_State.Aligned : View_Dense_State.Misaligned
             }
-            if col.state != View_Dense_State.Aligned do all_aligned = false
+            if col != View_Dense_State.Aligned do all_aligned = false
         }
 
         self.dense_state = all_aligned ? View_Dense_State.Aligned : View_Dense_State.Misaligned
@@ -693,15 +718,15 @@ package ode_ecs
 
     @(private)
     // Adds record (row), checks filter if any
-    // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.id_factory.cap
     view__add_record :: proc(self: ^View, eid: entity_id, use_filter:= true) -> Error #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         // Should never happen because view is capped at table cap
         if raw.len >= self.cap do return API_Error.Cannot_Add_Record_To_View_Container_Is_Full
-        if self.eid_to_ptr[eid.ix] != DELETED_INDEX do return oc.Core_Error.Already_Exists
+        if self.eid_to_rid[eid.ix] != VIEW_NO_RID do return oc.Core_Error.Already_Exists
 
-        self.eid_to_ptr[eid.ix] = cast(view_record_id)raw.len
+        self.eid_to_rid[eid.ix] = cast(view_record_id)raw.len
 
         record := view__get_row_private(self, raw.len)
         record.eid = eid
@@ -716,7 +741,7 @@ package ode_ecs
 
         if view__filter_match_private(self, record) == false {
             // doesn't match filter, rollback
-            self.eid_to_ptr[eid.ix] = DELETED_INDEX
+            self.eid_to_rid[eid.ix] = VIEW_NO_RID
             view_row_raw__clear(record, self)
         } else {
             view__dense_check_row_degrade(self, record, raw.len)
@@ -727,18 +752,18 @@ package ode_ecs
     }
 
     @(private)
-    // Adds a record whose refs are already filled in `src` (the view's temp row):
-    // copies the prepared row instead of re-deriving every component address
+    // Adds a record whose rids are already filled in `src` (the view's temp row):
+    // copies the prepared row instead of re-deriving every column's row id
     // (view_row_raw__fill costs a lookup per column — a map probe for Compact_Table).
-    // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.id_factory.cap
     view__add_record_prefilled :: proc(self: ^View, eid: entity_id, src: ^View_Row_Raw) -> Error #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         // Should never happen because view is capped at table cap
         if raw.len >= self.cap do return API_Error.Cannot_Add_Record_To_View_Container_Is_Full
-        if self.eid_to_ptr[eid.ix] != DELETED_INDEX do return oc.Core_Error.Already_Exists
+        if self.eid_to_rid[eid.ix] != VIEW_NO_RID do return oc.Core_Error.Already_Exists
 
-        self.eid_to_ptr[eid.ix] = cast(view_record_id)raw.len
+        self.eid_to_rid[eid.ix] = cast(view_record_id)raw.len
 
         record := view__get_row_private(self, raw.len)
         mem.copy(record, src, self.one_record_size)
@@ -751,13 +776,16 @@ package ode_ecs
     }
 
     @(private)
-    // #no_bounds_check: eid validated upstream, len(eid_to_ptr) == db.id_factory.cap
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.id_factory.cap
     view__remove_record :: proc(self: ^View, eid: entity_id) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
         if raw.len <= 0 do return // no rows
         
-        dest_row_ix :=  int(self.eid_to_ptr[eid.ix])
-        if dest_row_ix < 0 do return // already deleted or this view doesn't match entity
+        // sentinel check BEFORE the int cast: VIEW_NO_RID (max u32) converts to a
+        // huge positive int, so a `< 0` guard would not catch it
+        rid := self.eid_to_rid[eid.ix]
+        if rid == VIEW_NO_RID do return // already deleted or this view doesn't match entity
+        dest_row_ix := int(rid)
 
         src_row_ix := raw.len - 1
 
@@ -769,7 +797,7 @@ package ode_ecs
 
             mem.copy(dst_record, src_record, self.one_record_size)
 
-            self.eid_to_ptr[src_record.eid.ix] = self.eid_to_ptr[eid.ix]
+            self.eid_to_rid[src_record.eid.ix] = self.eid_to_rid[eid.ix]
 
             // The moved row's alignment cannot be verified yet (subscribed tables swap
             // their own rows after this notification) — rescan lazily on next iteration.
@@ -778,8 +806,8 @@ package ode_ecs
 
         view_row_raw__clear(src_record, self)
 
-        self.eid_to_ptr[eid.ix] = DELETED_INDEX
-        raw.len -= 1 
+        self.eid_to_rid[eid.ix] = VIEW_NO_RID
+        raw.len -= 1
     }
 
     @(private)
@@ -787,9 +815,9 @@ package ode_ecs
     // the row prepared for the filter test is copied into the view instead of
     // being filled a second time.
     view__rerun_filter_private :: proc(self: ^View, eid: entity_id) -> Error {
-        rid := self.eid_to_ptr[eid.ix]
+        rid := self.eid_to_rid[eid.ix]
 
-        if rid == DELETED_INDEX { // not a member yet
+        if rid == VIEW_NO_RID { // not a member yet
             if self.temp_row == nil do return nil // something is wrong, should not happen
             view_row_raw__fill(self.temp_row, self, eid)
             if view__filter_match_private(self, self.temp_row) { // matches, add it
@@ -820,7 +848,7 @@ package ode_ecs
         if dest_row_ix != src_row_ix {
             mem.copy(dest_record, src_record, self.one_record_size)
 
-            self.eid_to_ptr[src_eid.ix] = self.eid_to_ptr[dest_eid.ix]
+            self.eid_to_rid[src_eid.ix] = self.eid_to_rid[dest_eid.ix]
 
             view__dense_degrade_to_unknown(self)
         }
@@ -828,33 +856,34 @@ package ode_ecs
         mem.zero(src_record, self.one_record_size)
         src_record.eid.ix = DELETED_INDEX
 
-        self.eid_to_ptr[dest_eid.ix] = DELETED_INDEX
+        self.eid_to_rid[dest_eid.ix] = VIEW_NO_RID
         raw.len -= 1
     }
 
     @(private)
-    // Update component address in view when component is updated in table
-    view__update_component_address :: proc(self: ^View, table: ^Shared_Table, eid: entity_id, addr: rawptr) -> Error  {
+    // Update the component's table row id in the view when the component moved
+    // to a different row (tail swap, pack, group swap)
+    view__update_component_rid :: proc(self: ^View, table: ^Shared_Table, eid: entity_id, #any_int rid: int) -> Error  {
         cid := self.tid_to_cid[table.id]
         assert(cid != DELETED_INDEX)
 
         // record must exist
-        if self.eid_to_ptr[eid.ix] == DELETED_INDEX do return oc.Core_Error.Not_Found   // it is possible when removal of other component
-                                                                                        // removed enity from the view      
-        row_ix := int(self.eid_to_ptr[eid.ix])
+        if self.eid_to_rid[eid.ix] == VIEW_NO_RID do return oc.Core_Error.Not_Found    // it is possible when removal of other component
+                                                                                        // removed enity from the view
+        row_ix := int(self.eid_to_rid[eid.ix])
         record := view__get_row_private(self, row_ix)
         #no_bounds_check {
-            record.refs[cid] = addr
+            record.rids[cid] = u32(rid)
         }
 
-        // Safety net: a component moving to an address other than &rows[row_ix] breaks
-        // that column's dense alignment. (While truly aligned this should not trigger —
+        // Safety net: a component moving to a row other than row_ix breaks that
+        // column's dense alignment. (While truly aligned this should not trigger —
         // removals that move members degrade the state to Unknown before this
         // notification arrives.)
         #no_bounds_check {
             col := &self.dense_cols[cid]
-            if col.state == View_Dense_State.Aligned && uintptr(addr) != col.base + uintptr(row_ix) * col.stride {
-                col.state = View_Dense_State.Misaligned
+            if col^ == View_Dense_State.Aligned && rid != row_ix {
+                col^ = View_Dense_State.Misaligned
             }
         }
 

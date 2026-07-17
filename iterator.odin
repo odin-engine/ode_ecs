@@ -27,7 +27,7 @@ package ode_ecs
         view_row: View_Row,
 
         // true when the whole view is dense-aligned: components of every Table(T) table
-        // are read directly as table.rows[index], skipping the per-row pointer records.
+        // are read directly as table.rows[index], skipping the per-row rid records.
         // NOTE (measured dead end): reading per-column dense state here — a mask consulted
         // when only some columns are aligned — costs the fully-dense loop ~60% (the extra
         // path defeats the optimizer) and gains the mixed loop nothing. Per-column

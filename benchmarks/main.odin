@@ -405,7 +405,7 @@ setup_group_db :: proc() {
 
 // Same work as iter_mixed_it (sum a Position and a Velocity field of every
 // pos+vel entity), but through the group's always-aligned prefix: a raw SoA
-// sweep with no per-row pointer records and no alignment rescans.
+// sweep with no per-row rid records and no alignment rescans.
 bench_iter_group_slice :: proc() {
     sw: time.Stopwatch
     best: i64 = max(i64)

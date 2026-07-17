@@ -278,7 +278,7 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component_address(view, self, tail_eid, rawptr(target))
+                    view__update_component_rid(view, self, tail_eid, target_rid)
                 }
             }
         }
@@ -388,7 +388,7 @@ package ode_ecs
             mem.zero(src, T_size)
 
             for view in self.subscribers.items {
-                if !view.suspended do view__update_component_address(view, self, moved_eid, dst)
+                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
             }
 
             back -= 1

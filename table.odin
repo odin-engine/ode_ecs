@@ -194,7 +194,7 @@ package ode_ecs
 
     @(private)
     // Swap two live rows (component data + both index directions) and notify
-    // subscribed views of the address changes. Used by group maintenance
+    // subscribed views of the new row ids. Used by group maintenance
     // (group.odin); must not be called while tail swap is paused (rows must
     // stay put) — group hooks defer to a rebuild instead.
     table_raw__swap_rows :: proc(self: ^Table_Raw, #any_int rid_a: int, #any_int rid_b: int) #no_bounds_check {
@@ -213,8 +213,8 @@ package ode_ecs
 
         for view in self.subscribers.items {
             if !view.suspended {
-                view__update_component_address(view, self, eid_a, pb)
-                view__update_component_address(view, self, eid_b, pa)
+                view__update_component_rid(view, self, eid_a, rid_b)
+                view__update_component_rid(view, self, eid_b, rid_a)
             }
         }
     }
@@ -356,7 +356,7 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component_address(view, self, tail_eid, rawptr(target))
+                    view__update_component_rid(view, self, tail_eid, target_rid)
                 }
             }
         }
@@ -476,7 +476,7 @@ package ode_ecs
             mem.zero(src, T_size)
 
             for view in self.subscribers.items {
-                if !view.suspended do view__update_component_address(view, self, moved_eid, dst)
+                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
             }
 
             back -= 1

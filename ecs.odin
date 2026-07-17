@@ -365,7 +365,7 @@ package ode_ecs
         table_id ::         distinct int 
         table_record_id ::  distinct int
         view_id ::          distinct int
-        view_record_id ::   distinct int
+        view_record_id ::   distinct u32     // view row index; u32 halves the per-view eid_to_rid array
         view_column_id ::   int
 
     //

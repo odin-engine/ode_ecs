@@ -357,13 +357,13 @@ package ode_ecs__tests
             // Direct memory check 
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).eid.ix == ecs.DELETED_INDEX)
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).eid.gen == 0)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).refs[0] == nil)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).refs[1] == nil)
+            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).rids[0] == 0)
+            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).rids[1] == 0)
 
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).eid.ix == ecs.DELETED_INDEX)
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).eid.gen == 0)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).refs[0] == nil)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).refs[1] == nil)
+            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).rids[0] == 0)
+            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).rids[1] == 0)
         }
 
         err = ecs.remove_component(ais, eid_2)

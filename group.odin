@@ -8,7 +8,7 @@
     the contiguous prefix [0, group.len) of every owned table, at the SAME row
     index in each. Where a View *detects* alignment, a Group *enforces* it by
     swapping table rows on add/remove — so group_dense_slice is always valid:
-    no pointer records, no rescans, iteration is a raw SoA sweep at table speed.
+    no rid records, no rescans, iteration is a raw SoA sweep at table speed.
 
     Cost model: add_component that completes a group membership (and
     remove_component/destroy_entity that breaks one) pays O(owned tables) row

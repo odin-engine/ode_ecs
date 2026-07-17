@@ -241,7 +241,7 @@ package ode_ecs
                 view := self.subscribers[i]
                 if view != nil && !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component_address(view, self, tail_eid, rawptr(target))
+                    view__update_component_rid(view, self, tail_eid, target_rid)
                 }
             }
         }
@@ -374,7 +374,7 @@ package ode_ecs
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
                 view := self.subscribers[i]
-                if view != nil && !view.suspended do view__update_component_address(view, self, moved_eid, dst)
+                if view != nil && !view.suspended do view__update_component_rid(view, self, moved_eid, front)
             }
 
             back -= 1
