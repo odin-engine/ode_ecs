@@ -1,5 +1,24 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
+
+    Optional parent/child entity relations. One Relations_Table per Database.
+    Every entity has at most one parent and any number of children.
+
+    Storage is intrusive linked-tree arrays indexed by eid.ix — every operation
+    is a direct array access, no hashing. All memory is preallocated at init:
+    entities_cap * 36 bytes + cap * 8 bytes.
+
+    `cap` limits the number of concurrent parent links (relations). It also
+    sizes the internal scratch buffer used by relations_table__children_of and
+    the destroy_children cascade (sufficient: a parent has at most `cap`
+    children and a subtree has at most `cap` descendants).
+
+    Relations are not components: they do not affect Views. If you need to
+    iterate "all entities with a parent", pair this with a Tag_Table.
+
+    Cleanup is automatic: database__destroy_entity unlinks the destroyed entity
+    from its parent and orphans (or, with destroy_children=true, destroys) its
+    children, so every entity_id stored here is always alive.
 */
 package ode_ecs
 
@@ -9,24 +28,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Relations_Table
 //
-// Optional parent/child entity relations. One Relations_Table per Database.
-// Every entity has at most one parent and any number of children.
-//
-// Storage is intrusive linked-tree arrays indexed by eid.ix — every operation
-// is a direct array access, no hashing. All memory is preallocated at init:
-// entities_cap * 36 bytes + cap * 8 bytes.
-//
-// `cap` limits the number of concurrent parent links (relations). It also
-// sizes the internal scratch buffer used by relations_table__children_of and
-// the destroy_children cascade (sufficient: a parent has at most `cap`
-// children and a subtree has at most `cap` descendants).
-//
-// Relations are not components: they do not affect Views. If you need to
-// iterate "all entities with a parent", pair this with a Tag_Table.
-//
-// Cleanup is automatic: database__destroy_entity unlinks the destroyed entity
-// from its parent and orphans (or, with destroy_children=true, destroys) its
-// children, so every entity_id stored here is always alive.
 
     Relations_Table :: struct {
         state: Object_State,
