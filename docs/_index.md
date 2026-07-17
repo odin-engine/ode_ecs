@@ -9,7 +9,7 @@
 * [Command Buffer](command_buffer.md)
 * ❓[Frequently Asked Questions (F.A.Q)](faq.md)
 
-# Samples
+# 🍕 Samples
 
 I highly recommend going through the [samples](../samples) to learn about ODE_ECS functionality. I tried to demonstrate all the main features in the samples.
 
@@ -27,7 +27,7 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 * [Sample06](/samples/sample06/main.odin) – Demonstrates how to use `Tag_Table` and View filtering.
 
 
-# How to read source code
+# 📖 How to read source code
 
 To check the main **ODE\_ECS** procedures, you can go to [ecs.odin](/ecs.odin) and scroll down to the **aliases** section. Those are the main or most commonly used procedures, though not all of them.
 
@@ -35,7 +35,7 @@ If you want to find all procedures related to a specific object—for example, *
 
 Scroll down to the **Table** section (ignore the **Table\_Base** and **Table\_Raw** objects/sections), and there you’ll find all of the public **Table** procedures along with their implementations.
 
-# Performance tuning
+# 🕑 Performance tuning
 
 ODE_ECS ships with a micro-benchmark suite in `benchmarks/` — the referee for any performance work on the library. Run it before and after a change and compare ns/op:
 
@@ -52,9 +52,9 @@ Compiler flags that matter for release builds of your game:
 - `-no-bounds-check` — disables bounds checking globally. The library already annotates its provably-safe hot paths with `#no_bounds_check`, so this mostly affects your own code.
 - `-microarch:native` — allows the compiler to use your CPU's full instruction set.
 
-# Benchmarks (ODE_ECS vs other ECSes)
+# 💪 Benchmarks (ODE_ECS vs other ECSes)
 
 - ODE_ECS vs moecs vs odecs benchmark is [here](https://github.com/zm69/ecs_bench).
 
-# ‼️When to open an issue ticket
+# ‼️ When to open an issue ticket
 If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.

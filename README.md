@@ -33,7 +33,7 @@ Use `git clone` to clone this repository into your project folder, and then `imp
     git clone https://github.com/odin-engine/ode_ecs.git
 ```  
 
-# 🧩Basics  
+# 🧩 Basics  
 
 An **_Entity_** is simply an ID. All data associated with an entity is stored in its components.  
 
@@ -145,7 +145,7 @@ Using an entity, you can access its other components:
 
 ---
 
-## 🪟**View**  
+## 🪟 **View**  
 
 A **_View_** is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
 To initialize a view for entities with both `Position` and `AI` components, you can do this:  
@@ -231,11 +231,11 @@ Besides included tables, `ecs.view_init` takes an optional `excludes` list — t
     err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
 ```
 
-### 🔎View Filters
+### 🔎 View Filters
 Read about View filters [here](/docs/view.md#filters).
 
 ---
-## 🏷️Tag_Table
+## 🏷️ Tag_Table
 
 `Tag_Table` is a variation of `Table`, but it doesn’t contain any components. A `Tag_Table` only “tags” entities. You can create a `Tag_Table` like this:
 
@@ -322,7 +322,7 @@ The cascade is iterative (no recursion) and destroys the deepest entities first;
 
 ---
 
-## 🪸Mutating tables (destroying entities/removing components) while iterating over them
+## 🪸 Mutating tables (destroying entities/removing components) while iterating over them
 
 ### TIP: Be aware that component locations might shift within tables.
 
@@ -366,7 +366,7 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 
 `ecs.resume_packing(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
 
-### ⏸️Pausing a single table or group
+### ⏸️ Pausing a single table or group
 
 `pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
 
@@ -384,7 +384,7 @@ A table owned by a `Group` cannot be paused on its own — a group moves rows ac
 
 Table-level and group-level pauses compose with (OR into) the database-wide pause and with each other: a database-wide `resume_packing` still packs every table, but does not forcibly clear a table's or group's own independent pause — that pause stays in effect until its own `resume_packing` is called.
 
-### 📃Command_Buffer: record now, apply at a sync point
+### 📃 Command_Buffer: record now, apply at a sync point
 
 Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component` and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
 
@@ -411,7 +411,7 @@ Semantics: a command whose entity id expired before it applied (destroyed by an 
 
 Threading: recording only writes to the buffer's own memory, so use **one Command_Buffer per thread (or per system)** and record concurrently without locks; `replay` mutates the database and must run single-threaded at the sync point, one buffer after another. Replay also composes with `pause_packing` (adds append past holes, removes leave holes).
 
-## 💾Saving and loading (snapshots)
+## 💾 Saving and loading (snapshots)
 
 A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags and parent/child relations. Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
 
