@@ -33,7 +33,7 @@ Use `git clone` to clone this repository into your project folder, and then `imp
     git clone https://github.com/odin-engine/ode_ecs.git
 ```  
 
-# Basics  
+# 🧩Basics  
 
 An **_Entity_** is simply an ID. All data associated with an entity is stored in its components.  
 
@@ -231,7 +231,7 @@ Besides included tables, `ecs.view_init` takes an optional `excludes` list — t
     err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
 ```
 
-### View Filter
+### 🔎View Filter
 
 A view filter is a `proc` that you can pass to `ecs.view_init` to filter view data. It allows you to create views based on any custom logic.
 
@@ -273,7 +273,7 @@ The filter runs when view membership *changes*, not when component values change
 Check [Sample06](/samples/sample06/main.odin) for an example of how to use a View filter.
 
 ---
-## Tag_Table
+## 🏷️Tag_Table
 
 `Tag_Table` is a variation of `Table`, but it doesn’t contain any components. A `Tag_Table` only “tags” entities. You can create a `Tag_Table` like this:
 
@@ -360,7 +360,7 @@ The cascade is iterative (no recursion) and destroys the deepest entities first;
 
 ---
 
-## Mutating tables (destroying entities/removing components) while iterating over them
+## 🪸Mutating tables (destroying entities/removing components) while iterating over them
 
 ### TIP: Be aware that component locations might shift within tables.
 
@@ -404,7 +404,7 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 
 `ecs.resume_packing(&db)` restores normal tail swapping and *packs* every table that accumulated holes. `ecs.pack(&table)` is also available directly — for example mid-pause, when a table with many holes reports full (new components are always appended at the tail, so holes don't free capacity until packed).
 
-### Pausing a single table or group
+### ⏸️Pausing a single table or group
 
 `pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
 
@@ -422,7 +422,7 @@ A table owned by a `Group` cannot be paused on its own — a group moves rows ac
 
 Table-level and group-level pauses compose with (OR into) the database-wide pause and with each other: a database-wide `resume_packing` still packs every table, but does not forcibly clear a table's or group's own independent pause — that pause stays in effect until its own `resume_packing` is called.
 
-### Command_Buffer: record now, apply at a sync point
+### 📃Command_Buffer: record now, apply at a sync point
 
 Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component` and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
 
