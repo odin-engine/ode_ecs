@@ -1,7 +1,7 @@
 ![alt text](/img/banner.png?raw=true)
-# ⚡ODE_ECS (Entity-Component-System)
+# 🐏 ODE_ECS (Entity-Component-System) 
 
-A minimal, data-oriented, high-performance Entity-Component-System written in Odin.
+⚡A minimal, data-oriented, high-performance Entity-Component-System written in Odin.
 
 ## Features
 
