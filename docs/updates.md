@@ -1,18 +1,19 @@
-# Updates Timeline
+# 🐑 Updates Timeline
 
 **July 2026**
-* \*new\* View `excludes` — `view_init(..., excludes = {&table})` keeps entities that have a component in **none** of the excluded tables ("has A, not B"), auto-maintained, no filter proc needed. Works with every table variant.
-* \*new\* `refilter(&view)` — re-evaluates a view's filter for all rows and candidates in one sweep after bulk mutations (cheaper than `rebuild`: no clear, surviving rows stay put).
-* \*new\* `rerun_views_filters` proc group (over the per-table-variant procs).
-* View filter rerun path optimized: each re-evaluated row is now filled once instead of twice.
-* \*new\* [Groups](group.md)
-* \*new\* Defer tail-swap feature (pause_packing/resume_packing/pack) ([Database](database.md), [Group](group.md) and [Table](tables.md) levels).
+* \*new\* [Pause packing](/README.md#mutating-tables-while-iterating-pause_packing--resume_packing--pack) feature - deferred-tail-swap mode.
+* \*new\* [Groups](group.md) feature -  the fastest way to iterate entities that have a specific set of components.
 * \*new\* [Relations_Table](relations.md) (parent/child entity relations) feature.
-* \*new\* Command buffers.
-* \*new\* Saving and loading (snapshots).
-* Added a dense (aligned) path optimization for Views (~2x speed increase if the view and tables are aligned).
+* \*new\* [Command buffers](command_buffer.md) - defer the structural changes.
+* \*new\* [Saving and loading (snapshots)](/README.md#-saving-and-loading-snapshots) - database serialization.
+* \*new\* View `excludes` — `view_init(..., excludes = {&table})`, `refilter(&view)` feature.
+* \*new\* +5 new samples.
+* \*new\* Added a dense (aligned) path optimization for Views (~2x speed increase if aligned).
+* \*new\* View filter rerun path optimized: each re-evaluated row is now filled once instead of twice.
 * Micro-optimizations.
-* Improvements and bug fixes.
+* Improvements, polishing and bug fixes.
+* More tests. 
+* Improved README and docs.
 
 **v1.2.2**
 * Added new procedures: `view__rerun_filter` and `table__rerun_views_filters`.
