@@ -135,7 +135,7 @@ package ode_ecs
             case Table_Type.Table:
                 return table_base__cap(cast(^Table_Base)self)
             case Table_Type.Tiny_Table:
-                return tiny_table__cap(self)
+                return tiny_table_base__cap(cast(^Tiny_Table_Base)self)
             case Table_Type.Compact_Table:
                 return compact_table_base__cap(cast(^Compact_Table_Base)self)
             case Table_Type.Tag_Table:

@@ -143,6 +143,9 @@ package ode_ecs
     // Relations (parent/child), require a Relations_Table on the database,
     // see relations_table__init
     //
+        relations_init      :: relations_table__init                // Attach a Relations_Table to a Database (one per Database)
+        relations_terminate :: relations_table__terminate
+
         set_parent          :: database__set_parent                 // Make one entity the parent of another (replaces previous parent)
         remove_parent       :: database__remove_parent              // Remove entity's parent link
         unparent            :: database__remove_parent
@@ -159,7 +162,8 @@ package ode_ecs
     // 
         view_entity_match   :: view__components_match               // outdated, use view_components_match instead
         is_entity_expired   :: database__is_entity_expired          // outdated, use is_expired instead
-        is_deleted          :: is_not_set                           // outdated, use is_not_set instead       
+        is_deleted          :: is_not_set                           // outdated, use is_not_set instead
+        iterator__get_component_for_small_table :: iterator__get_component_for_compact_table // outdated, "small" renamed to "compact"
 
     //
     // Proc groups
@@ -174,7 +178,7 @@ package ode_ecs
             database__get_entity,
             table__get_entity_by_row_number,
             compact_table__get_entity_by_row_number,
-            tiny_table_base__get_entity_by_row_number,
+            tiny_table__get_entity_by_row_number,
             tag_table__get_entity_by_row_number,
             iterator__get_entity,
             view_row__get_entity,
@@ -218,12 +222,15 @@ package ode_ecs
         get_component       :: proc {
             table__get_component_by_entity,
             compact_table__get_component_by_entity,
-            iterator__get_component_for_table, 
-            iterator__get_component_for_small_table, 
+            iterator__get_component_for_table,
+            iterator__get_component_for_compact_table,
             iterator__get_component_for_tiny_table,
             tiny_table__get_component_by_entity,
+            view__get_component_for_table,
+            view__get_component_for_compact_table,
+            view__get_component_for_tiny_table,
             view_row__get_component_for_table,
-            view_row__get_component_for_small_table,
+            view_row__get_component_for_compact_table,
             view_row__get_component_for_tiny_table,
         }
 
@@ -232,6 +239,7 @@ package ode_ecs
             table__has_component,
             compact_table__has_component,
             tiny_table__has_component,
+            tag_table__has_tag,
         }
 
         // Copy components between tables of the same type
@@ -261,6 +269,8 @@ package ode_ecs
             tag_table__remove_tag,
         }
         untag :: remove_tag
+
+        has_tag :: tag_table__has_tag                               // Is entity tagged in this Tag_Table?
 
         //
         // Other

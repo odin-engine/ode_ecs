@@ -16,7 +16,7 @@
 
 **v1.2.2**
 * Added new procedures: `view__rerun_filter` and `table__rerun_views_filters`.
-* Renamed configuration variables — `ecs_validation` → `ECS_VALIDATION`, `ecs_tables_mult` → `ECS_TABLES_MULT`, and `ecs_views_cap` → `ECS_VIEWS_CAP` — to comply with Odin naming standards.
+* Renamed configuration variables — `ecs_validation` → `ECS_VALIDATIONS`, `ecs_tables_mult` → `ECS_TABLES_MULT`, and `ecs_views_cap` → `ECS_VIEWS_CAP` — to comply with Odin naming standards.
 * Updated sample06 
 * More tests related to View filters
 

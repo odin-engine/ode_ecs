@@ -92,7 +92,7 @@ package ode_ecs
     }
 
     @(private)
-    view_row__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
+    view_row__get_component_for_compact_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
             return &table.rows[view_row.raw.rids[view_row.view.tid_to_cid[table.id]]]
         }
@@ -506,8 +506,6 @@ package ode_ecs
 
             return view__filter_match_private(self, row_raw)
         }
-
-        return false
     }
 
     // Rerun filter for an entity

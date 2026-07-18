@@ -363,3 +363,247 @@ package ode_ecs__tests
         testing.expect(t, ecs.tag_table__len(&is_alive) == 1)
     }
 
+///////////////////////////////////////////////////////////////////////////////
+// Attach/detach (parity with table/compact_table/tiny_table suites)
+
+    @(test)
+    tag_table__attaching_detaching_tables__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+
+            // Log into console when panic happens
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+
+            ecs_1: ecs.Database
+            is_alive: ecs.Tag_Table
+            is_enemy: ecs.Tag_Table
+            is_frozen: ecs.Tag_Table
+            is_enemy2: ecs.Tag_Table
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&ecs_1)
+
+            testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
+
+            testing.expect(t, ecs.tag_table__init(&is_alive, &ecs_1, 10) == nil)
+            testing.expect(t, is_alive.id == 0)
+
+            testing.expect(t, ecs.tag_table__init(&is_enemy, &ecs_1, 10) == nil)
+            defer ecs.tag_table__terminate(&is_frozen)
+            testing.expect(t, ecs.tag_table__init(&is_frozen, &ecs_1, 10) == nil)
+
+            testing.expect(t, is_enemy.id == 1)
+            testing.expect(t, is_frozen.id == 2)
+
+            ecs.tag_table__terminate(&is_enemy)
+
+            testing.expect(t, is_enemy.id == ecs.DELETED_INDEX)
+            testing.expect(t, ecs_1.tables.items[1] == nil)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
+            testing.expect(t, ecs_1.tables.has_nil_item == true)
+
+            // a new table reuses the freed slot
+            defer ecs.tag_table__terminate(&is_enemy2)
+            testing.expect(t, ecs.tag_table__init(&is_enemy2, &ecs_1, 10) == nil)
+            testing.expect(t, is_enemy2.id == 1)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
+            testing.expect(t, ecs_1.tables.has_nil_item == false)
+
+            ecs.tag_table__terminate(&is_alive)
+
+            testing.expect(t, is_alive.id == ecs.DELETED_INDEX)
+            testing.expect(t, ecs_1.tables.items[0] == nil)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
+            testing.expect(t, ecs_1.tables.has_nil_item == true)
+    }
+
+    // Terminating a Tag_Table invalidates the views subscribed to it.
+    @(test)
+    tag_table__attaching_detaching_views__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            is_alive: ecs.Tag_Table
+            view: ecs.View
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.tag_table__init(&is_alive, &db, 10) == nil)
+            testing.expect(t, ecs.view_init(&view, &db, {&is_alive}) == nil)
+
+            testing.expect(t, ecs.is_valid(&view))
+
+            eid, err := ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.add_tag(&is_alive, eid) == nil)
+            testing.expect(t, ecs.view_len(&view) == 1)
+
+            testing.expect(t, ecs.tag_table__terminate(&is_alive) == nil)
+
+            testing.expect(t, view.state == ecs.Object_State.Invalid)
+            testing.expect(t, !ecs.is_valid(&view))
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Full container / repeated adds
+
+    @(test)
+    tag_table__full_container__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            is_alive: ecs.Tag_Table
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.tag_table__init(&is_alive, &db, 3) == nil)
+
+            eids: [4]ecs.entity_id
+            err: ecs.Error
+            for i in 0..<4 {
+                eids[i], err = ecs.create_entity(&db)
+                testing.expect(t, err == nil)
+            }
+
+            for i in 0..<3 do testing.expect(t, ecs.add_tag(&is_alive, eids[i]) == nil)
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+
+            // table is full
+            testing.expect(t, ecs.add_tag(&is_alive, eids[3]) == oc.Core_Error.Container_Is_Full)
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+
+            // re-adding an existing tag on a full table stays a no-op
+            testing.expect(t, ecs.add_tag(&is_alive, eids[1]) == nil)
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+
+            // removing one frees a slot again
+            testing.expect(t, ecs.untag(&is_alive, eids[0]) == nil)
+            testing.expect(t, ecs.add_tag(&is_alive, eids[3]) == nil)
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// has_tag
+
+    @(test)
+    tag_table__has_tag__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            is_alive: ecs.Tag_Table
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.tag_table__init(&is_alive, &db, 10) == nil)
+
+            human, err := ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+            chair, err2 := ecs.create_entity(&db)
+            testing.expect(t, err2 == nil)
+
+            testing.expect(t, ecs.has_tag(&is_alive, human) == false)
+
+            testing.expect(t, ecs.add_tag(&is_alive, human) == nil)
+            testing.expect(t, ecs.has_tag(&is_alive, human) == true)
+            testing.expect(t, ecs.has_tag(&is_alive, chair) == false)
+
+            // has_component proc group dispatches to has_tag for Tag_Table
+            testing.expect(t, ecs.has_component(&is_alive, human) == true)
+            testing.expect(t, ecs.has_component(&is_alive, chair) == false)
+
+            testing.expect(t, ecs.untag(&is_alive, human) == nil)
+            testing.expect(t, ecs.has_tag(&is_alive, human) == false)
+
+            // expired entity id reports false, not stale data
+            testing.expect(t, ecs.add_tag(&is_alive, chair) == nil)
+            testing.expect(t, ecs.destroy_entity(&db, chair) == nil)
+            testing.expect(t, ecs.has_tag(&is_alive, chair) == false)
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Clear / reuse
+
+    @(test)
+    tag_table__clear__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            is_alive: ecs.Tag_Table
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.tag_table__init(&is_alive, &db, 5) == nil)
+
+            eids: [3]ecs.entity_id
+            err: ecs.Error
+            for i in 0..<3 {
+                eids[i], err = ecs.create_entity(&db)
+                testing.expect(t, err == nil)
+                testing.expect(t, ecs.add_tag(&is_alive, eids[i]) == nil)
+            }
+
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+
+            testing.expect(t, ecs.clear(&is_alive) == nil)
+
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 0)
+            testing.expect(t, ecs.tag_table__cap(&is_alive) == 5)
+            for i in 0..<3 do testing.expect(t, ecs.has_tag(&is_alive, eids[i]) == false)
+
+            // table stays usable after clear
+            for i in 0..<3 do testing.expect(t, ecs.add_tag(&is_alive, eids[i]) == nil)
+            testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+            testing.expect(t, ecs.has_tag(&is_alive, eids[1]) == true)
+    }
+

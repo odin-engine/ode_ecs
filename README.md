@@ -251,6 +251,8 @@ Then you can tag or untag entities like this:
     
     ecs.tag(&is_alive, human)       // add tag
     ecs.untag(&is_alive, human)    // remove tag
+
+    ecs.has_tag(&is_alive, human)  // O(1) membership query
 ```
 
 `Tag_Table` is especially useful with `View`:
@@ -284,7 +286,7 @@ You can iterate over tagged entities like this:
     rt : ecs.Relations_Table
 
     // cap limits the number of concurrent parent links (relations)
-    ecs.relations_table__init(&rt, &db, cap=100)
+    ecs.relations_init(&rt, &db, cap=100) // long form: ecs.relations_table__init
 ```
 
 Once created, relations are managed through database-level procedures (they return `Relations_Table_Not_Created` if you call them before creating the table):
@@ -440,7 +442,7 @@ Rules:
 
 # How to Run Samples and Tests  
 
-To run samples, navigate to the appropriate folder (`samples/basic` or `samples/sample01`) and execute:  
+To run samples, navigate to the appropriate folder (`samples/basics` or `samples/sample01`) and execute:  
 
 ```  
     odin run . -o:speed

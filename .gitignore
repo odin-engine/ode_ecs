@@ -32,6 +32,21 @@ samples/sample05/out/*
 samples/sample06/out/*
 !samples/sample06/out/.keep
 
+samples/sample07/out/*
+!samples/sample07/out/.keep
+
+samples/sample08/out/*
+!samples/sample08/out/.keep
+
+samples/sample09/out/*
+!samples/sample09/out/.keep
+
+samples/sample10/out/*
+!samples/sample10/out/.keep
+
+samples/sample11/out/*
+!samples/sample11/out/.keep
+
 .vscode
 ols.json
 *.code-workspace
@@ -43,3 +58,4 @@ benchmarks/out/*
 !benchmarks/out/.keep
 *-autosave.kra
 *.kra~
+*.snap

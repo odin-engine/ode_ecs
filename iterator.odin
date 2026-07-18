@@ -125,8 +125,8 @@ package ode_ecs
         return view_row__get_component_for_table(table, &it.view_row)
     }
 
-    iterator__get_component_for_small_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
-        return view_row__get_component_for_small_table(table, &it.view_row)
+    iterator__get_component_for_compact_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
+        return view_row__get_component_for_compact_table(table, &it.view_row)
     }
 
     iterator__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), it: ^Iterator) -> ^T #no_bounds_check {

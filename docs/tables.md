@@ -177,6 +177,9 @@ human, _ := ecs.create_entity(&my_ecs)
 ecs.tag(&is_alive, human)      // alias: ecs.add_tag
 ecs.untag(&is_alive, human)    // alias: ecs.remove_tag
 
+// O(1) membership query (ecs.has_component also dispatches to it)
+if ecs.has_tag(&is_alive, human) { /* ... */ }
+
 // Iterate tagged entities directly
 for eid in is_alive.rows {
     fmt.println("alive:", eid)

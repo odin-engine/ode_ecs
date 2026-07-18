@@ -16,6 +16,8 @@ This is a data-oriented library with a "no hidden costs / preallocate everything
 
 So the honest summary: making the core internally thread-safe would meaningfully hurt — per-element locking is a 2–10× hit on the headline iteration path and per-mutation locking serializes the very thing you parallelized for. But thread-safe usage via batched parallel iteration over immutable component data plus a single-threaded structural-mutation phase costs essentially nothing.
 
+See [Sample11](../samples/sample11/main.odin) for a working example of all three patterns.
+
 ### 2. How to iterate over all entities?
 
 Iterating over all entities unconditionally is a major anti-pattern in ECS.

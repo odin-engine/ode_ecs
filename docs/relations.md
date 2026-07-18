@@ -4,7 +4,7 @@
 
 Like everything else in ODE_ECS, all memory is preallocated at init, and set/remove/re-parent are all **O(1)** (intrusive linked-tree arrays indexed by `eid.ix` — direct array accesses, no hashing).
 
-At most **one** `Relations_Table` per [Database](database.md) (a second `relations_table__init` returns `Relations_Table_Already_Exists`).
+At most **one** `Relations_Table` per [Database](database.md) (a second `relations_init` returns `Relations_Table_Already_Exists`).
 
 > **NOTE:** Relations are *not* components — they never affect [Views](view.md). If you need to iterate "all entities that have a parent", pair relations with a [Tag_Table](tables.md#tag_table) you tag on `set_parent`.
 
@@ -20,12 +20,12 @@ ecs.init(&my_ecs, entities_cap = 1000)
 
 // cap = max number of concurrent parent links (child→parent edges),
 // must be <= entities_cap
-ecs.relations_table__init(&rt, &my_ecs, cap = 500)
+ecs.relations_init(&rt, &my_ecs, cap = 500) // long form: ecs.relations_table__init
 ```
 
 The table is terminated automatically with the database. Memory cost: `entities_cap * 36` bytes + `cap * 8` bytes.
 
-Once initialized, all relation operations go through **database-level procedures**. Calling them before `relations_table__init` returns `API_Error.Relations_Table_Not_Created`.
+Once initialized, all relation operations go through **database-level procedures**. Calling them before `relations_init` returns `API_Error.Relations_Table_Not_Created`.
 
 ## Linking and unlinking
 
@@ -101,7 +101,7 @@ transforms: ecs.Table(Transform)
 main :: proc() {
     defer ecs.terminate(&my_ecs)
     ecs.init(&my_ecs, entities_cap = 100)
-    ecs.relations_table__init(&rt, &my_ecs, cap = 100)
+    ecs.relations_init(&rt, &my_ecs, cap = 100)
     ecs.table_init(&transforms, &my_ecs, 100)
 
     ship, _    := ecs.create_entity(&my_ecs)

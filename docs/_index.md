@@ -13,6 +13,7 @@
 
 I highly recommend going through the [samples](../samples) to learn about ODE_ECS functionality. I tried to demonstrate all the main features in the samples.
 
+* [Basics](/samples/basics/main.odin) – A minimal starting point: init a database, tables and a view, create entities, iterate.
 * [Sample01](/samples/sample01/main.odin) – A basic sample with 100,000 entities that demonstrates how to use tables and views.
 * [Sample02](/samples/sample02/main.odin) – Demonstrates how to optimize your ECS (Approach 1 vs. Approach 2).
 * [Sample03](/samples/sample03/main.odin) – Demonstrates the benefits of the View approach versus the Archetype approach in ECS.
@@ -25,6 +26,11 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 
 * [Sample05](/samples/sample05/main.odin) – Compares `Table` vs. `Compact_Table`, and `Tiny_Table` vs. `Compact_Table` vs. `Table`.
 * [Sample06](/samples/sample06/main.odin) – Demonstrates how to use `Tag_Table` and View filtering.
+* [Sample07](/samples/sample07/main.odin) – Demonstrates `Group`: exclusive table ownership and iterating the aligned dense prefix.
+* [Sample08](/samples/sample08/main.odin) – Demonstrates entity relations (`relations_init`, `set_parent`, `children_of`).
+* [Sample09](/samples/sample09/main.odin) – Demonstrates `Command_Buffer`: deferring structural changes while iterating, then `replay`.
+* [Sample10](/samples/sample10/main.odin) – Demonstrates serialization: snapshot a database, save/load it from a file.
+* [Sample11](/samples/sample11/main.odin) – Demonstrates multithreading: parallel batched View iteration + a single-threaded sync point (see [F.A.Q. #1](faq.md)).
 
 
 # 📖 How to read source code

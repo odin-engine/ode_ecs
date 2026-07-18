@@ -8,7 +8,6 @@ package ode_ecs
 
 // Core
     import "core:mem"
-    import "core:log"
 
 // ODE
     import oc "ode_core"
@@ -137,15 +136,23 @@ package ode_ecs
         return self.len
     }
 
+    @(private)
+    tiny_table_base__cap :: #force_inline proc "contextless" (self: ^Tiny_Table_Base) -> int {
+        return TINY_TABLE__ROW_CAP
+    }
+
+    @(private)
     tiny_table_base__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Tiny_Table_Base, #any_int row_number: int) -> entity_id {
         return self.rid_to_eid[row_number]
     }
 
+    @(private)
     tiny_table_base__get_component_by_entity :: proc (self: ^Tiny_Table_Base, eid: entity_id) -> rawptr {
         return oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
     }
 
-    tiny_table_base__memory_usage :: proc (self: ^Tiny_Table_Base) -> int { 
+    @(private)
+    tiny_table_base__memory_usage :: proc (self: ^Tiny_Table_Base) -> int {
         if self == nil || self.type_info == nil do return DELETED_INDEX
         return size_of(self^) + self.type_info.size * TINY_TABLE__ROW_CAP
     }
@@ -445,6 +452,8 @@ package ode_ecs
     tiny_table__terminate :: proc(self: ^Tiny_Table($T), loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
+            assert(self.type_info.id == typeid_of(T), loc = loc)
+            assert(self.db != nil, loc = loc)
             assert(self.state == Object_State.Normal, loc = loc) // table should be Normal
             assert(self.db.state == Object_State.Normal, loc = loc) // db should be Normal
         }
@@ -522,8 +531,8 @@ package ode_ecs
         return tiny_table_base__len(cast(^Tiny_Table_Base) self)
     }
 
-    tiny_table__cap :: #force_inline proc "contextless" (self: ^Shared_Table) -> int {
-        return TINY_TABLE__ROW_CAP
+    tiny_table__cap :: #force_inline proc "contextless" (self: ^Tiny_Table($T)) -> int {
+        return tiny_table_base__cap(cast(^Tiny_Table_Base) self)
     }
 
     @(require_results)

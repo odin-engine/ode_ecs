@@ -8,7 +8,6 @@ package ode_ecs
 
 // Core
     import "core:mem"
-    import "core:log"
     import "core:math"
 
 // ODE
@@ -77,6 +76,11 @@ package ode_ecs
     }
 
     tag_table__terminate :: proc(self: ^Tag_Table) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.db != nil)
+        }
+
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
         for view in self.subscribers.items do view.state = Object_State.Invalid
@@ -261,6 +265,19 @@ package ode_ecs
     }
 
     tag_table__remove_component :: tag_table__remove_tag
+
+    @(require_results)
+    tag_table__has_tag :: proc (self: ^Tag_Table, eid: entity_id) -> bool {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+        }
+
+        err := database__is_entity_correct(self.db, eid)
+        if err != nil do return false
+
+        return oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix) != nil
+    }
 
     // Compact holes left by removals made while tail swap was paused
     // (see database__pause_packing). Callable mid-pause too.

@@ -11,6 +11,7 @@ package ode_ecs__tests
     import "core:log"
     import "core:slice"
     import "core:mem"
+    import "core:os"
 
 // ODE
     import ecs ".."
@@ -680,4 +681,76 @@ package ode_ecs__tests
             testing.expect(t, pos1 != nil && pos1.x == 101)
 
             testing.expect(t, ecs.table_len(&is_alive) == 1) // eids[2] tag rolled back
+    }
+
+    // save_to_file → load_from_file round trip through an actual file on disk
+    // (the in-memory buffer path is covered by serialization_round_trip__test).
+    @(test)
+    serialization_save_load_file__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            a: Snapshot_World
+            b: Snapshot_World
+
+        //
+        // Test
+        //
+            defer snapshot_world__terminate(&a)
+            defer snapshot_world__terminate(&b)
+
+            snapshot_world__init(t, &a, 20, allocator)
+
+            eids: [10]ecs.entity_id
+            err: ecs.Error
+            for i := 0; i < 10; i += 1 {
+                eids[i], err = ecs.create_entity(&a.db)
+                testing.expect(t, err == nil)
+            }
+            for i := 0; i < 8; i += 1 {
+                pos, perr := ecs.add_component(&a.positions, eids[i])
+                testing.expect(t, perr == nil)
+                pos^ = Position{ x = i, y = -i }
+            }
+            for i := 2; i < 6; i += 1 {
+                spd, serr := ecs.add_component(&a.speeds, eids[i])
+                testing.expect(t, serr == nil)
+                spd.value = f32(i)
+            }
+            testing.expect(t, ecs.add_tag(&a.is_alive, eids[0]) == nil)
+            testing.expect(t, ecs.set_parent(&a.db, eids[1], eids[0]) == nil)
+
+            // cwd-relative: works both from tests/ (odin test .) and tests/out/
+            // (the ECS Tests task); *.snap is gitignored and removed below
+            path :: "save_load_round_trip.snap"
+            defer os.remove(path)
+
+            testing.expect(t, ecs.save_to_file(&a.db, path, allocator) == nil)
+
+            // Load into a fresh database with the same schema
+            snapshot_world__init(t, &b, 20, allocator)
+            testing.expect(t, ecs.load_from_file(&b.db, path, allocator) == nil)
+
+            testing.expect(t, ecs.entities_len(&b.db) == ecs.entities_len(&a.db))
+            for i := 0; i < 10; i += 1 {
+                pa := ecs.get_component(&a.positions, eids[i])
+                pb := ecs.get_component(&b.positions, eids[i])
+                testing.expect(t, (pa == nil) == (pb == nil))
+                if pa != nil && pb != nil do testing.expect(t, pa^ == pb^)
+
+                sa := ecs.get_component(&a.speeds, eids[i])
+                sb := ecs.get_component(&b.speeds, eids[i])
+                testing.expect(t, (sa == nil) == (sb == nil))
+                if sa != nil && sb != nil do testing.expect(t, sa^ == sb^)
+            }
+            testing.expect(t, ecs.has_tag(&b.is_alive, eids[0]))
+
+            is_child, cerr := ecs.is_child_of(&b.db, eids[1], eids[0])
+            testing.expect(t, cerr == nil && is_child)
     }
