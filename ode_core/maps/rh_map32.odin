@@ -264,6 +264,14 @@ package maps
 
     @(test)
     rh_map32__test :: proc(t: ^testing.T) {
+        // This test asserts exact slot placement, which needs the predictable
+        // identity hash. Skip (don't fail) in production-hash mode; behavioral
+        // coverage for that mode lives in rh_map32__behavior__test.
+        when !MAPS_TESTING {
+            log.warn("rh_map32__test skipped: slot-placement test needs -define:maps_testing=true")
+            return
+        }
+
         // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -275,7 +283,6 @@ package maps
         // Make sure we are using the simplified hash function for testing
         //
 
-        testing.expect(t, MAPS_TESTING == true)
         testing.expect(t, rh_map32__hash(&Rh_Map32{ capacity = 16, mask = 15 }, 0) == 0)
         testing.expect(t, rh_map32__hash(&Rh_Map32{ capacity = 16, mask = 15 }, 17) == 1)
 
@@ -355,4 +362,100 @@ package maps
         testing.expect(t, rh_map32__get(&map1, 40) == RH_MAP32_DELETED)
 
         testing.expect(t, rh_map32__terminate(&map1, allocator) == nil)
+    }
+
+    // Behavioral test: asserts observable behavior only (never slot placement),
+    // so it runs in BOTH modes. Without -define:maps_testing=true this is what
+    // exercises the production Fibonacci hash, the 0.5 load factor and the
+    // min-capacity-8 bump.
+    @(test)
+    rh_map32__behavior__test :: proc(t: ^testing.T) {
+        // Log into console when panic happens
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+
+        // non-power-of-2 capacity is rejected
+        bad: Rh_Map32
+        testing.expect(t, rh_map32__init(&bad, 6, allocator) == oc.Core_Error.Capacity_Is_Not_Power_Of_2)
+
+        // tiny capacity: production mode bumps to the 8 minimum with half_capacity 4
+        tiny: Rh_Map32
+        testing.expect(t, rh_map32__init(&tiny, 2, allocator) == nil)
+        when MAPS_TESTING {
+            testing.expect(t, tiny.capacity == 2 && tiny.half_capacity == 2)
+        } else {
+            testing.expect(t, tiny.capacity == 8 && tiny.half_capacity == 4)
+        }
+        testing.expect(t, tiny.mask == tiny.capacity - 1)
+        testing.expect(t, rh_map32__terminate(&tiny, allocator) == nil)
+
+        m: Rh_Map32
+        testing.expect(t, rh_map32__init(&m, 64, allocator) == nil)
+        defer rh_map32__terminate(&m, allocator)
+        testing.expect(t, m.count == 0)
+        testing.expect(t, rh_map32__memory_usage(&m) > 0)
+
+        // fill to the load-factor limit with scattered keys (forces collisions
+        // and wrap-around under any hash)
+        limit := m.half_capacity
+
+        key_of :: proc(i: int) -> u32 { return u32(i * 97 + 13) }
+
+        for i in 0..<limit-1 {
+            testing.expect(t, rh_map32__add(&m, key_of(i), u32(i * 1000)) == nil)
+        }
+        testing.expect(t, m.count == limit - 1)
+
+        // add on an existing key updates the value in place (count unchanged)
+        testing.expect(t, rh_map32__add(&m, key_of(0), 42) == nil)
+        testing.expect(t, rh_map32__get(&m, key_of(0)) == 42)
+        testing.expect(t, m.count == limit - 1)
+
+        // update; update of a missing key fails
+        testing.expect(t, rh_map32__update(&m, key_of(0), 0) == nil)
+        testing.expect(t, rh_map32__get(&m, key_of(0)) == 0)
+        testing.expect(t, rh_map32__update(&m, key_of(limit), 0) == oc.Core_Error.Not_Found)
+
+        // full at the load-factor limit (the load check runs before the update-in-place scan)
+        testing.expect(t, rh_map32__add(&m, key_of(limit-1), u32((limit - 1) * 1000)) == nil)
+        testing.expect(t, m.count == limit)
+        testing.expect(t, rh_map32__add(&m, key_of(limit), 0) == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, rh_map32__add(&m, key_of(0), 42) == oc.Core_Error.Container_Is_Full)
+
+        // every inserted key is retrievable; absent keys return the sentinel
+        for i in 0..<limit do testing.expect(t, rh_map32__get(&m, key_of(i)) == u32(i * 1000))
+        testing.expect(t, rh_map32__get(&m, key_of(limit)) == RH_MAP32_DELETED)
+
+        // remove every third key; backward shift must keep all survivors reachable
+        removed_count := 0
+        for i := 0; i < limit; i += 3 {
+            testing.expect(t, rh_map32__remove(&m, key_of(i)) == nil)
+            removed_count += 1
+        }
+        testing.expect(t, m.count == limit - removed_count)
+        for i in 0..<limit {
+            if i % 3 == 0 {
+                testing.expect(t, rh_map32__get(&m, key_of(i)) == RH_MAP32_DELETED)
+            } else {
+                testing.expect(t, rh_map32__get(&m, key_of(i)) == u32(i * 1000))
+            }
+        }
+
+        // removing an absent key fails; re-inserting removed keys works
+        testing.expect(t, rh_map32__remove(&m, key_of(0)) == oc.Core_Error.Not_Found)
+        for i := 0; i < limit; i += 3 {
+            testing.expect(t, rh_map32__add(&m, key_of(i), u32(i * 1000)) == nil)
+        }
+        testing.expect(t, m.count == limit)
+        for i in 0..<limit do testing.expect(t, rh_map32__get(&m, key_of(i)) == u32(i * 1000))
+
+        // clear resets and the map stays usable
+        rh_map32__clear(&m)
+        testing.expect(t, m.count == 0)
+        testing.expect(t, rh_map32__get(&m, key_of(1)) == RH_MAP32_DELETED)
+        testing.expect(t, rh_map32__add(&m, key_of(1), 7) == nil)
+        testing.expect(t, rh_map32__get(&m, key_of(1)) == 7)
     }

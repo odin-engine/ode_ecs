@@ -148,8 +148,8 @@ package maps
     }
 
     tt_map__memory_usage :: proc(self: ^Tt_Map($CAP, $V)) -> int {
-        return sizeof(Tt_Map($CAP, $V))
-    }   
+        return size_of(self^)
+    }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Tests
@@ -308,6 +308,10 @@ package maps
 
         v,i = tt_map__get_with_index(&map2, 4)
         testing.expect(t, v == &v1)
+
+        // instantiate memory_usage so a broken body can't hide behind genericity
+        testing.expect(t, tt_map__memory_usage(&map1) == size_of(map1))
+        testing.expect(t, tt_map__memory_usage(&map2) == size_of(map2))
     }
 
 

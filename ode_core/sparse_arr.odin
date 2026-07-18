@@ -24,7 +24,7 @@ package ode_core
         has_nil_item: bool
     }
 
-    sparce_arr__is_valid :: proc(self: ^Sparce_Arr($T)) -> bool {
+    sparse_arr__is_valid :: proc(self: ^Sparce_Arr($T)) -> bool {
         if self == nil do return false
         if self.items == nil do return false
         if self.cap <= 0 do return false 
@@ -129,6 +129,7 @@ package ode_core
 
         self.has_nil_item = false
         mem.zero(raw_data(self.items), size_of(^T) * self.cap)
+        ((^runtime.Raw_Slice)(&self.items)).len = 0
     }
 
     sparse_arr__clear :: sparse_arr__zero
@@ -222,4 +223,18 @@ package ode_core
         testing.expect(t, sparse_arr__len(&ua_1) == 1)
         testing.expect(t, ua_1.has_nil_item == false)
 
+        // clear zeroes the memory AND resets len/has_nil_item, and the array stays usable
+        ix, err = sparse_arr__add(&ua_1, &b)
+        testing.expect(t, err == Core_Error.None)
+        sparse_arr__remove_by_index(&ua_1, 0) // leave a nil hole so has_nil_item is set
+
+        sparse_arr__clear(&ua_1)
+        testing.expect(t, sparse_arr__len(&ua_1) == 0)
+        testing.expect(t, ua_1.has_nil_item == false)
+
+        ix, err = sparse_arr__add(&ua_1, &c)
+        testing.expect(t, ix == 0)
+        testing.expect(t, err == Core_Error.None)
+        testing.expect(t, sparse_arr__len(&ua_1) == 1)
+        testing.expect(t, ua_1.items[0] == &c)
     }

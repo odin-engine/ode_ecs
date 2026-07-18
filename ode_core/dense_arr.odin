@@ -103,7 +103,8 @@ package ode_core
         assert(self.items != nil)
 
         mem.zero(raw_data(self.items), size_of(T) * self.cap)
-    } 
+        ((^runtime.Raw_Slice)(&self.items)).len = 0
+    }
 
     dense_arr__clear :: dense_arr__zero
 
@@ -176,4 +177,14 @@ package ode_core
         dense_arr__remove_by_index(&arr, 1)
         testing.expect(t, dense_arr__len(&arr) == 1)
         testing.expect(t, arr.items[0] == 66)
+
+        // clear zeroes the memory AND resets len, and the array stays usable
+        dense_arr__clear(&arr)
+        testing.expect(t, dense_arr__len(&arr) == 0)
+
+        ix, err = dense_arr__add(&arr, b)
+        testing.expect(t, ix == 0)
+        testing.expect(t, err == Core_Error.None)
+        testing.expect(t, dense_arr__len(&arr) == 1)
+        testing.expect(t, arr.items[0] == 99)
     }

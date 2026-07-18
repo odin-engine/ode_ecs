@@ -52,8 +52,8 @@ package ode_ecs
         if self == nil do return false
         if self.state != Object_State.Normal do return false
         if !oc.ix_gen_factory__is_valid(&self.id_factory) do return false
-        if !oc.sparce_arr__is_valid(&self.tables) do return false
-        if !oc.sparce_arr__is_valid(&self.views) do return false
+        if !oc.sparse_arr__is_valid(&self.tables) do return false
+        if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid(&self.groups) do return false
         if self.eid_to_bits == nil do return false
 

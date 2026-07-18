@@ -122,8 +122,10 @@ package ode_core
         return self.items[index]
     }
 
-    ix_gen_factory__is_freed :: #force_inline proc(self: ^Ix_Gen_Factory, id: ix_gen) -> bool {
-        return self.items[id.ix].ix == DELETED_INDEX 
+    // #no_bounds_check: items has cap elements and id.ix is range-checked right above (same as is_expired)
+    ix_gen_factory__is_freed :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool #no_bounds_check {
+        if id.ix < 0 || id.ix >= self.cap do return true // out of range -> treat as not live
+        return self.items[id.ix].ix == DELETED_INDEX
     }
 
     // #no_bounds_check: items has cap elements and id.ix is range-checked right above
@@ -308,4 +310,13 @@ package ode_core
         testing.expect(t, id_5.gen == 4) // id_4 had gen 3
         testing.expect(t, id_5 != id_4)
         testing.expect(t, ix_gen_factory__is_expired(&factory, id_4))
+
+        // out-of-range ids are "not live" for both queries, never an OOB read
+        bad_id: ix_gen
+        bad_id.ix = DELETED_INDEX // -1
+        testing.expect(t, ix_gen_factory__is_freed(&factory, bad_id))
+        testing.expect(t, ix_gen_factory__is_expired(&factory, bad_id))
+        bad_id.ix = factory.cap // one past the end
+        testing.expect(t, ix_gen_factory__is_freed(&factory, bad_id))
+        testing.expect(t, ix_gen_factory__is_expired(&factory, bad_id))
     }

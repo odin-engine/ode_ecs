@@ -100,11 +100,6 @@ package maps
         }
     }
 
-    // Resize map
-    // rh_map__resize :: proc(self: ^Rh_Map($T)) {
-    //     // We dont need resize for ECS
-    // }
-
     // Insert, key is expected to be non-negative
     // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
     rh_map__add :: proc(self: ^Rh_Map($T), key: int, value: T) -> (err: oc.Error) #no_bounds_check {
@@ -246,17 +241,6 @@ package maps
         return oc.Core_Error.Not_Found
     }
 
-    // Iterator
-    // iter :: proc(self: ^Rh_Map($T), f: proc(key: int, value: ^T)) {
-    //     for i in 0..<self.capacity {
-    //         if self.keys[i] != 0 {
-    //             f(self.keys[i], &self.values[i])
-    //         }
-    //     }
-    // }
-
-    // }
-    
     rh_map__clear ::  #force_inline proc "contextless" (self: ^Rh_Map($V)) {
         for i:=0; i<self.capacity; i+=1 {
             self.items[i].key = oc.DELETED_INDEX
@@ -314,6 +298,14 @@ package maps
     
     @(test)
     rh_map__test :: proc(t: ^testing.T) {
+        // This test asserts exact slot placement, which needs the predictable
+        // identity hash. Skip (don't fail) in production-hash mode; behavioral
+        // coverage for that mode lives in rh_map__behavior__test.
+        when !MAPS_TESTING {
+            log.warn("rh_map__test skipped: slot-placement test needs -define:maps_testing=true")
+            return
+        }
+
         // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -325,12 +317,11 @@ package maps
         v2: int = 55
         v3: int = 66
         v4: int = 77
-        
+
         //
         // Make sure we using simplified hash function for testing
         //
 
-        testing.expect(t, MAPS_TESTING == true)
         testing.expect(t, rh_map__hash(&Rh_Map(^int){ capacity = 16, mask = 15 }, 0) == 0)
         testing.expect(t, rh_map__hash(&Rh_Map(^int){ capacity = 16, mask = 15 }, 1) == 1)
         testing.expect(t, rh_map__hash(&Rh_Map(^int){ capacity = 16, mask = 15 }, 2) == 2)
@@ -588,6 +579,106 @@ package maps
         testing.expect(t, i == 1) 
 
         //rh_map__debug_print(&map3)
-        
+
         testing.expect(t, rh_map__terminate(&map3, allocator) == nil)
+    }
+
+    // Behavioral test: asserts observable behavior only (never slot placement),
+    // so it runs in BOTH modes. Without -define:maps_testing=true this is what
+    // exercises the production Fibonacci hash, the 0.5 load factor and the
+    // min-capacity-8 bump.
+    @(test)
+    rh_map__behavior__test :: proc(t: ^testing.T) {
+        // Log into console when panic happens
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+
+        // non-power-of-2 capacity is rejected
+        bad: Rh_Map(^int)
+        testing.expect(t, rh_map__init(&bad, 6, allocator) == oc.Core_Error.Capacity_Is_Not_Power_Of_2)
+
+        // tiny capacity: production mode bumps to the 8 minimum with half_capacity 4
+        tiny: Rh_Map(^int)
+        testing.expect(t, rh_map__init(&tiny, 2, allocator) == nil)
+        when MAPS_TESTING {
+            testing.expect(t, tiny.capacity == 2 && tiny.half_capacity == 2)
+        } else {
+            testing.expect(t, tiny.capacity == 8 && tiny.half_capacity == 4)
+        }
+        testing.expect(t, tiny.mask == tiny.capacity - 1)
+        testing.expect(t, rh_map__terminate(&tiny, allocator) == nil)
+
+        m: Rh_Map(^int)
+        testing.expect(t, rh_map__init(&m, 64, allocator) == nil)
+        defer rh_map__terminate(&m, allocator)
+        testing.expect(t, rh_map__len(&m) == 0)
+        testing.expect(t, rh_map__memory_usage(&m) > 0)
+
+        // fill to the load-factor limit with scattered keys (forces collisions
+        // and wrap-around under any hash)
+        limit := m.half_capacity
+        values := make([]int, limit + 1, allocator)
+        defer delete(values, allocator)
+
+        key_of :: proc(i: int) -> int { return i * 97 + 13 }
+
+        for i in 0..<limit-1 {
+            values[i] = i * 1000
+            testing.expect(t, rh_map__add(&m, key_of(i), &values[i]) == nil)
+        }
+        testing.expect(t, rh_map__len(&m) == limit - 1)
+
+        // add on an existing key updates the value in place (len unchanged)
+        testing.expect(t, rh_map__add(&m, key_of(0), &values[1]) == nil)
+        testing.expect(t, rh_map__get(&m, key_of(0)) == &values[1])
+        testing.expect(t, rh_map__len(&m) == limit - 1)
+
+        // update; update of a missing key fails
+        testing.expect(t, rh_map__update(&m, key_of(0), &values[0]) == nil)
+        testing.expect(t, rh_map__get(&m, key_of(0)) == &values[0])
+        testing.expect(t, rh_map__update(&m, key_of(limit), &values[0]) == oc.Core_Error.Not_Found)
+
+        // full at the load-factor limit (the load check runs before the update-in-place scan)
+        values[limit-1] = (limit - 1) * 1000
+        testing.expect(t, rh_map__add(&m, key_of(limit-1), &values[limit-1]) == nil)
+        testing.expect(t, rh_map__len(&m) == limit)
+        testing.expect(t, rh_map__add(&m, key_of(limit), &values[limit]) == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, rh_map__add(&m, key_of(0), &values[1]) == oc.Core_Error.Container_Is_Full)
+
+        // every inserted key is retrievable; absent keys return nil
+        for i in 0..<limit do testing.expect(t, rh_map__get(&m, key_of(i)) == &values[i])
+        testing.expect(t, rh_map__get(&m, key_of(limit)) == nil)
+
+        // remove every third key; backward shift must keep all survivors reachable
+        removed_count := 0
+        for i := 0; i < limit; i += 3 {
+            testing.expect(t, rh_map__remove(&m, key_of(i)) == nil)
+            removed_count += 1
+        }
+        testing.expect(t, rh_map__len(&m) == limit - removed_count)
+        for i in 0..<limit {
+            if i % 3 == 0 {
+                testing.expect(t, rh_map__get(&m, key_of(i)) == nil)
+            } else {
+                testing.expect(t, rh_map__get(&m, key_of(i)) == &values[i])
+            }
+        }
+
+        // removing an absent key fails; re-inserting removed keys works
+        testing.expect(t, rh_map__remove(&m, key_of(0)) == oc.Core_Error.Not_Found)
+        for i := 0; i < limit; i += 3 {
+            testing.expect(t, rh_map__add(&m, key_of(i), &values[i]) == nil)
+        }
+        testing.expect(t, rh_map__len(&m) == limit)
+        for i in 0..<limit do testing.expect(t, rh_map__get(&m, key_of(i)) == &values[i])
+
+        // clear resets and the map stays usable
+        rh_map__clear(&m)
+        testing.expect(t, rh_map__len(&m) == 0)
+        testing.expect(t, rh_map__get(&m, key_of(1)) == nil)
+        testing.expect(t, rh_map__add(&m, key_of(1), &values[1]) == nil)
+        testing.expect(t, rh_map__get(&m, key_of(1)) == &values[1])
     }
