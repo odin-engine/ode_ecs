@@ -495,8 +495,8 @@ By default, the maximum number of component types is 128. However, you can have 
 A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
 
 # 📄 Documentation
-* [Updates Timeline](/docs/updates.md)    
 * [Documentation](/docs/_index.md)
+* [Updates Timeline](/docs/updates.md)    
 * [FAQ](/docs/faq.md)
 ---
 ‼️If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.

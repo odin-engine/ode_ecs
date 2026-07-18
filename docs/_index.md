@@ -33,7 +33,7 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 * [Sample11](/samples/sample11/main.odin) – Demonstrates multithreading: parallel batched View iteration + a single-threaded sync point (see [F.A.Q. #1](faq.md)).
 
 
-# 📖 How to read source code
+# 📖 How to read the source code
 
 To check the main **ODE\_ECS** procedures, you can go to [ecs.odin](/ecs.odin) and scroll down to the **aliases** section. Those are the main or most commonly used procedures, though not all of them.
 
