@@ -22,7 +22,7 @@ package ode_ecs
         using shared: Shared_Table,
 
         rows: []entity_id,                          // rid_to_eid
-        eid_to_ptr: oc_maps.Rh_Map(^entity_id),     // pointer to cell in rows
+        eid_to_rid: oc_maps.Rh_Map32,               // eid.ix -> row id in rows (8-byte items, see Compact_Table)
 
         cap: int,
 
@@ -40,7 +40,7 @@ package ode_ecs
         if self == nil do return false 
         if !shared_table__is_valid_internal(&self.shared) do return false 
         if self.rows == nil do return false
-        if !oc_maps.rh_map__is_valid(&self.eid_to_ptr) do return false 
+        if !oc_maps.rh_map32__is_valid(&self.eid_to_rid) do return false
         if self.cap <= 0 do return false 
         if !oc.dense_arr__is_valid(&self.subscribers) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_excluding) do return false
@@ -55,6 +55,7 @@ package ode_ecs
             assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
             assert(cap > 0, loc = loc)
             assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(db.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
         }
 
         shared_table__init(&self.shared, Table_Type.Tag_Table, db)
@@ -65,7 +66,7 @@ package ode_ecs
 
         self.rows = make([]entity_id, self.cap, db.allocator) or_return
         // load factor 0.5 and make it power of two
-        oc_maps.rh_map__init(&self.eid_to_ptr, math.next_power_of_two(self.cap * 2), db.allocator) or_return
+        oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
@@ -91,7 +92,7 @@ package ode_ecs
 
         oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
-        oc_maps.rh_map__terminate(&self.eid_to_ptr, self.db.allocator) or_return
+        oc_maps.rh_map32__terminate(&self.eid_to_rid, self.db.allocator) or_return
 
         delete(self.rows, self.db.allocator) or_return
 
@@ -110,13 +111,13 @@ package ode_ecs
             total += size_of(self.rows[0]) * len(self.rows)
         }
 
-        total += oc_maps.rh_map__memory_usage(&self.eid_to_ptr)
+        total += oc_maps.rh_map32__memory_usage(&self.eid_to_rid)
 
         return total
     }
 
     tag_table__len :: #force_inline proc "contextless" (self: ^Tag_Table) -> int {
-        return oc_maps.rh_map__len(&self.eid_to_ptr)
+        return oc_maps.rh_map32__len(&self.eid_to_rid)
     }
 
     tag_table__cap :: #force_inline proc "contextless" (self: ^Tag_Table) -> int {
@@ -132,9 +133,7 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        eidptr := oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix)
-
-        if eidptr != nil do return nil // already added
+        if oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED do return nil // already added
 
         // Capacity only matters when actually inserting — re-adding an
         // existing tag on a full table must still be a no-op (see the same
@@ -143,13 +142,11 @@ package ode_ecs
 
         // Update rows
         #no_bounds_check {
-            eidptr = &self.rows[raw.len]
+            self.rows[raw.len] = eid
         }
 
-        eidptr^ = eid // copy
-         
-        // Add eid_to_ptr
-        oc_maps.rh_map__add(&self.eid_to_ptr, eid.ix, eidptr) or_return
+        // Add eid_to_rid
+        oc_maps.rh_map32__add(&self.eid_to_rid, u32(eid.ix), u32(raw.len)) or_return
 
         // Update eid_to_bits in db
         database__add_component(self.db, eid, self.id)
@@ -174,20 +171,21 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        if raw.len <= 0 do return oc.Core_Error.Not_Found 
+        if raw.len <= 0 do return oc.Core_Error.Not_Found
 
-        target_ptr := oc_maps.rh_map__get(&self.eid_to_ptr, target_eid.ix)
+        // One lookup serves both the existence check and the removal below —
+        // remove_at reuses the slot index instead of re-probing the key
+        target_rid_u, target_slot := oc_maps.rh_map32__get_with_index(&self.eid_to_rid, u32(target_eid.ix))
 
         // Check if exists
-        if target_ptr == nil do return oc.Core_Error.Not_Found
+        if target_slot == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
+
+        target_rid := int(target_rid_u)
 
         // Deferred tail swap: clear the tag in place, leaving a hole.
         // Nothing moves, so nothing needs to stay stable while iterating.
         if shared_table__is_packing_paused(cast(^Shared_Table) self) {
-            target_rid := int(uintptr(target_ptr) - uintptr(&self.rows[0])) / size_of(entity_id)
-
-            error := oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
-            assert(error == nil) // should not happen because we already checked it does exist
+            oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rows[target_rid].ix = DELETED_INDEX
 
@@ -215,14 +213,10 @@ package ode_ecs
         }
 
         tail_rid := raw.len - 1
-        tail_ptr := &self.rows[tail_rid]
 
-        error : Error
-        
-        if target_ptr == tail_ptr {
+        if target_rid == tail_rid {
             // Remove indexes
-            error = oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
-            assert(error == nil) // should not happen because we already checked it does exist
+            oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rows[tail_rid].ix = DELETED_INDEX
 
@@ -231,24 +225,24 @@ package ode_ecs
             }
 
         } else {
-            tail_eid := tail_ptr^
+            tail_eid := self.rows[tail_rid]
             assert(!is_not_set(tail_eid))
 
-            // Update tail indexes
-            oc_maps.rh_map__update(&self.eid_to_ptr, tail_eid.ix, target_ptr)
-            oc_maps.rh_map__remove(&self.eid_to_ptr, target_eid.ix)
+            // Update tail indexes (value-only update — slots don't move, so
+            // target_slot stays valid for the remove_at)
+            oc_maps.rh_map32__update(&self.eid_to_rid, u32(tail_eid.ix), target_rid_u)
+            oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
-            target_ptr^ = tail_eid // copy eid from tail
-            tail_ptr.ix = DELETED_INDEX
+            self.rows[target_rid] = tail_eid // copy eid from tail
+            self.rows[tail_rid].ix = DELETED_INDEX
 
             // Notify subscribed views
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
                     // tag columns carry no component data, but the notification also
-                    // feeds the dense safety net — derive the row id the moved tag
-                    // now occupies (same expression as the paused path above)
-                    target_rid := int(uintptr(target_ptr) - uintptr(raw_data(self.rows))) / size_of(entity_id)
+                    // feeds the dense safety net — the moved tag now occupies the
+                    // removed row's id
                     view__update_component_rid(view, self, tail_eid, target_rid)
                 }
             }
@@ -276,7 +270,7 @@ package ode_ecs
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return false
 
-        return oc_maps.rh_map__get(&self.eid_to_ptr, eid.ix) != nil
+        return oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED
     }
 
     // Compact holes left by removals made while tail swap was paused
@@ -313,7 +307,7 @@ package ode_ecs
             self.rows[front] = moved_eid
             self.rows[back].ix = DELETED_INDEX
 
-            oc_maps.rh_map__update(&self.eid_to_ptr, moved_eid.ix, &self.rows[front])
+            oc_maps.rh_map32__update(&self.eid_to_rid, u32(moved_eid.ix), u32(front))
 
             back -= 1
             front += 1
@@ -358,7 +352,7 @@ package ode_ecs
 
         (^runtime.Raw_Slice)(&self.rows).len = 0
 
-        oc_maps.rh_map__clear(&self.eid_to_ptr)
+        oc_maps.rh_map32__clear(&self.eid_to_rid)
 
         self.holes_count = 0
         self.first_hole_rid = max(int)

@@ -3,7 +3,7 @@
 **July 2026**
 * \*new\* [Pause packing](/README.md#mutating-tables-while-iterating-pause_packing--resume_packing--pack) feature - deferred-tail-swap mode.
 * \*new\* [Groups](group.md) feature -  the fastest way to iterate entities that have a specific set of components.
-* \*new\* [Relations_Table](relations.md) (parent/child entity relations) feature.
+* \*new\* [Relations_Table](relations.md) feature - parent/child entity relations.
 * \*new\* [Command buffers](command_buffer.md) - defer the structural changes.
 * \*new\* [Saving and loading (snapshots)](/README.md#-saving-and-loading-snapshots) - database serialization.
 * \*new\* View `excludes` — `view_init(..., excludes = {&table})`, `refilter(&view)` feature.

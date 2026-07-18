@@ -158,7 +158,7 @@ package maps
 
     @(private)
     // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
-    rh_map32__get_from_hash :: proc(self: ^Rh_Map32, key: u32, ix: int) -> (u32, int) #no_bounds_check {
+    rh_map32__get_from_hash :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32, ix: int) -> (u32, int) #no_bounds_check {
         probe_distance := 0
         idx := ix
 
@@ -178,15 +178,17 @@ package maps
         return RH_MAP32_DELETED, oc.DELETED_INDEX
     }
 
-    @(private)
-    rh_map32__get_with_index :: proc(self: ^Rh_Map32, key: u32) -> (u32, int) {
+    // Lookup returning (value, slot index); slot index is oc.DELETED_INDEX when
+    // the key is absent. The slot index feeds rh_map32__remove_at so callers
+    // that already looked a key up don't pay a second hash + probe to remove it.
+    rh_map32__get_with_index :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32) -> (u32, int) {
         ix := rh_map32__hash(self, key)
 
         return rh_map32__get_from_hash(self, key, ix)
     }
 
     // Lookup; returns RH_MAP32_DELETED when key is absent
-    rh_map32__get :: proc(self: ^Rh_Map32, key: u32) -> u32 {
+    rh_map32__get :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32) -> u32 {
         idx := rh_map32__hash(self, key)
 
         val, _ := rh_map32__get_from_hash(self, key, idx)
@@ -206,41 +208,38 @@ package maps
         return nil
     }
 
-    // Delete
+    // Remove the item at a slot index previously returned by
+    // rh_map32__get_with_index for a present key — runs the backward shift
+    // without re-hashing or re-probing. The index is only valid until the next
+    // structural map change (add/remove); value-only updates don't move slots.
     // #no_bounds_check: indexes are always masked with capacity - 1, capacity == len(items)
-    rh_map32__remove :: proc(self: ^Rh_Map32, key: u32) -> oc.Error #no_bounds_check {
-        idx := rh_map32__hash(self, key)
-        probe_distance := 0
+    rh_map32__remove_at :: proc(self: ^Rh_Map32, #any_int idx: int) #no_bounds_check {
+        idx := idx
 
-        for probe_distance < self.half_capacity {
-            if self.items[idx].key == RH_MAP32_DELETED {
-                return oc.Core_Error.Not_Found
+        // Backward shift
+        next_idx := (idx + 1) & self.mask
+        for self.items[next_idx].key != RH_MAP32_DELETED {
+            home := rh_map32__hash(self, self.items[next_idx].key)
+            if ((next_idx - home) & self.mask) == 0 {
+                break
             }
-
-            if self.items[idx].key == key {
-                // Remove and backward shift
-                next_idx := (idx + 1) & self.mask
-                for self.items[next_idx].key != RH_MAP32_DELETED {
-                    home := rh_map32__hash(self, self.items[next_idx].key)
-                    if ((next_idx - home) & self.mask) == 0 {
-                        break
-                    }
-                    self.items[idx] = self.items[next_idx]
-                    idx = next_idx
-                    next_idx = (next_idx + 1) & self.mask
-                }
-
-                self.items[idx].key = RH_MAP32_DELETED
-                self.items[idx].value = RH_MAP32_DELETED
-                self.count -= 1
-                return nil
-            }
-
-            idx = (idx + 1) & self.mask
-            probe_distance += 1
+            self.items[idx] = self.items[next_idx]
+            idx = next_idx
+            next_idx = (next_idx + 1) & self.mask
         }
 
-        return oc.Core_Error.Not_Found
+        self.items[idx].key = RH_MAP32_DELETED
+        self.items[idx].value = RH_MAP32_DELETED
+        self.count -= 1
+    }
+
+    // Delete
+    rh_map32__remove :: proc(self: ^Rh_Map32, key: u32) -> oc.Error {
+        _, idx := rh_map32__get_with_index(self, key)
+        if idx == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
+
+        rh_map32__remove_at(self, idx)
+        return nil
     }
 
     rh_map32__clear ::  #force_inline proc "contextless" (self: ^Rh_Map32) {

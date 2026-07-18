@@ -174,7 +174,7 @@ package ode_ecs
     }
 
     @(private)
-    compact_table_raw__get_component_by_entity :: proc (self: ^Compact_Table_Raw, eid: entity_id) -> rawptr {
+    compact_table_raw__get_component_by_entity :: #force_inline proc "contextless" (self: ^Compact_Table_Raw, eid: entity_id) -> rawptr {
         rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix))
         if rid == oc_maps.RH_MAP32_DELETED do return nil
         return compact_table_raw__rid_to_ptr(self, rid)
@@ -206,10 +206,12 @@ package ode_ecs
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found
 
-        target_rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(target_eid.ix))
+        // One lookup serves both the existence check and the removal below —
+        // remove_at reuses the slot index instead of re-probing the key
+        target_rid, target_slot := oc_maps.rh_map32__get_with_index(&self.eid_to_rid, u32(target_eid.ix))
 
         // Check if component exists
-        if target_rid == oc_maps.RH_MAP32_DELETED do return oc.Core_Error.Not_Found
+        if target_slot == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
 
         T_size := self.type_info.size
         target := compact_table_raw__rid_to_ptr(self, target_rid)
@@ -217,7 +219,7 @@ package ode_ecs
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
         if shared_table__is_packing_paused(cast(^Shared_Table) self) {
-            oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
+            oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
             mem.zero(target, T_size)
 
@@ -249,13 +251,10 @@ package ode_ecs
 
         tail := compact_table_raw__rid_to_ptr(self, tail_rid)
 
-        error : Error
-
         // Replace removed component with tail
         if int(target_rid) == tail_rid {
             // Remove indexes
-            error = oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
-            assert(error == nil) // should not happen because we already checked it does exist
+            oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
@@ -267,9 +266,10 @@ package ode_ecs
             // DATA COPY
             mem.copy(target, tail, T_size)
 
-            // Update tail indexes
+            // Update tail indexes (value-only update — slots don't move, so
+            // target_slot stays valid for the remove_at)
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(tail_eid.ix), target_rid)
-            oc_maps.rh_map32__remove(&self.eid_to_rid, u32(target_eid.ix))
+            oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX

@@ -1719,3 +1719,4 @@ package ode_ecs__tests
             testing.expect(t, ecs.get_component(&positions, ecs.get_entity(&positions, i)).x == row.x)
         }
     }
+

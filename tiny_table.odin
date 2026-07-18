@@ -147,7 +147,7 @@ package ode_ecs
     }
 
     @(private)
-    tiny_table_base__get_component_by_entity :: proc (self: ^Tiny_Table_Base, eid: entity_id) -> rawptr {
+    tiny_table_base__get_component_by_entity :: #force_inline proc (self: ^Tiny_Table_Base, eid: entity_id) -> rawptr {
         return oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
     }
 
@@ -170,10 +170,14 @@ package ode_ecs
     tiny_table_raw__remove_component :: proc(self: ^Tiny_Table_Raw, target_eid: entity_id) -> (err: Error) {
         if self.len <= 0 do return oc.Core_Error.Not_Found 
 
-        target := oc_maps.tt_map__get(&self.eid_to_ptr,  target_eid.ix)
+        // One probe serves both the existence check and the removal below —
+        // remove_found reuses the located item instead of re-probing the key
+        target_item, target_slot := oc_maps.tt_map__find_item_with_index(&self.eid_to_ptr, target_eid.ix)
 
-        // Check if component exists
-        if target == nil do return oc.Core_Error.Not_Found
+        // Check if component exists (find returns the first empty slot on a miss)
+        if target_item == nil || target_item.value == nil do return oc.Core_Error.Not_Found
+
+        target := target_item.value
 
         T_size := self.type_info.size
 
@@ -182,7 +186,7 @@ package ode_ecs
         if shared_table__is_packing_paused(cast(^Shared_Table) self) {
             target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
 
-            oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.tt_map__remove_found(&self.eid_to_ptr, target_item, target_slot)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
             mem.zero(target, T_size)
 
@@ -221,7 +225,7 @@ package ode_ecs
         // Replace removed component with tail
         if target == tail {
             // Remove indexes
-            oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.tt_map__remove_found(&self.eid_to_ptr, target_item, target_slot)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
@@ -236,9 +240,10 @@ package ode_ecs
             // DATA COPY
             mem.copy(target, tail, T_size)
 
-            // Update tail indexes
+            // Update tail indexes (the add updates an existing key's value in
+            // place — slots don't move, so target_item/target_slot stay valid)
             oc_maps.tt_map__add(&self.eid_to_ptr, tail_eid.ix, target)
-            oc_maps.tt_map__remove(&self.eid_to_ptr, target_eid.ix)
+            oc_maps.tt_map__remove_found(&self.eid_to_ptr, target_item, target_slot)
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX

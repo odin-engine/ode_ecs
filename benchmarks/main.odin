@@ -32,6 +32,11 @@
         churn               add+remove a component with 2 subscribed views
         churn_partial       add+remove a component with 2 subscribed two-table views
                             that never match (entities lack the second component)
+        churn_compact       churn against a Compact_Table (Rh_Map32 add/remove path)
+        churn_tiny          churn against a Tiny_Table (Tt_Map path, 8-row cycles)
+        churn_tag           tag/untag churn against a Tag_Table (tag map path)
+        churn_small_view    churn on a small (512-cap) view inside an N-entity db —
+                            measures the view's per-entity eid_to_rid representation
         destroy             create+destroy entities with 3 components, with
                             8 / 32 / 128 tables attached to the database
         rebuild             full view rebuild over N rows
@@ -56,6 +61,12 @@
       best-case scenario. The per-view eid_to_ptr probes are independent loads
       the CPU overlaps (memory-level parallelism); the bits test adds a
       dependent branch that serializes the loop.
+    - Adaptive View eid_to_rid (Rh_Map32 backing for small views instead of the
+      entities_cap-sized array): churn_small_view 9.3 -> 11.5 ns/op (+23%) in the
+      map's own best-case scenario, and the array path paid +6% churn / +9%
+      churn_partial for the backing-choice branch alone. At N=100K the 400 KB
+      array is L2-resident and its independent loads overlap (memory-level
+      parallelism); the map probe is a dependent hash->load->compare chain.
     - Rh_Map "high bits" Fibonacci hash ((k*C) >> shift instead of & mask):
       hits 1.48 -> 1.8 ns/op, misses 5.3 -> 6.0. Entity indexes are dense
       consecutive ints, and the low-bits multiplicative hash is a bijection on
@@ -150,6 +161,10 @@ main :: proc() {
     bench_churn()
     bench_churn_partial()
     bench_churn_group()
+    bench_churn_compact()
+    bench_churn_tiny()
+    bench_churn_tag()
+    bench_churn_small_view()
 
     bench_destroy(8)
     bench_destroy(32)
@@ -677,6 +692,225 @@ bench_churn_group :: proc() {
 
     run("churn_vel (no group)", false)
     run("churn_vel (group)", true)
+}
+
+// Same shape as churn, but the churned table is a Compact_Table — measures the
+// Rh_Map32 add/remove path (hash + probe + backward shift) under scattered ids.
+bench_churn_compact :: proc() {
+    churn_db: ecs.Database
+    churn_pos: ecs.Compact_Table(Position)
+    view_a: ecs.View
+    view_b: ecs.View
+
+    if ecs.init(&churn_db, CHURN_N, context.allocator) != nil do panic("churn db init failed")
+    if ecs.compact_table__init(&churn_pos, &churn_db, CHURN_N) != nil do panic("churn compact init failed")
+    if ecs.view_init(&view_a, &churn_db, {&churn_pos}) != nil do panic("view_a init failed")
+    if ecs.view_init(&view_b, &churn_db, {&churn_pos}) != nil do panic("view_b init failed")
+
+    churn_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(churn_eids)
+
+    for i in 0..<CHURN_N {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+    rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        for eid in churn_eids {
+            p, err := ecs.add_component(&churn_pos, eid)
+            if err != nil do panic("add failed")
+            p.x = 1
+        }
+        for eid in churn_eids {
+            if ecs.remove_component(&churn_pos, eid) != nil do panic("remove failed")
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.table_len(&churn_pos))
+
+    report("churn_compact", best, CHURN_N * 2)
+
+    if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
+}
+
+// Tiny_Table structural churn. The table holds at most TINY_TABLE__ROW_CAP (8)
+// rows, so the 8 slots are cycled CHURN_N/8 times per rep — measures the
+// Tt_Map add/remove path including its backward-shift on remove.
+bench_churn_tiny :: proc() {
+    TINY :: 8 // ecs.TINY_TABLE__ROW_CAP
+
+    churn_db: ecs.Database
+    churn_pos: ecs.Tiny_Table(Position)
+    view_a: ecs.View
+    view_b: ecs.View
+
+    if ecs.init(&churn_db, 16, context.allocator) != nil do panic("churn db init failed")
+    if ecs.tiny_table__init(&churn_pos, &churn_db) != nil do panic("churn tiny init failed")
+    if ecs.view_init(&view_a, &churn_db, {&churn_pos}) != nil do panic("view_a init failed")
+    if ecs.view_init(&view_b, &churn_db, {&churn_pos}) != nil do panic("view_b init failed")
+
+    churn_eids: [TINY]ecs.entity_id
+    for i in 0..<TINY {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+    rand.shuffle(churn_eids[:])
+
+    rounds := max(1, CHURN_N / TINY)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        for _ in 0..<rounds {
+            for eid in churn_eids {
+                p, err := ecs.add_component(&churn_pos, eid)
+                if err != nil do panic("add failed")
+                p.x = 1
+            }
+            for eid in churn_eids {
+                if ecs.remove_component(&churn_pos, eid) != nil do panic("remove failed")
+            }
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.table_len(&churn_pos))
+
+    report("churn_tiny", best, TINY * 2 * rounds)
+
+    if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
+}
+
+// Tag_Table structural churn — measures the tag map add/remove path (the sole
+// production user of that map) under scattered ids, with 2 subscribed views.
+bench_churn_tag :: proc() {
+    churn_db: ecs.Database
+    is_alive: ecs.Tag_Table
+    view_a: ecs.View
+    view_b: ecs.View
+
+    if ecs.init(&churn_db, CHURN_N, context.allocator) != nil do panic("churn db init failed")
+    if ecs.tag_table__init(&is_alive, &churn_db, CHURN_N) != nil do panic("churn tag init failed")
+    if ecs.view_init(&view_a, &churn_db, {&is_alive}) != nil do panic("view_a init failed")
+    if ecs.view_init(&view_b, &churn_db, {&is_alive}) != nil do panic("view_b init failed")
+
+    churn_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(churn_eids)
+
+    for i in 0..<CHURN_N {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+    rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        for eid in churn_eids {
+            if ecs.add_tag(&is_alive, eid) != nil do panic("add_tag failed")
+        }
+        for eid in churn_eids {
+            if ecs.remove_tag(&is_alive, eid) != nil do panic("remove_tag failed")
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.table_len(&is_alive))
+
+    report("churn_tag", best, CHURN_N * 2)
+
+    if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
+}
+
+// A small view (cap 512) inside a LARGE database (entities_cap N): the view's
+// eid_to_rid bookkeeping is indexed by entity ix scattered across the whole
+// 0..N range, so its per-entity representation (array of N vs small map) is
+// what this scenario measures. Member eids are spread evenly over the ix range
+// and shuffled.
+bench_churn_small_view :: proc() {
+    SMALL :: 512
+
+    sv_db: ecs.Database
+    sv_pos: ecs.Table(Position)
+    sv_aux: ecs.Table(Velocity)
+    sv_view: ecs.View
+
+    if ecs.init(&sv_db, N, context.allocator) != nil do panic("sv db init failed")
+    if ecs.table_init(&sv_pos, &sv_db, SMALL) != nil do panic("sv pos init failed")
+    if ecs.table_init(&sv_aux, &sv_db, SMALL) != nil do panic("sv aux init failed")
+    if ecs.view_init(&sv_view, &sv_db, {&sv_pos, &sv_aux}) != nil do panic("sv view init failed")
+
+    all_eids := make([]ecs.entity_id, N)
+    defer delete(all_eids)
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&sv_db)
+        if err != nil do panic("create_entity failed")
+        all_eids[i] = eid
+    }
+
+    // members spread across the whole entity ix range
+    member_eids := make([]ecs.entity_id, SMALL)
+    defer delete(member_eids)
+    stride := N / SMALL
+    for i in 0..<SMALL {
+        member_eids[i] = all_eids[i * stride]
+        v, verr := ecs.add_component(&sv_aux, member_eids[i])
+        if verr != nil do panic("add aux failed")
+        v.dx = 1
+    }
+    rand.shuffle(member_eids)
+
+    rounds := max(1, CHURN_N / SMALL)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        for _ in 0..<rounds {
+            for eid in member_eids {
+                p, err := ecs.add_component(&sv_pos, eid)
+                if err != nil do panic("add failed")
+                p.x = 1
+            }
+            for eid in member_eids {
+                if ecs.remove_component(&sv_pos, eid) != nil do panic("remove failed")
+            }
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    if ecs.view_len(&sv_view) != 0 do panic("view should be empty")
+    g_sink += f64(ecs.table_len(&sv_pos))
+
+    report("churn_small_view", best, SMALL * 2 * rounds)
+
+    if ecs.terminate(&sv_db) != nil do panic("sv db terminate failed")
 }
 
 //

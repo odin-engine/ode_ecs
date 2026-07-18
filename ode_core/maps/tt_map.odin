@@ -97,30 +97,28 @@ package maps
         return nil
     }
 
-    tt_map__remove :: proc(self: ^Tt_Map($CAP, $V), key: int) -> oc.Core_Error {
-        hash := tt_map__hash(self, key)
-
-        p, f_ix := tt_map__find_item_from_hash(self, key, hash)
-
-        // find returns the first empty slot when the key is absent — that is
-        // Not_Found for removal purposes, not a match
-        if p == nil || p.value == nil do return oc.Core_Error.Not_Found
+    // Remove an item already located by tt_map__find_item_with_index (a present
+    // key: p.value != nil) — skips re-hashing and re-probing the key. The
+    // (p, f_ix) pair is only valid until the next remove; value-only add
+    // updates of existing keys don't move slots.
+    tt_map__remove_found :: proc(self: ^Tt_Map($CAP, $V), p: ^Tt_Map_Item(V), f_ix: int) {
+        p := p
 
         p.key = oc.DELETED_INDEX
         p.value = nil
 
         n_ix: int = f_ix
 
-        temp: [CAP]Tt_Map_Item(V)
+        temp: [CAP]Tt_Map_Item(V) = --- // written before read below
         temp_len: int = 0
 
         // Temporarily remove bucket items on right
-        for i:=0; i<CAP; i+=1 { 
+        for i:=0; i<CAP; i+=1 {
             n_ix += 1
             if n_ix >= CAP {
                 n_ix = 0
             }
-            
+
             p = &self.items[n_ix]
             if p.value == nil do break
 
@@ -131,10 +129,20 @@ package maps
             p.value = nil
         }
 
-        // Readd 
+        // Readd
         for i:=0; i < temp_len; i+=1 {
             tt_map__add(self, temp[i].key, temp[i].value)
         }
+    }
+
+    tt_map__remove :: proc(self: ^Tt_Map($CAP, $V), key: int) -> oc.Core_Error {
+        p, f_ix := tt_map__find_item_with_index(self, key)
+
+        // find returns the first empty slot when the key is absent — that is
+        // Not_Found for removal purposes, not a match
+        if p == nil || p.value == nil do return oc.Core_Error.Not_Found
+
+        tt_map__remove_found(self, p, f_ix)
 
         return nil
     }

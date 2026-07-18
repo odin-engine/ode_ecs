@@ -146,7 +146,7 @@ package ode_ecs
         tables: oc.Dense_Arr(^Shared_Table), // includes tables, removing table invalidates View
         excludes: oc.Dense_Arr(^Shared_Table), // excluded tables (see view__init), removing table invalidates View
 
-        tid_to_cid: []view_column_id,  
+        tid_to_cid: []view_column_id,
         // eid.ix -> view row id (VIEW_NO_RID when absent); u32 entries instead of
         // int halve this entities_cap-sized array (same trade as Table.eid_to_rid)
         eid_to_rid: []view_record_id,
@@ -181,7 +181,7 @@ package ode_ecs
         if self.state != Object_State.Normal do return false
         if self.db == nil do return false
         if !oc.dense_arr__is_valid(&self.tables) do return false 
-        if self.tid_to_cid == nil do return false 
+        if self.tid_to_cid == nil do return false
         if self.eid_to_rid == nil do return false
         if self.rows == nil do return false
         if self.one_record_size <= 0 do return false 
@@ -889,9 +889,10 @@ package ode_ecs
     }
 
     @(private)
-    view__get_row_private :: #force_inline proc "contextless" (self: ^View, #any_int index: int) -> ^View_Row_Raw { 
+    view__get_row_private :: #force_inline proc "contextless" (self: ^View, #any_int index: int) -> ^View_Row_Raw {
         #no_bounds_check {
             return (^View_Row_Raw)(&self.rows[index * self.one_record_size])
         }
     }
+
 

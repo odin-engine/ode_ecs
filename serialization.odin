@@ -725,8 +725,7 @@ package ode_ecs
 
                 #no_bounds_check for rid in 0..<n {
                     eid := tt.rows[rid]
-                    // pointer into this table's own rows — recomputed, never loaded
-                    oc_maps.rh_map__add(&tt.eid_to_ptr, eid.ix, &tt.rows[rid]) or_return
+                    oc_maps.rh_map32__add(&tt.eid_to_rid, u32(eid.ix), u32(rid)) or_return
                     uni_bits__add(&db.eid_to_bits[eid.ix], tt.id)
                 }
         }
