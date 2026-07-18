@@ -597,3 +597,172 @@ package ode_ecs__tests
             pos := ecs.get_component(&positions, eid)
             testing.expect(t, pos != nil && pos.x == 3)
     }
+
+    @(test)
+    cb_relations__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            rt: ecs.Relations_Table
+            cb: ecs.Command_Buffer
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+            defer ecs.command_buffer_terminate(&cb)
+
+            testing.expect(t, ecs.init(&db, entities_cap = 20, allocator = allocator) == nil)
+            testing.expect(t, ecs.relations_init(&rt, &db, 10) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb, &db, commands_cap = 16, payload_cap = 64) == nil)
+
+            parent, err1 := ecs.create_entity(&db)
+            testing.expect(t, err1 == nil)
+            child, err2 := ecs.create_entity(&db)
+            testing.expect(t, err2 == nil)
+
+            //
+            // Deferral: recording does not touch the database
+            //
+            testing.expect(t, ecs.cmd_set_parent(&cb, child, parent) == nil)
+
+            p, perr := ecs.parent_of(&db, child)
+            testing.expect(t, perr == nil && p.ix == ecs.DELETED_INDEX) // still unparented
+
+            skipped, rerr := ecs.replay(&cb)
+            testing.expect(t, rerr == nil && skipped == 0)
+
+            p, perr = ecs.parent_of(&db, child)
+            testing.expect(t, perr == nil && p == parent) // linked at the sync point
+
+            //
+            // Ordering within one buffer: link first, then cascade-destroy the
+            // parent — the child must be gone too
+            //
+            p2, e1 := ecs.create_entity(&db)
+            testing.expect(t, e1 == nil)
+            c2, e2 := ecs.create_entity(&db)
+            testing.expect(t, e2 == nil)
+
+            testing.expect(t, ecs.cmd_set_parent(&cb, c2, p2) == nil)
+            testing.expect(t, ecs.cmd_destroy_entity(&cb, p2, destroy_children = true) == nil)
+
+            skipped, rerr = ecs.replay(&cb)
+            testing.expect(t, rerr == nil && skipped == 0)
+            testing.expect(t, ecs.is_expired(&db, p2))
+            testing.expect(t, ecs.is_expired(&db, c2)) // cascade caught the fresh link
+
+            //
+            // Expired-parent skip: parent destroyed by an earlier command in
+            // the same buffer — the set_parent is dropped harmlessly
+            //
+            p3, e3 := ecs.create_entity(&db)
+            testing.expect(t, e3 == nil)
+            c3, e4 := ecs.create_entity(&db)
+            testing.expect(t, e4 == nil)
+
+            testing.expect(t, ecs.cmd_destroy_entity(&cb, p3) == nil)
+            testing.expect(t, ecs.cmd_set_parent(&cb, c3, p3) == nil)
+
+            skipped, rerr = ecs.replay(&cb)
+            testing.expect(t, rerr == nil)
+            testing.expect(t, skipped == 1)
+            testing.expect(t, !ecs.is_expired(&db, c3)) // child alive and unparented
+            p, perr = ecs.parent_of(&db, c3)
+            testing.expect(t, perr == nil && p.ix == ecs.DELETED_INDEX)
+
+            //
+            // remove_parent: applies once, second one skips (idempotent)
+            //
+            testing.expect(t, ecs.set_parent(&db, c3, child) == nil) // immediate link
+
+            testing.expect(t, ecs.cmd_remove_parent(&cb, c3) == nil)
+            testing.expect(t, ecs.cmd_unparent(&cb, c3) == nil) // alias; no parent by then
+
+            skipped, rerr = ecs.replay(&cb)
+            testing.expect(t, rerr == nil)
+            testing.expect(t, skipped == 1)
+            p, perr = ecs.parent_of(&db, c3)
+            testing.expect(t, perr == nil && p.ix == ecs.DELETED_INDEX)
+    }
+
+    @(test)
+    cb_relations_errors__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            rt: ecs.Relations_Table
+            cb: ecs.Command_Buffer
+
+            db2: ecs.Database // no Relations_Table on purpose
+            cb2: ecs.Command_Buffer
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+            defer ecs.command_buffer_terminate(&cb)
+
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.relations_init(&rt, &db, 10) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb, &db, commands_cap = 8, payload_cap = 64) == nil)
+
+            a, e1 := ecs.create_entity(&db)
+            testing.expect(t, e1 == nil)
+            b, e2 := ecs.create_entity(&db)
+            testing.expect(t, e2 == nil)
+            c, e3 := ecs.create_entity(&db)
+            testing.expect(t, e3 == nil)
+
+            //
+            // Cycle detected at replay; later commands still run
+            //
+            testing.expect(t, ecs.set_parent(&db, b, a) == nil) // immediate: b is a child of a
+
+            testing.expect(t, ecs.cmd_set_parent(&cb, a, b) == nil) // would close a cycle
+            testing.expect(t, ecs.cmd_set_parent(&cb, c, a) == nil) // valid, must still apply
+
+            skipped, rerr := ecs.replay(&cb)
+            testing.expect(t, rerr == ecs.API_Error.Relation_Cycle)
+            testing.expect(t, skipped == 0)
+
+            p, perr := ecs.parent_of(&db, a)
+            testing.expect(t, perr == nil && p.ix == ecs.DELETED_INDEX) // cycle rejected
+            p, perr = ecs.parent_of(&db, c)
+            testing.expect(t, perr == nil && p == a) // command after the error applied
+
+            //
+            // No Relations_Table: the error surfaces at replay, buffer still clears
+            //
+            defer ecs.terminate(&db2)
+            defer ecs.command_buffer_terminate(&cb2)
+
+            testing.expect(t, ecs.init(&db2, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb2, &db2, commands_cap = 8, payload_cap = 64) == nil)
+
+            x, e4 := ecs.create_entity(&db2)
+            testing.expect(t, e4 == nil)
+            y, e5 := ecs.create_entity(&db2)
+            testing.expect(t, e5 == nil)
+
+            testing.expect(t, ecs.cmd_set_parent(&cb2, x, y) == nil)
+            testing.expect(t, ecs.cmd_remove_parent(&cb2, x) == nil)
+
+            skipped, rerr = ecs.replay(&cb2)
+            testing.expect(t, rerr == ecs.API_Error.Relations_Table_Not_Created)
+            testing.expect(t, ecs.command_buffer_len(&cb2) == 0) // cleared despite the error
+    }

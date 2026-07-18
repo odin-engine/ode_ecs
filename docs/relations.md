@@ -51,6 +51,8 @@ ecs.remove_parent(&my_ecs, soldier)   // Not_Found if soldier has no parent
 - `Container_Is_Full` — creating a **new** link would exceed `cap`. Re-parenting an already-linked child always succeeds.
 - `Entity_Id_Expired` / `Entity_Id_Out_of_Bounds` — stale or invalid entity IDs.
 
+While iterating a view, defer relation changes with a [Command_Buffer](command_buffer.md) instead of applying them immediately: `ecs.cmd_set_parent(&cb, soldier, squad)` / `ecs.cmd_remove_parent(&cb, soldier)` record now and apply at the `replay` sync point.
+
 ## Queries
 
 ```odin

@@ -4,8 +4,8 @@
     Command_Buffer — deferred structural operations.
 
     Records destroy_entity / add_component / remove_component / add_tag /
-    remove_tag WITHOUT touching the database, and applies them later, in
-    recorded order, with command_buffer__replay. This makes any iteration
+    remove_tag / set_parent / remove_parent WITHOUT touching the database,
+    and applies them later, in recorded order, with command_buffer__replay. This makes any iteration
     mutation-safe (tables, views, dense slices, groups): nothing structural
     happens until the replay sync point, so nothing can move or grow under an
     iterator. It also gives frame coherence — every system in a phase sees the
@@ -48,14 +48,17 @@ package ode_ecs
         Remove_Component,   // Table / Compact_Table / Tiny_Table
         Add_Tag,
         Remove_Tag,
+        Set_Parent,         // requires a Relations_Table on the database
+        Remove_Parent,
     }
 
     @(private)
     Command :: struct {
         kind: Command_Kind,
         destroy_children: bool,     // Destroy_Entity only
-        eid: entity_id,
-        table: ^Shared_Table,       // nil for Destroy_Entity
+        eid: entity_id,             // the child for Set_Parent / Remove_Parent
+        parent: entity_id,          // Set_Parent only
+        table: ^Shared_Table,       // nil for Destroy_Entity / Set_Parent / Remove_Parent
         table_id: table_id,         // id at record time — stale-table guard at replay
         payload_offset: int,        // Add_Component only
         payload_size: int,          // Add_Component only, == size_of(T) at record time
@@ -249,6 +252,39 @@ package ode_ecs
         return command_buffer__record_simple(self, Command_Kind.Remove_Tag, cast(^Shared_Table) table, eid, loc)
     }
 
+    // Record: make `parent` the parent of `child` (applied by replay through
+    // database__set_parent). The database is not read at record time, so a
+    // missing Relations_Table surfaces at replay as Relations_Table_Not_Created.
+    command_buffer__set_parent :: proc(self: ^Command_Buffer, child: entity_id, parent: entity_id, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(command_buffer__is_valid(self), loc = loc)
+            assert(!self.replaying, loc = loc)
+            assert(child.ix >= 0, loc = loc)
+            assert(parent.ix >= 0, loc = loc)
+        }
+
+        return command_buffer__append(self, Command{
+            kind = Command_Kind.Set_Parent,
+            eid = child,
+            parent = parent,
+        })
+    }
+
+    // Record: remove `child`'s parent link (applied by replay through
+    // database__remove_parent; a child that has no parent by then is a skip).
+    command_buffer__remove_parent :: proc(self: ^Command_Buffer, child: entity_id, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(command_buffer__is_valid(self), loc = loc)
+            assert(!self.replaying, loc = loc)
+            assert(child.ix >= 0, loc = loc)
+        }
+
+        return command_buffer__append(self, Command{
+            kind = Command_Kind.Remove_Parent,
+            eid = child,
+        })
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Replay
 
@@ -261,7 +297,9 @@ package ode_ecs
     //     destroy/remove idempotent and dead-entity adds no-ops;
     //   - the component/tag to remove was already absent;
     //   - the recorded table was terminated (or re-init'd as a different
-    //     table) between record and replay.
+    //     table) between record and replay;
+    //   - the parent of a Set_Parent expired (the child stays as it is), or
+    //     the child of a Remove_Parent has no parent.
     // Adding a component that already exists is NOT a skip: the recorded
     // value overwrites the existing one (last write wins).
     //
@@ -332,6 +370,24 @@ package ode_ecs
                     }
                     terr := tag_table__add_tag(cast(^Tag_Table) cmd.table, cmd.eid) // idempotent
                     if terr != nil && err == nil do err = terr
+
+                case Command_Kind.Set_Parent:
+                    // Parent gone by the time this applies — the link is moot,
+                    // the child (alive, checked above) just stays as it is.
+                    if database__is_entity_correct(self.db, cmd.parent) != nil {
+                        skipped += 1
+                        continue
+                    }
+                    serr := database__set_parent(self.db, cmd.eid, cmd.parent)
+                    if serr != nil && err == nil do err = serr
+
+                case Command_Kind.Remove_Parent:
+                    perr := database__remove_parent(self.db, cmd.eid)
+                    if perr == oc.Core_Error.Not_Found { // no parent — idempotent
+                        skipped += 1
+                        continue
+                    }
+                    if perr != nil && err == nil do err = perr
             }
         }
 

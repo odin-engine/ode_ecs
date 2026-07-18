@@ -139,6 +139,10 @@ package ode_ecs
             command_buffer__remove_component_for_tiny_table,
         }
 
+        cmd_set_parent      :: command_buffer__set_parent         // Record: make one entity the parent of another
+        cmd_remove_parent   :: command_buffer__remove_parent      // Record: remove entity's parent link
+        cmd_unparent        :: command_buffer__remove_parent
+
     //
     // Relations (parent/child), require a Relations_Table on the database,
     // see relations_table__init
