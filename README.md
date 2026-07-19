@@ -33,6 +33,34 @@ Use `git clone` to clone this repository into your project folder, and then `imp
     git clone https://github.com/odin-engine/ode_ecs.git
 ```  
 
+# A Brief Explanation
+
+ODE_ECS is a simplified, high-performance, in-memory "relational database" for entities and components.
+
+Entities are simply IDs (64-bit values). They can be linked to zero or many components, which can be added or removed _dynamically_. 
+
+A _Component_ is pure data (usually defined as a `struct`, though any Odin type can be used).
+
+Components are saved in [Tables](#table), with each component type having its own Table. Iterating a Table is incredibly fast because it is just like iterating a slice or an array.
+
+But what if you want to iterate over entities that have a specific combination of components, like AI and Network and Position and other components? We could _query_ them from the appropriate tables, but querying every frame or two is very slow.
+
+Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
+
+This is the main part of ODE_ECS.
+
+### Additionally:
+
+* **[Tag_Table](#️-tag_table):** Used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`). Very useful with Views.
+* **[Relation_Table](#relations_table-parentchild-entity-relations):** Handles parent-child relationships between entities.
+
+### Optionally:
+
+* **[Packing pausing](#mutating-tables-while-iterating-pause_packing--resume_packing--pack):** For table mutations (iterate while destroying entities/removing components).
+* **[Groups](/docs/group.md):** For speed optimization (when possible).
+* **[Command_Buffers](/docs/command_buffer.md):** Useful for multithreading and to defer table mutations.
+* **[Compact_Table](/docs/tables.md#compact_tablet) & [Tiny_Table](/docs/tables.md#tiny_tablet):** For memory optimization.
+
 # 🧩 Basics  
 
 An **_Entity_** is simply an ID. All data associated with an entity is stored in its components.  
