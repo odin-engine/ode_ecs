@@ -12,19 +12,19 @@ package ode_core
     import "core:testing"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Sparce_Arr -- unmovable ordered sparse array of pointers 
+// Sparse_Arr -- unmovable ordered sparse array of pointers 
 // To save memory uses iteration over array to find free slots to refill.
 // Good when order/position in array is important because we do not move items (hence unmovable).
 // Good for relatively small arrays or when we know that removing and adding items happens not often.
 // Can contain slots with nil value (hence sparse).
 
-    Sparce_Arr :: struct($T: typeid) {
+    Sparse_Arr :: struct($T: typeid) {
         items: []^T,   
         cap: int,             
         has_nil_item: bool
     }
 
-    sparse_arr__is_valid :: proc(self: ^Sparce_Arr($T)) -> bool {
+    sparse_arr__is_valid :: proc(self: ^Sparse_Arr($T)) -> bool {
         if self == nil do return false
         if self.items == nil do return false
         if self.cap <= 0 do return false 
@@ -32,7 +32,7 @@ package ode_core
         return true
     }
 
-    sparse_arr__init :: proc(self: ^Sparce_Arr($T), cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
+    sparse_arr__init :: proc(self: ^Sparse_Arr($T), cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
         err: runtime.Allocator_Error = runtime.Allocator_Error.None
         self.items, err = make([]^T, cap, allocator)
         ((^runtime.Raw_Slice)(&self.items)).len = 0
@@ -40,13 +40,13 @@ package ode_core
         return err
     }
 
-    sparse_arr__terminate :: proc(self: ^Sparce_Arr($T), allocator: runtime.Allocator) -> runtime.Allocator_Error {
+    sparse_arr__terminate :: proc(self: ^Sparse_Arr($T), allocator: runtime.Allocator) -> runtime.Allocator_Error {
         self.cap = 0
         self.has_nil_item = false
         return delete(self.items, allocator)
     }
  
-    sparse_arr__remove_by_index :: proc(self: ^Sparce_Arr($T), #any_int index: int, loc := #caller_location) #no_bounds_check {
+    sparse_arr__remove_by_index :: proc(self: ^Sparse_Arr($T), #any_int index: int, loc := #caller_location) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.items)
         runtime.bounds_check_error_loc(loc, index, self.cap)
 
@@ -61,7 +61,7 @@ package ode_core
 
     }
 
-    sparse_arr__remove_by_value:: proc(self: ^Sparce_Arr($T), value: ^T, loc := #caller_location) -> Core_Error {
+    sparse_arr__remove_by_value:: proc(self: ^Sparse_Arr($T), value: ^T, loc := #caller_location) -> Core_Error {
         raw := (^runtime.Raw_Slice)(&self.items)
         for index:= 0; index < raw.len; index += 1 {
             if self.items[index] == value {
@@ -73,7 +73,7 @@ package ode_core
         return Core_Error.Not_Found
     }
 
-    sparse_arr__add :: proc(self: ^Sparce_Arr($T), value: ^T) -> (int, Core_Error) #no_bounds_check {
+    sparse_arr__add :: proc(self: ^Sparse_Arr($T), value: ^T) -> (int, Core_Error) #no_bounds_check {
         id : int
         raw := (^runtime.Raw_Slice)(&self.items)
 
@@ -110,11 +110,11 @@ package ode_core
         return id, nil
     }
 
-    sparse_arr__len :: #force_inline proc(self: ^Sparce_Arr($T)) -> int {
+    sparse_arr__len :: #force_inline proc(self: ^Sparse_Arr($T)) -> int {
         return ((^runtime.Raw_Slice)(&self.items)).len
     }
 
-    sparse_arr__memory_usage :: proc (self: ^Sparce_Arr($T)) -> int {
+    sparse_arr__memory_usage :: proc (self: ^Sparse_Arr($T)) -> int {
         total := size_of(self^)
 
         if self.items != nil {
@@ -124,7 +124,7 @@ package ode_core
         return total
     }
 
-    sparse_arr__zero :: proc (self: ^Sparce_Arr($T)) {
+    sparse_arr__zero :: proc (self: ^Sparse_Arr($T)) {
         assert(self.items != nil)
 
         self.has_nil_item = false
@@ -148,7 +148,7 @@ package ode_core
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
 
-        ua_1: Sparce_Arr(int)
+        ua_1: Sparse_Arr(int)
         a : int = 66
         b : int = 99
         c : int = 88

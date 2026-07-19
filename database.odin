@@ -21,9 +21,9 @@ package ode_ecs
 
         id_factory: oc.Ix_Gen_Factory,
         
-        tables: oc.Sparce_Arr(Shared_Table),
+        tables: oc.Sparse_Arr(Shared_Table),
 
-        views: oc.Sparce_Arr(View),
+        views: oc.Sparse_Arr(View),
 
         // Owned groups (group.odin); each owns >= 1 table exclusively,
         // so there can never be more groups than tables.
