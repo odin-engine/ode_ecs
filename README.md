@@ -91,8 +91,6 @@ You can have as many ECS databases in your game as you want:
 
 The other main types of objects in ODE_ECS are tables, views and [groups](/docs/group.md).  
 
----
-
 ## **Table**  
 
 A component **_Table_** is a dense array of components of the same type. I named it "table" because it is very similar to the concept of a table in relational databases. Each different type of component requires a separate table. For example, you might have a `positions` table for `Position` components and an `ais` table for `AI` components.  
@@ -162,9 +160,8 @@ Using an entity, you can access its other components:
         ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: Table(AI)`
         fmt.println(eid, pos, ai)
     }
-```  
-
----
+```
+Tables documentation is [here](/docs/tables.md).
 
 ## 🪟 **View**  
 
@@ -255,7 +252,6 @@ Besides included tables, `ecs.view_init` takes an optional `excludes` list — t
 ### 🔎 View Filters
 Read about View filters [here](/docs/view.md#filters).
 
----
 ## 🏷️ Tag_Table
 
 `Tag_Table` is a variation of `Table`, but it doesn’t contain any components. A `Tag_Table` only “tags” entities. You can create a `Tag_Table` like this:
@@ -342,8 +338,6 @@ The cascade is iterative (no recursion) and destroys the deepest entities first;
 >**NOTE:** The slice returned by `children_of` points into an internal preallocated buffer. It is valid only until the next `children_of` call or any structural change (set_parent / remove_parent / destroy_entity / clear) — use it immediately, do not store it.
 
 >**NOTE:** Relations are not components: they do not affect `View`s. If you need to iterate "all entities that have a parent", pair the feature with a `Tag_Table`.
-
----
 
 ## 🪸 Mutating tables (destroying entities/removing components) while iterating over them
 
@@ -459,8 +453,6 @@ Rules:
 * Entity generations are 8-bit: an `entity_id` held across exactly 256 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_expired` to catch them.
 * The format is versioned and validated (magic, endianness, version); a corrupt or truncated buffer fails with `Snapshot_Invalid` without touching the database.
 
----
-
 # How to Run Samples and Tests  
 
 To run samples, navigate to the appropriate folder (`samples/basics` or `samples/sample01`) and execute:  
@@ -504,7 +496,6 @@ If an entity has been destroyed via `ecs.destroy_entity()`, use `is_expired` to 
 
 This procedure compares the entity's generation (`gen`) against the database records. 
 
----
 ### Maximum Number of Component Types  
 
 By default, the maximum number of component types is 128. However, you can have an unlimited number of component types. To increase the maximum number of component types, modify `TABLES_MULT` either in `ecs.odin` or by using the command-line define `ECS_TABLES_MULT`:  
