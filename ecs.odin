@@ -100,6 +100,18 @@ package ode_ecs
         load_from_file          :: database__load_from_file     // read a file + deserialize
 
     //
+    // Overbase serialization (binary snapshot of just the shared entity-id
+    // space, see overbase_serialization.odin). Use this to save/restore the
+    // id-space of an Overbase shared by multiple Databases — a Database's own
+    // serialize/deserialize never touches a shared Overbase's id-space.
+    //
+        overbase_serialized_size :: overbase__serialized_size
+        overbase_serialize       :: overbase__serialize
+        overbase_deserialize     :: overbase__deserialize
+        overbase_save_to_file    :: overbase__save_to_file
+        overbase_load_from_file  :: overbase__load_from_file
+
+    //
     // Table 
     //
         table_init              :: table__init

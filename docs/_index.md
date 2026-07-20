@@ -11,6 +11,7 @@ Optional:
 * [Group](group.md)
 * [Command Buffer](command_buffer.md)
 * [Relations](relations.md)
+* [Serialization](serialization.md)
 * [Overbase](overbase.md)
 
 Other:
@@ -39,6 +40,7 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 * [Sample10](/samples/sample10/main.odin) – Demonstrates serialization: snapshot a database, save/load it from a file.
 * [Sample11](/samples/sample11/main.odin) – Demonstrates multithreading: parallel batched View iteration + a single-threaded sync point (see [F.A.Q. #1](faq.md)).
 * [Sample12](/samples/sample12/main.odin) – Demonstrates `Overbase`: sharing one entity ID space across two Databases.
+* [Sample13](/samples/sample13/main.odin) – Demonstrates `Overbase` serialization: saving and restoring a shared entity ID space and two attached Databases.
 
 
 # 📖 How to read the source code

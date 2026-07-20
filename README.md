@@ -45,7 +45,7 @@ This is the main part of ODE_ECS.
 ### Additionally:
 
 * **[Tag_Table](#️-tag_table):** Used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`). Very useful with Views.
-* **[Relation_Table](#relations_table-parentchild-entity-relations):** Handles parent-child relationships between entities.
+* **[Relation_Table](/docs/relations.md):** Handles parent-child relationships between entities.
 
 ### Optionally:
 
@@ -53,6 +53,7 @@ This is the main part of ODE_ECS.
 * **[Groups](/docs/group.md):** For speed optimization (when possible).
 * **[Command_Buffers](/docs/command_buffer.md):** Useful for multithreading and to defer table mutations.
 * **[Compact_Table](/docs/tables.md#compact_tablet) & [Tiny_Table](/docs/tables.md#tiny_tablet):** For memory optimization.
+* **[Serialization](/docs/serialization.md):** A whole `Database` can be serialized into a binary snapshot.
 * **[Overbase](/docs/overbase.md):** Share one entity ID space across multiple Databases.
 
 
@@ -295,50 +296,6 @@ You can iterate over tagged entities like this:
 
 [Sample06](/samples/sample06/main.odin) demonstrates how to use `Tag_Table`.
 
-## Relations_Table (parent/child entity relations)
-
-`Relations_Table` is an optional table that adds parent/child relations between entities: every entity can have at most one parent and any number of children. Like everything else in ODE_ECS, all of its memory is preallocated at init and every operation is a direct array access (adding, removing and re-parenting are all **O(1)**). Only one `Relations_Table` can be created per `Database`:
-
-```odin
-    rt : ecs.Relations_Table
-
-    // cap limits the number of concurrent parent links (relations)
-    ecs.relations_init(&rt, &db, cap=100) // long form: ecs.relations_table__init
-```
-
-Once created, relations are managed through database-level procedures (they return `Relations_Table_Not_Created` if you call them before creating the table):
-
-```odin
-    parent, _ := ecs.create_entity(&db)
-    child, _  := ecs.create_entity(&db)
-
-    ecs.set_parent(&db, child, parent)      // make `parent` the parent of `child`
-    ecs.remove_parent(&db, child)           // remove the link (alias: ecs.unparent)
-
-    p, _        := ecs.parent_of(&db, child)      // parent id, or .ix == ecs.DELETED_INDEX if none
-    children, _ := ecs.children_of(&db, parent)   // []entity_id — use immediately, see note below
-    n, _        := ecs.children_count(&db, parent)
-
-    yes, _ = ecs.is_child_of(&db, child, parent)    // is `child` a child of `parent`?
-    yes, _ = ecs.is_parent_of(&db, parent, child)   // is `parent` the parent of `child`?
-    yes, _ = ecs.has_relations(&db, child)          // does entity have a parent or children?
-    yes, _ = ecs.is_relation_of(&db, parent, child) // direct link in either direction
-```
-
-`set_parent` re-parents in place (replacing the previous parent) and always guards against cycles: making an entity a descendant of itself returns `Relation_Cycle` and changes nothing. The check walks the new parent's ancestor chain, so it costs O(tree depth).
-
-**Cleanup is automatic.** Destroying an entity unlinks it from its parent and *orphans* its children (their parent link is cleared). To destroy a whole subtree instead, use the new optional flag on `destroy_entity`:
-
-```odin
-    ecs.destroy_entity(&db, boss, destroy_children=true) // destroys boss and all descendants
-```
-
-The cascade is iterative (no recursion) and destroys the deepest entities first; each destroyed entity is removed from all its component tables as usual.
-
->**NOTE:** The slice returned by `children_of` points into an internal preallocated buffer. It is valid only until the next `children_of` call or any structural change (set_parent / remove_parent / destroy_entity / clear) — use it immediately, do not store it.
-
->**NOTE:** Relations are not components: they do not affect `View`s. If you need to iterate "all entities that have a parent", pair the feature with a `Tag_Table`.
-
 ## 🪸 Mutating tables (destroying entities/removing components) while iterating over them
 
 ### TIP: Be aware that component locations might shift within tables.
@@ -428,31 +385,6 @@ Semantics: a command whose entity id expired before it applied (destroyed by an 
 
 Threading: recording only writes to the buffer's own memory, so use **one Command_Buffer per thread (or per system)** and record concurrently without locks; `replay` mutates the database and must run single-threaded at the sync point, one buffer after another. Replay also composes with `pause_packing` (adds append past holes, removes leave holes).
 
-## 💾 Saving and loading (snapshots)
-
-A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags and parent/child relations. Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
-
-```odin
-// to/from a file (the only allocation is a temporary buffer):
-ecs.save_to_file(&db, "world.snap")
-ecs.load_from_file(&db, "world.snap")
-
-// or zero-allocation, into your own buffer:
-size, _ := ecs.serialized_size(&db)
-buf := make([]byte, size)
-written, _ := ecs.serialize(&db, buf)
-// ... write buf[:written] wherever you want ...
-ecs.deserialize(&db, buf[:written])
-```
-
-Rules:
-
-* **Load into a matching schema.** `deserialize` requires an already-initialized `Database` with the same tables initialized in the same order (and the same init/terminate history, so table ids coincide), the same component types, and capacities that are **at least** as large as the saved data (`entities_cap` and table caps may be larger). Anything else fails with `Snapshot_Schema_Mismatch` / `Snapshot_Capacity_Too_Small` — the buffer is fully validated before anything is mutated, so a failed load never leaves the database in a torn state.
-* **Components must be POD** — plain old data (POD) with no pointers, slices, strings, maps or dynamic arrays inside (component rows are copied as raw bytes). `serialize` rejects non-POD component types with `Snapshot_Component_Not_POD`; pass `allow_non_pod = true` to blob-copy them anyway (only meaningful if you fix such fields up yourself after loading). Per-table custom serialization callbacks are planned for a future version.
-* **Pack before saving.** While packing is paused (or tables still hold holes), `serialize` returns `Cannot_Serialize_While_Packing_Paused` — call `resume_packing`/`pack` first.
-* Entity generations are 8-bit: an `entity_id` held across exactly 256 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_expired` to catch them.
-* The format is versioned and validated (magic, endianness, version); a corrupt or truncated buffer fails with `Snapshot_Invalid` without touching the database.
-
 # How to Run Samples and Tests  
 
 To run samples, navigate to the appropriate folder (`samples/basics` or `samples/sample01`) and execute:  
@@ -504,7 +436,7 @@ By default, the maximum number of component types is 128. However, you can have 
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
 ```  
 
-A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary.
+A value of `2` will set the maximum number of component types to 256, `3` will increase it to 384, `4` to 512, and so on. However, lower values make ODE_ECS slightly faster and more memory-efficient, so increase it only if necessary. Instead of increasing the maximum number of component types, you can create multiple databases with a shared entity ID space (see [Overbase](/docs/overbase.md)).
 
 # 📄 Documentation
 * [Documentation](/docs/_index.md)

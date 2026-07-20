@@ -74,9 +74,35 @@ This matters because entity indices are recycled: without this guarantee, a Data
 
 `ecs.clear` only resets the id space (bumping generations so held-over IDs expire) when called on a Database that **owns** its Overbase — for a Database attached via `init_from_overbase`, `clear` wipes that Database's own tables/views/relations but leaves the shared Overbase's entity IDs untouched, since bumping them would invalidate IDs still valid for sibling Databases. Clear (or terminate) every attached Database, then use `ecs.clear`/re-init on the Overbase itself if you need to reset the whole shared id space.
 
-## Serialization caveat
+## Serialization
 
-[Serialization](database.md) snapshots a Database's own tables *and* its Overbase's raw entity-id state (generations, freed list) together. For the common case — a Database with its own private Overbase — this is exactly as safe as before. If you `deserialize` into a Database that uses a **shared** Overbase, the entity-id portion of the snapshot overwrites state that every other Database attached to that Overbase also depends on. Prefer deserializing only into Databases with their own Overbase, or make sure you control every Database sharing it when you do.
+A Database's own [binary snapshot](/README.md#-saving-and-loading-snapshots) (`ecs.serialize`/`ecs.deserialize`) captures its tables *and*, when it **owns** its Overbase (the common case — a plain `ecs.init`-created Database), the entity-id state (generations, freed list) too — exactly as before.
+
+A Database attached to a **shared** Overbase instead snapshots *only its own tables* — `serialize` omits the entity-id section entirely, and `deserialize` never touches the shared Overbase, no matter what a loaded buffer contains. This is automatic: it's decided by whether the Database owns its Overbase, not by a flag you pass. Row `entity_id`s in such a snapshot are validated against the Overbase's *live* state at load time instead of the snapshot's own recorded state — so `deserialize` correctly rejects a buffer with `Snapshot_Invalid` if it references an entity that no longer matches the live id-space (e.g. it was destroyed and its index recycled since the snapshot was taken), rather than silently writing stale data back under the wrong entity.
+
+To save and restore the shared id-space itself, use `Overbase`'s own snapshot functions — independent of which, or how many, Databases are attached (the attached-Database list is runtime-only and is never part of either format):
+
+```odin
+size, _ := ecs.overbase_serialized_size(&overbase)
+buf := make([]byte, size)
+ecs.overbase_serialize(&overbase, buf)
+// ... later, into an Overbase already init'd with cap >= the saved cap ...
+ecs.overbase_deserialize(&overbase, buf)
+
+// or to/from a file:
+ecs.overbase_save_to_file(&overbase, "world.overbase.snap")
+ecs.overbase_load_from_file(&overbase, "world.overbase.snap")
+```
+
+**Restore order matters**: when restoring a full shared setup, call `overbase_deserialize` *before* deserializing any attached Database — a Database's own rows are validated against whatever id-space is live at that moment, so restoring the shared id-space first is what makes its entities valid again for the Databases' own `deserialize` calls that follow:
+
+```odin
+ecs.overbase_deserialize(&overbase, buf_overbase) // shared id-space first
+ecs.deserialize(&world_ecs, buf_world)             // then each attached Database
+ecs.deserialize(&render_ecs, buf_render)
+```
+
+See [sample13](/samples/sample13/main.odin) for a complete two-Database save/restore example.
 
 ## Utilities
 

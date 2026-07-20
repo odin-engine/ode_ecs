@@ -6,7 +6,7 @@
     and relations round-trip; views and groups are derived data and are rebuilt
     on load instead of being stored.
 
-    Scope (v1): components must be POD — no pointers, slices, strings, maps or
+    Scope (v2): components must be POD — no pointers, slices, strings, maps or
     dynamic arrays inside them (their rows are copied as raw bytes). serialize
     rejects non-POD component types unless allow_non_pod = true is passed.
     Per-table user serialize/deserialize callbacks for non-POD components are
@@ -17,6 +17,18 @@
     init/terminate history, so table ids coincide), same component types, and
     capacities no smaller than the saved data. Deserialization is all-or-nothing:
     the whole buffer is validated before anything is mutated.
+
+    Entity-id ownership (v2): a Database that owns its Overbase (the common,
+    plain ecs.init case) still snapshots the entity-id space (generations,
+    freed list) together with its tables, exactly as v1 did. A Database
+    attached to a *shared* Overbase (ecs.init_from_overbase) instead omits
+    that section — deserialize never touches shared id-space state a sibling
+    Database also depends on. Row entity_ids are validated against the
+    snapshot's own recorded id state when this Database owns the section, or
+    against the live Overbase otherwise (see snapshot__validate_row_eid). To
+    save/restore the shared id-space itself, use Overbase's own
+    overbase_serialize/overbase_deserialize (overbase_serialization.odin).
+    See docs/overbase.md.
 
     The wire format depends on the Table_Type enum values and on the ix_gen
     bit_field packing (ix:56/gen:8) — changing either requires bumping
@@ -43,7 +55,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F) // "ODEECSDB" as little-endian bytes
 
     @(private)
-    SNAPSHOT_VERSION :: u32(1)
+    SNAPSHOT_VERSION :: u32(2)
 
     // Written and compared as a raw u32: a snapshot produced on a machine with
     // different endianness reads back as a different value and is rejected.
@@ -52,6 +64,12 @@ package ode_ecs
 
     @(private)
     SNAPSHOT_FLAG__HAS_RELATIONS :: u32(1 << 0)
+
+    // Set when the entity-id section (items/freed blob right after the
+    // header) is present in the buffer. Written iff the saving Database owns
+    // its Overbase — see the entity-id ownership note at the top of this file.
+    @(private)
+    SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION :: u32(1 << 1)
 
     @(private)
     Snapshot_Header :: struct #packed {
@@ -302,9 +320,11 @@ package ode_ecs
         if !database__is_valid(self) do return 0, API_Error.Object_Invalid
 
         size = size_of(Snapshot_Header)
-        size += self.overbase.id_factory.cap * size_of(oc.ix_gen)
-        size += self.overbase.id_factory.freed_count * size_of(int)
-        size = snap__align8(size)
+        if self.owns_overbase {
+            size += self.overbase.id_factory.cap * size_of(oc.ix_gen)
+            size += self.overbase.id_factory.freed_count * size_of(int)
+            size = snap__align8(size)
+        }
 
         for table in self.tables.items {
             if table == nil do continue
@@ -367,6 +387,7 @@ package ode_ecs
         has_relations := self.relations != nil && self.relations.state == Object_State.Normal
         flags: u32 = 0
         if has_relations do flags |= SNAPSHOT_FLAG__HAS_RELATIONS
+        if self.owns_overbase do flags |= SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION
 
         w := Snap_Writer{ buf = buf }
 
@@ -384,10 +405,16 @@ package ode_ecs
 
         // Id factory. The WHOLE items array: generations of freed and
         // never-recreated slots drive expired-id detection and must round-trip.
-        // The freed list order matters too (LIFO reuse).
-        snap_writer__write(&w, raw_data(self.overbase.id_factory.items), self.overbase.id_factory.cap * size_of(oc.ix_gen))
-        snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(int))
-        snap_writer__pad8(&w)
+        // The freed list order matters too (LIFO reuse). Only written when this
+        // Database owns its Overbase — a shared Overbase's id-space is saved/
+        // restored independently via overbase_serialize/overbase_deserialize,
+        // so this Database's own snapshot never carries (and never overwrites)
+        // state a sibling Database also depends on.
+        if self.owns_overbase {
+            snap_writer__write(&w, raw_data(self.overbase.id_factory.items), self.overbase.id_factory.cap * size_of(oc.ix_gen))
+            snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(int))
+            snap_writer__pad8(&w)
+        }
 
         for table in self.tables.items {
             if table == nil do continue
@@ -469,6 +496,25 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Deserialize
 
+    @(private)
+    // Validates one row's saved entity_id against whichever id-space this
+    // deserialize call trusts. use_saved selects the snapshot's own recorded
+    // state (saved_items) — correct only when this Database owns the
+    // entity-id section being restored; otherwise the row is checked against
+    // the database's live Overbase, which is either already independently
+    // restored (via overbase_deserialize) or simply the ground truth the
+    // caller is expected to have set up. See the entity-id ownership note at
+    // the top of this file.
+    snapshot__validate_row_eid :: proc(self: ^Database, eid: entity_id, saved_items: []entity_id, use_saved: bool) -> Error {
+        if use_saved {
+            if eid.ix < 0 || eid.ix >= len(saved_items) do return API_Error.Snapshot_Invalid
+            if saved_items[eid.ix] != eid do return API_Error.Snapshot_Invalid
+        } else {
+            if overbase__is_entity_correct(self.overbase, eid) != nil do return API_Error.Snapshot_Invalid
+        }
+        return nil
+    }
+
     // Loads a snapshot into an already-initialized database with a matching
     // schema (same tables inited in the same order, same component types) and
     // capacities >= the saved ones. All existing entities/components/relations
@@ -490,6 +536,18 @@ package ode_ecs
         if hdr.endian_check != SNAPSHOT_ENDIAN_CHECK do return API_Error.Snapshot_Invalid
         if hdr.version != SNAPSHOT_VERSION do return API_Error.Snapshot_Version_Mismatch
 
+        // has_entity_ids: the buffer physically carries the items/freed blob
+        // (written iff the saving Database owned its Overbase). apply_entity_ids:
+        // this Database owns its Overbase too, so it's safe to overwrite it from
+        // that blob. When has_entity_ids is true but apply_entity_ids is false
+        // (this Database shares its Overbase, or a foreign snapshot is being
+        // loaded), the blob is still present in the buffer and must be skipped
+        // over, but row entity_ids are validated against the live Overbase
+        // instead of the snapshot's own saved_items — see the entity-id
+        // ownership note at the top of this file.
+        has_entity_ids := (hdr.flags & SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION) != 0
+        apply_entity_ids := has_entity_ids && self.owns_overbase
+
         saved_cap := int(hdr.entities_cap)
         created_count := int(hdr.created_count)
         freed_count := int(hdr.freed_count)
@@ -499,17 +557,20 @@ package ode_ecs
         if freed_count < 0 || freed_count > created_count do return API_Error.Snapshot_Invalid
         if hdr.section_count < 0 do return API_Error.Snapshot_Invalid
 
-        if saved_cap > self.overbase.id_factory.cap do return API_Error.Snapshot_Capacity_Too_Small
+        saved_items: []entity_id
+        if has_entity_ids {
+            if apply_entity_ids && saved_cap > self.overbase.id_factory.cap do return API_Error.Snapshot_Capacity_Too_Small
 
-        saved_items := snap_reader__entity_ids(&r, saved_cap) or_return
+            saved_items = snap_reader__entity_ids(&r, saved_cap) or_return
 
-        freed_bytes := snap_reader__bytes(&r, freed_count * size_of(int)) or_return
-        saved_freed := slice.reinterpret([]int, freed_bytes)
-        for f in saved_freed {
-            if f < 0 || f >= saved_cap do return API_Error.Snapshot_Invalid
-            if saved_items[f].ix != DELETED_INDEX do return API_Error.Snapshot_Invalid
+            freed_bytes := snap_reader__bytes(&r, freed_count * size_of(int)) or_return
+            saved_freed := slice.reinterpret([]int, freed_bytes)
+            for f in saved_freed {
+                if f < 0 || f >= saved_cap do return API_Error.Snapshot_Invalid
+                if saved_items[f].ix != DELETED_INDEX do return API_Error.Snapshot_Invalid
+            }
+            snap_reader__pad8(&r) or_return
         }
-        snap_reader__pad8(&r) or_return
 
         nonnil_tables := 0
         for table in self.tables.items {
@@ -553,9 +614,9 @@ package ode_ecs
 
                 eids := snap_reader__entity_ids(&r, n) or_return
                 for eid in eids {
-                    // every row's entity must be alive in the saved factory
-                    if eid.ix < 0 || eid.ix >= saved_cap do return API_Error.Snapshot_Invalid
-                    if saved_items[eid.ix] != eid do return API_Error.Snapshot_Invalid
+                    // every row's entity must be alive in the id-space this
+                    // load trusts (the snapshot's own, or the live Overbase)
+                    snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
                 }
                 _ = snap_reader__bytes(&r, n * ti.size) or_return // rows blob
                 snap_reader__pad8(&r) or_return
@@ -566,8 +627,7 @@ package ode_ecs
                 }
                 eids := snap_reader__entity_ids(&r, n) or_return
                 for eid in eids {
-                    if eid.ix < 0 || eid.ix >= saved_cap do return API_Error.Snapshot_Invalid
-                    if saved_items[eid.ix] != eid do return API_Error.Snapshot_Invalid
+                    snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
                 }
             }
         }
@@ -581,8 +641,7 @@ package ode_ecs
                 links := snap_reader__entity_ids(&r, saved_cap) or_return
                 for e in links {
                     if is_not_set(e) do continue
-                    if e.ix < 0 || e.ix >= saved_cap do return API_Error.Snapshot_Invalid
-                    if saved_items[e.ix] != e do return API_Error.Snapshot_Invalid
+                    snapshot__validate_row_eid(self, e, saved_items, apply_entity_ids) or_return
                 }
             }
             _ = snap_reader__bytes(&r, saved_cap * size_of(i32)) or_return // children_count
@@ -596,8 +655,14 @@ package ode_ecs
         //
 
         // Reset to a clean post-init state. No gen bump: the factory items are
-        // fully overwritten from the snapshot right after.
-        oc.ix_gen_factory__clear(&self.overbase.id_factory)
+        // fully overwritten from the snapshot right after. Only when this
+        // Database owns its Overbase — otherwise the shared id-space is left
+        // completely untouched by this call (a sibling Database, or nothing
+        // at all, may depend on it; see overbase_deserialize to restore it
+        // explicitly).
+        if apply_entity_ids {
+            oc.ix_gen_factory__clear(&self.overbase.id_factory)
+        }
         slice.zero(self.eid_to_bits)
 
         for table in self.tables.items {
@@ -613,13 +678,22 @@ package ode_ecs
         r = Snap_Reader{ data = data }
         snap_reader__read(&r, &hdr, size_of(hdr)) or_return
 
-        // Id factory. Slots >= saved_cap stay cleared (ix == DELETED_INDEX), so
-        // both new_id paths remain correct on a larger target database.
-        snap_reader__read(&r, raw_data(self.overbase.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
-        snap_reader__read(&r, raw_data(self.overbase.id_factory.freed), freed_count * size_of(int)) or_return
-        snap_reader__pad8(&r) or_return
-        self.overbase.id_factory.created_count = created_count
-        self.overbase.id_factory.freed_count = freed_count
+        if apply_entity_ids {
+            // Id factory. Slots >= saved_cap stay cleared (ix == DELETED_INDEX),
+            // so both new_id paths remain correct on a larger target database.
+            snap_reader__read(&r, raw_data(self.overbase.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
+            snap_reader__read(&r, raw_data(self.overbase.id_factory.freed), freed_count * size_of(int)) or_return
+            snap_reader__pad8(&r) or_return
+            self.overbase.id_factory.created_count = created_count
+            self.overbase.id_factory.freed_count = freed_count
+        } else if has_entity_ids {
+            // Section is present in the buffer but doesn't belong to this
+            // Database (shared Overbase, or a foreign snapshot) — skip past
+            // it without touching the live id-space.
+            _ = snap_reader__bytes(&r, saved_cap * size_of(oc.ix_gen)) or_return
+            _ = snap_reader__bytes(&r, freed_count * size_of(int)) or_return
+            snap_reader__pad8(&r) or_return
+        }
 
         for _ in 0..<int(hdr.section_count) {
             th: Snap_Table_Header

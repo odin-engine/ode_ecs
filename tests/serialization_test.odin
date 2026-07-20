@@ -579,6 +579,53 @@ package ode_ecs__tests
             testing.expect(t, ecs.entities_len(&db) == 1)
     }
 
+    // v1 (pre owns_overbase-gated entity-id section) snapshots are rejected
+    // outright — not silently misparsed under the new v2 layout, which added
+    // SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION and changed what a set/unset flag
+    // means for cursor advancement in deserialize.
+    @(test)
+    serialization_old_version_rejected__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            positions: ecs.Table(Position)
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+
+            eid, err := ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+            _, perr := ecs.add_component(&positions, eid)
+            testing.expect(t, perr == nil)
+
+            size, _ := ecs.serialized_size(&db)
+            buf := make([]byte, size, allocator)
+            defer delete(buf, allocator)
+            _, serr := ecs.serialize(&db, buf)
+            testing.expect(t, serr == nil)
+
+            // Rewrite the version field (u32 right after the u64 magic) to 1,
+            // simulating a buffer produced by the pre-Overbase-serialization
+            // library version.
+            v1 := make([]byte, size, allocator)
+            defer delete(v1, allocator)
+            copy(v1, buf)
+            v1[8] = 1
+
+            testing.expect(t, ecs.deserialize(&db, v1) == ecs.API_Error.Snapshot_Version_Mismatch)
+    }
+
     @(test)
     serialization_non_pod__test :: proc(t: ^testing.T) {
         //
