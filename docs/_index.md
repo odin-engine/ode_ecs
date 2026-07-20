@@ -1,13 +1,19 @@
 # 📄 Docs
 
 * [README.md](/README.md)
+
+Main:
 * [Database](database.md)
-* [Overbase](overbase.md)
 * [Tables](tables.md)
 * [View](view.md)
+
+Optional:
 * [Group](group.md)
-* [Relations](relations.md)
 * [Command Buffer](command_buffer.md)
+* [Relations](relations.md)
+* [Overbase](overbase.md)
+
+Other:
 * ❓[Frequently Asked Questions (F.A.Q)](faq.md)
 
 # 🍕 Samples
