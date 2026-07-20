@@ -293,8 +293,6 @@ You can iterate over tagged entities like this:
 
 [Sample06](/samples/sample06/main.odin) demonstrates how to use `Tag_Table`.
 
----
-
 ## Relations_Table (parent/child entity relations)
 
 `Relations_Table` is an optional table that adds parent/child relations between entities: every entity can have at most one parent and any number of children. Like everything else in ODE_ECS, all of its memory is preallocated at init and every operation is a direct array access (adding, removing and re-parenting are all **O(1)**). Only one `Relations_Table` can be created per `Database`:
