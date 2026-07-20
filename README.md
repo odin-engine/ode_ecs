@@ -49,11 +49,12 @@ This is the main part of ODE_ECS.
 
 ### Optionally:
 
-* **[Packing pausing](#mutating-tables-while-iterating-pause_packing--resume_packing--pack):** For table mutations (iterate while destroying entities/removing components).
+* **[Packing pausing](#mutating-tables-while-iterating-pause_packing--resume_packing--pack):** To defer table mutations (iterate while destroying entities/removing components).
 * **[Groups](/docs/group.md):** For speed optimization (when possible).
 * **[Command_Buffers](/docs/command_buffer.md):** Useful for multithreading and to defer table mutations.
 * **[Compact_Table](/docs/tables.md#compact_tablet) & [Tiny_Table](/docs/tables.md#tiny_tablet):** For memory optimization.
 * **[Overbase](/docs/overbase.md):** Share one entity ID space across multiple Databases.
+
 
 # 🧩 Basics  
 
