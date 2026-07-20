@@ -184,7 +184,7 @@ package ode_ecs__tests
             defer ecs.terminate(&ecs_1)
             testing.expect(t, ecs.init(&ecs_1, entities_cap=2, allocator=allocator) == nil)
 
-            testing.expect(t,  ecs_1.id_factory.created_count == 0)
+            testing.expect(t,  ecs_1.overbase.id_factory.created_count == 0)
 
             eid_1, eid_2, eid_3: ecs.entity_id
             err: ecs.Error
@@ -196,23 +196,23 @@ package ode_ecs__tests
             eid_1, err = ecs.database__create_entity(&ecs_1)
             testing.expect(t, eid_1.ix == 0)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs_1.id_factory.created_count == 1)
+            testing.expect(t, ecs_1.overbase.id_factory.created_count == 1)
 
             eid_2, err = ecs.database__create_entity(&ecs_1)
             testing.expect(t, eid_2.ix == 1)
             testing.expect(t, err == nil)
-            testing.expect(t, ecs_1.id_factory.created_count == 2)
+            testing.expect(t, ecs_1.overbase.id_factory.created_count == 2)
 
             eid_3, err = ecs.database__create_entity(&ecs_1)
             testing.expect(t, eid_3.ix == ecs.DELETED_INDEX)
             testing.expect(t, err == oc.Core_Error.Container_Is_Full)
-            testing.expect(t, ecs_1.id_factory.created_count == 2)
+            testing.expect(t, ecs_1.overbase.id_factory.created_count == 2)
 
             testing.expect(t, ecs.database__destroy_entity(&ecs_1, eid_1) == nil)
-            testing.expect(t, ecs_1.id_factory.created_count == 2)
+            testing.expect(t, ecs_1.overbase.id_factory.created_count == 2)
 
             testing.expect(t, ecs.database__destroy_entity(&ecs_1, eid_1) == ecs.API_Error.Entity_Id_Expired)
-            testing.expect(t, ecs_1.id_factory.created_count == 2)
+            testing.expect(t, ecs_1.overbase.id_factory.created_count == 2)
     }
 ///////////////////////////////////////////////////////////////////////////////
 // Compact_Table

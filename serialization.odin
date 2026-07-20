@@ -60,7 +60,7 @@ package ode_ecs
         endian_check:  u32,
         flags:         u32,
         _reserved:     u32,
-        entities_cap:  i64, // saved db.id_factory.cap
+        entities_cap:  i64, // saved db.overbase.id_factory.cap
         created_count: i64, // factory state
         freed_count:   i64,
         section_count: i64, // number of table sections that follow
@@ -302,8 +302,8 @@ package ode_ecs
         if !database__is_valid(self) do return 0, API_Error.Object_Invalid
 
         size = size_of(Snapshot_Header)
-        size += self.id_factory.cap * size_of(oc.ix_gen)
-        size += self.id_factory.freed_count * size_of(int)
+        size += self.overbase.id_factory.cap * size_of(oc.ix_gen)
+        size += self.overbase.id_factory.freed_count * size_of(int)
         size = snap__align8(size)
 
         for table in self.tables.items {
@@ -325,7 +325,7 @@ package ode_ecs
         }
 
         if self.relations != nil && self.relations.state == Object_State.Normal {
-            entities_cap := self.id_factory.cap
+            entities_cap := self.overbase.id_factory.cap
             size += size_of(Snap_Relations_Header)
             size += 4 * entities_cap * size_of(entity_id) // parent/first_child/next_sibling/prev_sibling
             size = snap__align8(size + entities_cap * size_of(i32)) // children_count
@@ -375,9 +375,9 @@ package ode_ecs
             version       = SNAPSHOT_VERSION,
             endian_check  = SNAPSHOT_ENDIAN_CHECK,
             flags         = flags,
-            entities_cap  = i64(self.id_factory.cap),
-            created_count = i64(self.id_factory.created_count),
-            freed_count   = i64(self.id_factory.freed_count),
+            entities_cap  = i64(self.overbase.id_factory.cap),
+            created_count = i64(self.overbase.id_factory.created_count),
+            freed_count   = i64(self.overbase.id_factory.freed_count),
             section_count = section_count,
         }
         snap_writer__write(&w, &hdr, size_of(hdr))
@@ -385,8 +385,8 @@ package ode_ecs
         // Id factory. The WHOLE items array: generations of freed and
         // never-recreated slots drive expired-id detection and must round-trip.
         // The freed list order matters too (LIFO reuse).
-        snap_writer__write(&w, raw_data(self.id_factory.items), self.id_factory.cap * size_of(oc.ix_gen))
-        snap_writer__write(&w, raw_data(self.id_factory.freed), self.id_factory.freed_count * size_of(int))
+        snap_writer__write(&w, raw_data(self.overbase.id_factory.items), self.overbase.id_factory.cap * size_of(oc.ix_gen))
+        snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(int))
         snap_writer__pad8(&w)
 
         for table in self.tables.items {
@@ -499,7 +499,7 @@ package ode_ecs
         if freed_count < 0 || freed_count > created_count do return API_Error.Snapshot_Invalid
         if hdr.section_count < 0 do return API_Error.Snapshot_Invalid
 
-        if saved_cap > self.id_factory.cap do return API_Error.Snapshot_Capacity_Too_Small
+        if saved_cap > self.overbase.id_factory.cap do return API_Error.Snapshot_Capacity_Too_Small
 
         saved_items := snap_reader__entity_ids(&r, saved_cap) or_return
 
@@ -597,7 +597,7 @@ package ode_ecs
 
         // Reset to a clean post-init state. No gen bump: the factory items are
         // fully overwritten from the snapshot right after.
-        oc.ix_gen_factory__clear(&self.id_factory)
+        oc.ix_gen_factory__clear(&self.overbase.id_factory)
         slice.zero(self.eid_to_bits)
 
         for table in self.tables.items {
@@ -615,11 +615,11 @@ package ode_ecs
 
         // Id factory. Slots >= saved_cap stay cleared (ix == DELETED_INDEX), so
         // both new_id paths remain correct on a larger target database.
-        snap_reader__read(&r, raw_data(self.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
-        snap_reader__read(&r, raw_data(self.id_factory.freed), freed_count * size_of(int)) or_return
+        snap_reader__read(&r, raw_data(self.overbase.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
+        snap_reader__read(&r, raw_data(self.overbase.id_factory.freed), freed_count * size_of(int)) or_return
         snap_reader__pad8(&r) or_return
-        self.id_factory.created_count = created_count
-        self.id_factory.freed_count = freed_count
+        self.overbase.id_factory.created_count = created_count
+        self.overbase.id_factory.freed_count = freed_count
 
         for _ in 0..<int(hdr.section_count) {
             th: Snap_Table_Header

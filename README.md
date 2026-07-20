@@ -53,6 +53,7 @@ This is the main part of ODE_ECS.
 * **[Groups](/docs/group.md):** For speed optimization (when possible).
 * **[Command_Buffers](/docs/command_buffer.md):** Useful for multithreading and to defer table mutations.
 * **[Compact_Table](/docs/tables.md#compact_tablet) & [Tiny_Table](/docs/tables.md#tiny_tablet):** For memory optimization.
+* **[Overbase](/docs/overbase.md):** Share one entity ID space across multiple Databases.
 
 # 🧩 Basics  
 
@@ -87,7 +88,7 @@ You can have as many ECS databases in your game as you want:
     ecs.init(&ecs2, entities_cap=200)
 ```  
 
-`Database`s share **nothing** and can use different allocators.
+`Database`s share **nothing** (by default) and can use different allocators.
 
 The other main types of objects in ODE_ECS are tables, views and [groups](/docs/group.md).  
 

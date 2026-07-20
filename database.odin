@@ -17,10 +17,15 @@ package ode_ecs
 
     Database :: struct {
         allocator: runtime.Allocator,
-        state: Object_State, 
+        state: Object_State,
 
-        id_factory: oc.Ix_Gen_Factory,
-        
+        // Active entity ID space. Points at overbase_storage (the common
+        // case, owned by this Database) or at a shared external Overbase
+        // attached via database__init_from_overbase. See overbase.odin.
+        overbase: ^Overbase,
+        owns_overbase: bool,
+        overbase_storage: Overbase,
+
         tables: oc.Sparse_Arr(Shared_Table),
 
         views: oc.Sparse_Arr(View),
@@ -51,7 +56,8 @@ package ode_ecs
     database__is_valid :: proc(self: ^Database) -> bool {
         if self == nil do return false
         if self.state != Object_State.Normal do return false
-        if !oc.ix_gen_factory__is_valid(&self.id_factory) do return false
+        if self.overbase == nil do return false
+        if !overbase__is_valid(self.overbase) do return false
         if !oc.sparse_arr__is_valid(&self.tables) do return false
         if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid(&self.groups) do return false
@@ -77,12 +83,54 @@ package ode_ecs
 
         self.allocator = allocator
 
-        oc.ix_gen_factory__init(&self.id_factory, entities_cap, self.allocator) or_return
+        overbase__init(&self.overbase_storage, entities_cap, databases_cap = 1, allocator = self.allocator) or_return
+        self.overbase = &self.overbase_storage
+        self.owns_overbase = true
+        overbase__attach_database(self.overbase, self) or_return
+
         oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
         oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
         oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
+
+        self.state = Object_State.Normal
+
+        assert(database__is_valid(self))
+
+        return nil
+    }
+
+    // Attach this Database to a shared, already-initialized Overbase instead
+    // of creating its own — entity IDs created/destroyed through either this
+    // Database, a sibling Database sharing the same Overbase, or the Overbase
+    // itself all refer to the same entity set. If allocator is not given, the
+    // Overbase's own allocator is used for this Database's tables/views/groups
+    // and eid_to_bits. database__terminate will not terminate a shared Overbase
+    // — the caller owns its lifetime (see overbase_terminate).
+    database__init_from_overbase :: proc(self: ^Database, overbase: ^Overbase, allocator: Maybe(runtime.Allocator) = nil) -> Error {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Not_Initialized)
+            assert(overbase != nil)
+            assert(overbase__is_valid(overbase))
+            assert(TABLES_CAP > 1)
+            assert(VIEWS_CAP > 1)
+        }
+
+        self.tail_swap_paused = false
+        self.destroying_eid_ix = DELETED_INDEX
+
+        self.allocator = allocator.? or_else overbase.allocator
+        self.overbase = overbase
+        self.owns_overbase = false
+        overbase__attach_database(self.overbase, self) or_return
+
+        oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
+        oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
+        oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
+
+        self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -134,7 +182,14 @@ package ode_ecs
         }
         self.relations = nil
 
-        oc.ix_gen_factory__terminate(&self.id_factory, self.allocator) or_return
+        if self.overbase != nil {
+            overbase__detach_database(self.overbase, self)
+            if self.owns_overbase {
+                overbase__terminate(self.overbase) or_return
+            }
+        }
+        self.overbase = nil
+        self.owns_overbase = false
 
         // Leave the db in Not_Initialized state (not Terminated) so the same
         // struct can be re-init'd without zeroing it first. See issue #8.
@@ -174,8 +229,12 @@ package ode_ecs
 
         slice.zero(self.eid_to_bits)
 
-        // bump_gen so entity ids held across the clear are detected as expired
-        oc.ix_gen_factory__clear(&self.id_factory, bump_gen = true)
+        // bump_gen so entity ids held across the clear are detected as expired.
+        // A shared Overbase's entity ids stay valid for sibling Databases —
+        // only the Database that owns its Overbase may reset the id space.
+        if self.owns_overbase {
+            oc.ix_gen_factory__clear(&self.overbase.id_factory, bump_gen = true)
+        }
 
         // clear returns the database to its post-init state; a pause taken
         // before the clear must not leak into the new data
@@ -189,18 +248,32 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil)
         }
-        
-        return oc.ix_gen_factory__new_id(&self.id_factory)
+
+        return overbase__create_entity(self.overbase)
     }
 
-    database__destroy_entity :: proc(self: ^Database, eid: entity_id, destroy_children := false) -> Error  {
+    // #force_inline: collapses into overbase__destroy_entity_impl directly —
+    // see the note on overbase__destroy_entity.
+    database__destroy_entity :: #force_inline proc(self: ^Database, eid: entity_id, destroy_children := false) -> Error  {
         when VALIDATIONS {
             assert(self != nil)
             assert(eid.ix >= 0)
         }
 
-        database__is_entity_correct(self, eid) or_return
+        return overbase__destroy_entity(self.overbase, eid, destroy_children)
+    }
 
+    // Local cleanup only: removes eid's components (and, with destroy_children,
+    // its descendants per this Database's own Relations_Table) from `self`.
+    // Does NOT validate eid and does NOT free the id — overbase__destroy_entity_impl
+    // is the sole caller, once per Database attached to the shared Overbase, and
+    // it owns id validation + the final free.
+    //
+    // #force_inline: single call site (overbase__destroy_entity_impl), so no
+    // code-duplication cost — removes a call/return boundary that splitting
+    // this out of the old monolithic database__destroy_entity introduced.
+    @(private)
+    database__destroy_entity_local :: #force_inline proc(self: ^Database, eid: entity_id, destroy_children: bool) -> Error {
         // Relations cleanup (see relations_table.odin). Without a Relations_Table
         // destroy_children is a no-op — no entity can have children.
         rt := self.relations
@@ -231,8 +304,12 @@ package ode_ecs
                     }
                 }
 
+                // Fully destroy each descendant (id freed + cleaned from every
+                // Database attached to self.overbase, not just self) — another
+                // Database's own relations cascade may have already destroyed
+                // one of these, hence tolerate_expired.
                 for i := tail - 1; i >= 0; i -= 1 {
-                    database__destroy_entity(self, rt.scratch[i]) or_return
+                    overbase__destroy_entity_impl(self.overbase, rt.scratch[i], false, tolerate_expired = true) or_return
                 }
             }
 
@@ -266,25 +343,23 @@ package ode_ecs
         // clean bit_sets
         uni_bits__clear(&self.eid_to_bits[eid.ix])
 
-        oc.ix_gen_factory__free_id(&self.id_factory, eid) or_return
-
         return nil
     }
 
     @(require_results)
     database__get_entity :: #force_inline proc "contextless" (self: ^Database, #any_int index: int, loc := #caller_location) -> entity_id {
-        return oc.ix_gen_factory__get_id(&self.id_factory, index, loc)
+        return overbase__get_entity(self.overbase, index, loc)
     }
 
     @(require_results)
     database__entities_len :: #force_inline proc "contextless" (self: ^Database) -> int {
-        return oc.ix_gen_factory__len(&self.id_factory)
+        return overbase__entities_len(self.overbase)
     }
 
     @(require_results)
     database__is_entity_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
         // Happens when eid.gen do not match. It means eid expired (was deleted)
-        return oc.ix_gen_factory__is_expired(&self.id_factory, eid)
+        return overbase__is_entity_expired(self.overbase, eid)
     }
 
     // Pause tail swapping in all tables (Table, Compact_Table, Tiny_Table, Tag_Table).
@@ -333,7 +408,11 @@ package ode_ecs
     database__memory_usage :: proc (self: ^Database) -> int {
         total := size_of(self^)
 
-        total += oc.ix_gen_factory__memory_usage(&self.id_factory)
+        // Only the Database that owns its Overbase counts its memory — a
+        // shared Overbase is counted once (via overbase_memory_usage), not
+        // once per attached Database. The overbase pointer field itself is
+        // already included in size_of(self^) above.
+        if self.owns_overbase do total += overbase__memory_usage(self.overbase)
         for table in self.tables.items {
             if table != nil do total += shared_table__memory_usage(table)
         }
@@ -484,7 +563,7 @@ package ode_ecs
 
     @(private)
     // #no_bounds_check: callers validate eid via database__is_entity_correct,
-    // and len(eid_to_bits) == id_factory.cap
+    // and len(eid_to_bits) == overbase.id_factory.cap
     database__add_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__add(&self.eid_to_bits[eid.ix], table_id)
     }
@@ -497,7 +576,5 @@ package ode_ecs
 
     @(private)
     database__is_entity_correct :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> Error {
-        if eid.ix < 0 || eid.ix >= self.id_factory.cap do return API_Error.Entity_Id_Out_of_Bounds
-        if database__is_entity_expired(self, eid) do return API_Error.Entity_Id_Expired
-        return nil
+        return overbase__is_entity_correct(self.overbase, eid)
     }

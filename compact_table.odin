@@ -468,8 +468,8 @@ package ode_ecs
             assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
             assert(cap > 0, loc = loc)
-            assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
-            assert(db.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
+            assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
         }
 
         if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero

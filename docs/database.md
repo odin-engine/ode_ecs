@@ -4,7 +4,7 @@ A **`Database`** is the "world" object of ODE_ECS — it owns entities, componen
 
 All memory is preallocated when the database (and its tables/views) are initialized. Nothing reallocates during the game loop.
 
-See also: [Tables](tables.md) · [Views](view.md) · [Relations](relations.md) · [Groups](group.md)  · [Command Buffer](command_buffer.md)
+See also: [Overbase](overbase.md) · [Tables](tables.md) · [Views](view.md) · [Relations](relations.md) · [Groups](group.md)  · [Command Buffer](command_buffer.md)
 
 ## Initialization
 
@@ -35,6 +35,8 @@ ui_ecs:    ecs.Database
 ecs.init(&world_ecs, entities_cap = 100_000)
 ecs.init(&ui_ecs,    entities_cap = 200)
 ```
+
+These two are fully independent — they share nothing, including entity IDs (the same `entity_id` value can mean a completely different entity in each). If you instead want two or more Databases to refer to the *same* entities, see [Overbase](overbase.md).
 
 ## Entities
 

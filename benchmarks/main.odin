@@ -74,6 +74,13 @@
       a "well-mixed" hash here. Likewise the Robin Hood probe-distance early
       exit for misses: neutral at best (chains are already ~1 long), and the
       extra per-probe hash pushed hit cost to 3.2 ns/op in one variant.
+    - #force_inline on the database__create_entity -> overbase__create_entity ->
+      oc.ix_gen_factory__new_id wrapper chain (Overbase split it across two
+      procs): no gain, create_entity ~3.7-4.0 ns/op either way, B lost 3/5
+      interleaved rounds. Unlike database__destroy_entity_local (a large,
+      branchy proc where the same trick gave a consistent 2.3-2.6% win, see
+      database.odin), this chain's callees are already tiny — the backend was
+      likely auto-inlining them regardless of the explicit hint.
 */
 package ode_ecs_benchmarks
 
@@ -165,6 +172,8 @@ main :: proc() {
     bench_churn_tiny()
     bench_churn_tag()
     bench_churn_small_view()
+
+    bench_create_entity()
 
     bench_destroy(8)
     bench_destroy(32)
@@ -911,6 +920,45 @@ bench_churn_small_view :: proc() {
     report("churn_small_view", best, SMALL * 2 * rounds)
 
     if ecs.terminate(&sv_db) != nil do panic("sv db terminate failed")
+}
+
+//
+// Entity creation
+//
+
+bench_create_entity :: proc() {
+    ce_db: ecs.Database
+    if ecs.init(&ce_db, CHURN_N, context.allocator) != nil do panic("create_entity db init failed")
+
+    ce_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(ce_eids)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        for i in 0..<CHURN_N {
+            eid, err := ecs.create_entity(&ce_db)
+            if err != nil do panic("create_entity failed")
+            ce_eids[i] = eid
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+
+        // reset outside the timed section for the next rep
+        for eid in ce_eids {
+            if ecs.destroy_entity(&ce_db, eid) != nil do panic("destroy failed")
+        }
+    }
+    g_sink += f64(ecs.entities_len(&ce_db))
+
+    report("create_entity", best, CHURN_N)
+
+    if ecs.terminate(&ce_db) != nil do panic("create_entity db terminate failed")
 }
 
 //

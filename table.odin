@@ -76,10 +76,10 @@ package ode_ecs
         self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
 
         // if you need to optimize memory usage, use Tiny_Table if your table cap is less or equal than TINY_TABLE__ROW_CAP,
-        // and use Compact_Table if you want to save memory and your table cap is less than db.id_factory.cap / 4 but greater than TINY_TABLE__ROW_CAP
+        // and use Compact_Table if you want to save memory and your table cap is less than db.overbase.id_factory.cap / 4 but greater than TINY_TABLE__ROW_CAP
         // in other cases or if you do not care about memory usage, use Table
-        // db.id_factory.cap is database entities cap
-        self.eid_to_rid = make([]u32, db.id_factory.cap, db.allocator) or_return
+        // db.overbase.id_factory.cap is database entities cap
+        self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
         oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
@@ -220,7 +220,7 @@ package ode_ecs
 
     @(private)
     // #no_bounds_check: callers validate eid via database__is_entity_correct,
-    // and len(eid_to_rid) == db.id_factory.cap
+    // and len(eid_to_rid) == db.overbase.id_factory.cap
     table_raw__get_component_by_entity :: #force_inline proc "contextless" (self: ^Table_Raw, eid: entity_id) -> rawptr #no_bounds_check {
         rid := self.eid_to_rid[eid.ix]
         if rid == TABLE_NO_RID do return nil
@@ -266,7 +266,7 @@ package ode_ecs
     }
 
     @(private)
-    // #no_bounds_check: callers validate target_eid (len(eid_to_rid) == db.id_factory.cap);
+    // #no_bounds_check: callers validate target_eid (len(eid_to_rid) == db.overbase.id_factory.cap);
     // all row indexes derive from raw.len < cap or from the rid index
     table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -379,7 +379,7 @@ package ode_ecs
     // the row refs), and it also overwrites the existing value on the
     // Component_Already_Exist path — "last write wins", used by Command_Buffer.
     // #no_bounds_check: callers validate eid via database__is_entity_correct,
-    // len(eid_to_rid) == db.id_factory.cap; row indexes derive from raw.len < cap
+    // len(eid_to_rid) == db.overbase.id_factory.cap; row indexes derive from raw.len < cap
     table_raw__add_component :: proc(self: ^Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
@@ -563,7 +563,7 @@ package ode_ecs
             assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
             assert(cap > 0, loc = loc)
-            assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
             assert(cap < int(max(u32)), loc = loc) // row ids must fit the u32 eid_to_rid index
         }
 

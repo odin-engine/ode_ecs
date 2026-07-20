@@ -36,7 +36,7 @@ package ode_ecs
         cap: int,       // max number of concurrent parent links (relations)
         count: int,     // current number of parent links
 
-        // Sized to db.id_factory.cap, indexed by eid.ix.
+        // Sized to db.overbase.id_factory.cap, indexed by eid.ix.
         // entity_id with ix == DELETED_INDEX means "none".
         parent:         []entity_id,
         first_child:    []entity_id,
@@ -72,7 +72,7 @@ package ode_ecs
             assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
             assert(cap > 0, loc = loc)
-            assert(cap <= db.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
         }
 
         if db.relations != nil do return API_Error.Relations_Table_Already_Exists
@@ -80,7 +80,7 @@ package ode_ecs
         self.db = db
         self.cap = cap
 
-        entities_cap := db.id_factory.cap
+        entities_cap := db.overbase.id_factory.cap
 
         self.parent         = make([]entity_id, entities_cap, db.allocator) or_return
         self.first_child    = make([]entity_id, entities_cap, db.allocator) or_return

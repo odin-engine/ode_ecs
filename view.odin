@@ -307,7 +307,7 @@ package ode_ecs
         //
         // eid_to_rid
         //
-        self.eid_to_rid = make([]view_record_id, db.id_factory.cap, db.allocator) or_return
+        self.eid_to_rid = make([]view_record_id, db.overbase.id_factory.cap, db.allocator) or_return
 
         //
         // rows
@@ -716,7 +716,7 @@ package ode_ecs
 
     @(private)
     // Adds record (row), checks filter if any
-    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.id_factory.cap
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.overbase.id_factory.cap
     view__add_record :: proc(self: ^View, eid: entity_id, use_filter:= true) -> Error #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
@@ -753,7 +753,7 @@ package ode_ecs
     // Adds a record whose rids are already filled in `src` (the view's temp row):
     // copies the prepared row instead of re-deriving every column's row id
     // (view_row_raw__fill costs a lookup per column — a map probe for Compact_Table).
-    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.id_factory.cap
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.overbase.id_factory.cap
     view__add_record_prefilled :: proc(self: ^View, eid: entity_id, src: ^View_Row_Raw) -> Error #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
@@ -774,7 +774,7 @@ package ode_ecs
     }
 
     @(private)
-    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.id_factory.cap
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.overbase.id_factory.cap
     view__remove_record :: proc(self: ^View, eid: entity_id) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
         if raw.len <= 0 do return // no rows

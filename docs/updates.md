@@ -1,6 +1,7 @@
 # 🐑 Updates Timeline
 
 **July 2026**
+* \*new\* [Overbase](overbase.md) feature - share one entity ID space across multiple Databases.
 * \*new\* [Pause packing](/README.md#mutating-tables-while-iterating-pause_packing--resume_packing--pack) feature - deferred-tail-swap mode.
 * \*new\* [Groups](group.md) feature -  the fastest way to iterate entities that have a specific set of components.
 * \*new\* [Relations_Table](relations.md) feature - parent/child entity relations.

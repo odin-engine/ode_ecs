@@ -56,12 +56,39 @@ package ode_ecs
     //
         init                    :: database__init
         terminate               :: database__terminate
-        entities_len            :: database__entities_len
-        create_entity           :: database__create_entity
-        destroy_entity          :: database__destroy_entity
-        is_expired              :: database__is_entity_expired    // Generation of entity in database does not match the one in provided entity_id
         pause_tail_swap         :: database__pause_packing
         resume_tail_swap        :: database__resume_packing
+
+    //
+    // Overbase (shared entity ID space, see overbase.odin). Attach a Database
+    // to one with init_from_overbase instead of init to share entities across
+    // Databases; create_entity/destroy_entity/is_expired/entities_len/get_entity
+    // below all accept either a ^Database or a ^Overbase.
+    //
+        overbase_init           :: overbase__init
+        overbase_terminate      :: overbase__terminate
+        init_from_overbase      :: database__init_from_overbase
+
+        entities_len :: proc {
+            database__entities_len,
+            overbase__entities_len,
+        }
+
+        create_entity :: proc {
+            database__create_entity,
+            overbase__create_entity,
+        }
+
+        // Generation of entity does not match the one in provided entity_id
+        destroy_entity :: proc {
+            database__destroy_entity,
+            overbase__destroy_entity,
+        }
+
+        is_expired :: proc {
+            database__is_entity_expired,
+            overbase__is_entity_expired,
+        }
 
     //
     // Serialization (binary snapshot of a whole Database, see serialization.odin)
@@ -180,6 +207,7 @@ package ode_ecs
         // Get entity_id from different objects
         get_entity          :: proc {
             database__get_entity,
+            overbase__get_entity,
             table__get_entity_by_row_number,
             compact_table__get_entity_by_row_number,
             tiny_table__get_entity_by_row_number,
@@ -347,6 +375,7 @@ package ode_ecs
         // Memory in bytes
         memory_usage        :: proc {
             database__memory_usage,
+            overbase__memory_usage,
             table__memory_usage,
             compact_table__memory_usage,
             view__memory_usage,
@@ -360,6 +389,7 @@ package ode_ecs
         // Is object valid (initialized and everything is ok)
         is_valid            :: proc {
             database__is_valid,
+            overbase__is_valid,
             table__is_valid,
             compact_table__is_valid,
             view__is_valid,
