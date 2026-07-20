@@ -36,7 +36,7 @@ A _Component_ is pure data (usually defined as a `struct`, though any Odin type 
 
 Components are saved in [Tables](#table), with each component type having its own Table. Iterating a Table is incredibly fast because it is just like iterating a slice or an array.
 
-But what if you want to iterate over entities that have a specific combination of components, like AI and Network and Position and other components? We could _query_ them from the appropriate tables, but querying every frame or two is very slow.
+What if you need to iterate over entities with a specific combination of components, such as AI, Network, and Position? While we could query the appropriate tables, doing so every frame is highly inefficient.
 
 Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
 
