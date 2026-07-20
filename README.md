@@ -30,7 +30,7 @@ Use `git clone` to clone this repository into your project folder, and then `imp
 
 ODE_ECS is a simplified, high-performance, in-memory "relational database" for entities and components.
 
-Entities are simply IDs (64-bit values). They can be linked to zero or many components, which can be added or removed _dynamically_. All data resides within the components
+Entities are simply IDs (64-bit values). They can be linked to zero or many components, which can be added or removed _dynamically_. All data resides within the components.
 
 A _Component_ is pure data (usually defined as a `struct`, though any Odin type can be used).
 
