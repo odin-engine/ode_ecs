@@ -564,12 +564,19 @@ package ode_ecs
  
     // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
     tiny_table__copy_component :: proc(dest: ^Tiny_Table($T), src: ^Tiny_Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
-        src_component = tiny_table__get_component_by_entity(src, eid)
+        // Validate eid once per db (src/dest may belong to different Databases)
+        // instead of the get/get/add path re-validating dest three times over.
+        database__is_entity_correct(src.db, eid) or_return
+        database__is_entity_correct(dest.db, eid) or_return
+
+        src_component = cast(^T) tiny_table_base__get_component_by_entity(src, eid)
         if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
 
-        dest_component = tiny_table__get_component_by_entity(dest, eid) // if it exists we will overwrite data
+        dest_component = cast(^T) tiny_table_base__get_component_by_entity(dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
-            dest_component = tiny_table__add_component(dest, eid) or_return 
+            c, aerr := tiny_table_raw__add_component(cast(^Tiny_Table_Raw) dest, eid)
+            if aerr != nil do return nil, src_component, aerr
+            dest_component = cast(^T) c
         }
 
         // copy data

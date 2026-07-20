@@ -281,12 +281,17 @@ package ode_ecs
         T_size := self.type_info.size
         target := table_raw__rid_to_ptr(self, target_rid)
 
+        // Cached once: nothing between here and the deferred-tail-swap check
+        // below changes the pause state, so a second call would just re-chase
+        // self.owner.db.tail_swap_paused / pause_packing for the same answer.
+        paused := table_raw__is_packing_paused(self)
+
         // Group maintenance: a member losing an owned component leaves the group —
         // swap its rows out of the prefix (in every owned table) before this
         // table's own tail swap runs. Members sit at rid < owner.len by invariant.
         // While tail swap is paused rows must not move: mark dirty, rebuild on resume.
         if self.owner != nil && int(target_rid) < self.owner.len {
-            if table_raw__is_packing_paused(self) {
+            if paused {
                 self.owner.dirty = true
             } else {
                 group__swap_out(self.owner, target_eid)
@@ -297,7 +302,7 @@ package ode_ecs
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
-        if table_raw__is_packing_paused(self) {
+        if paused {
             self.eid_to_rid[target_eid.ix] = TABLE_NO_RID
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
             mem.zero(target, T_size)
@@ -694,12 +699,19 @@ package ode_ecs
  
     // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
     table__copy_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
-        src_component = table__get_component_by_entity(src, eid)
+        // Validate eid once per db (src/dest may belong to different Databases)
+        // instead of the get/get/add path re-validating dest three times over.
+        database__is_entity_correct(src.db, eid) or_return
+        database__is_entity_correct(dest.db, eid) or_return
+
+        src_component = cast(^T) table_raw__get_component_by_entity(cast(^Table_Raw) src, eid)
         if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
 
-        dest_component = table__get_component_by_entity(dest, eid) // if it exists we will overwrite data
+        dest_component = cast(^T) table_raw__get_component_by_entity(cast(^Table_Raw) dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
-            dest_component = add_component(dest, eid) or_return 
+            c, aerr := table_raw__add_component(cast(^Table_Raw) dest, eid)
+            if aerr != nil do return nil, src_component, aerr
+            dest_component = cast(^T) c
         }
 
         // copy data

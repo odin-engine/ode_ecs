@@ -133,20 +133,23 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        if oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED do return nil // already added
+        // One probe serves both the existence check and the insert below —
+        // get_or_insert reuses the located slot instead of get() then add()
+        // re-walking the same chain. Capacity only matters when actually
+        // inserting — re-adding an existing tag on a full table must still be
+        // a no-op (see the same ordering in table__add_component), so the
+        // row-count cap gates can_insert rather than being checked up front.
+        _, found, gerr := oc_maps.rh_map32__get_or_insert(&self.eid_to_rid, u32(eid.ix), u32(raw.len), raw.len < self.cap)
 
-        // Capacity only matters when actually inserting — re-adding an
-        // existing tag on a full table must still be a no-op (see the same
-        // ordering in table__add_component)
+        if found do return nil // already added
+
         if raw.len >= self.cap do return oc.Core_Error.Container_Is_Full
+        if gerr != nil do return gerr
 
         // Update rows
         #no_bounds_check {
             self.rows[raw.len] = eid
         }
-
-        // Add eid_to_rid
-        oc_maps.rh_map32__add(&self.eid_to_rid, u32(eid.ix), u32(raw.len)) or_return
 
         // Update eid_to_bits in db
         database__add_component(self.db, eid, self.id)

@@ -306,13 +306,18 @@ package ode_ecs
     compact_table_raw__add_component :: proc(self: ^Compact_Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        rid := oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix))
+        // One probe serves both the existence check and the insert below —
+        // get_or_insert reuses the located slot instead of get() then add()
+        // re-walking the same chain. Capacity only matters when actually
+        // inserting — re-adding an existing component on a full table must
+        // still report Component_Already_Exist, so the row-count cap gates
+        // can_insert rather than being checked up front.
+        rid, found, gerr := oc_maps.rh_map32__get_or_insert(&self.eid_to_rid, u32(eid.ix), u32(raw.len), raw.len < self.cap)
 
         // Check if component already exist
-        if rid == oc_maps.RH_MAP32_DELETED {
-            // Capacity only matters when actually inserting — re-adding an
-            // existing component on a full table must still report Component_Already_Exist
+        if !found {
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
+            if gerr != nil do return nil, gerr
 
             // Get component
             component = compact_table_raw__rid_to_ptr(self, raw.len)
@@ -320,9 +325,6 @@ package ode_ecs
 
             // Update rid_to_eid
             self.rid_to_eid[raw.len] = eid
-
-            // Add eid_to_rid
-            oc_maps.rh_map32__add(&self.eid_to_rid, u32(eid.ix), u32(raw.len)) or_return
 
             // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)
@@ -592,12 +594,19 @@ package ode_ecs
  
     // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
     compact_table__copy_component :: proc(dest: ^Compact_Table($T), src: ^Compact_Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
-        src_component = compact_table__get_component_by_entity(src, eid)
+        // Validate eid once per db (src/dest may belong to different Databases)
+        // instead of the get/get/add path re-validating dest three times over.
+        database__is_entity_correct(src.db, eid) or_return
+        database__is_entity_correct(dest.db, eid) or_return
+
+        src_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) src, eid)
         if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
 
-        dest_component = compact_table__get_component_by_entity(dest, eid) // if it exists we will overwrite data
+        dest_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
-            dest_component = add_component(dest, eid) or_return 
+            c, aerr := compact_table_raw__add_component(cast(^Compact_Table_Raw) dest, eid)
+            if aerr != nil do return nil, src_component, aerr
+            dest_component = cast(^T) c
         }
 
         // copy data

@@ -81,6 +81,35 @@
       branchy proc where the same trick gave a consistent 2.3-2.6% win, see
       database.odin), this chain's callees are already tiny — the backend was
       likely auto-inlining them regardless of the explicit hint.
+    - Merging Tiny_Table's tt_map__get + tt_map__add add_component path into a
+      single tt_map__find_item probe (mirroring the Rh_Map32 get_or_insert
+      change below): neutral in interleaved A/B, churn_tiny ~12.6-13.9 ns/op
+      either way with no consistent direction across 10 rounds.
+      TINY_TABLE__ROW_CAP=8 against a 32-slot map keeps chains so short
+      (~1 slot) that the second walk's cost is already in the noise floor —
+      unlike Rh_Map32's case, there was no auto-inlining-eligibility loss to
+      offset (tt_map__get/add were never separately call-site-bloating), so
+      there was nothing to gain by merging them. Reverted.
+    - A CORE_VALIDATIONS #config flag in ode_core (mirroring ecs.odin's
+      VALIDATIONS) gating ix_gen_factory__free_id's 4 checks and the explicit
+      runtime.bounds_check_error_loc calls in dense_arr__remove_by_index /
+      sparse_arr__remove_by_index / ix_gen_factory__get_id: zero gain on
+      destroy (8/32 tables) and get_random with the flag off vs on in
+      interleaved A/B (~21.7-21.8 ns/op and ~0.52-0.55 ns/op either way) —
+      same "validation is free, the CPU overlaps it" pattern as the
+      unchecked-get_component dead end above. Reverted; not worth the added
+      double-free corruption risk (skipping ix_gen_factory__free_id's
+      Already_Freed/Not_Found checks lets a duplicate free silently corrupt
+      the free list) for no measured benefit.
+    - #force_inline on table__get_component_by_entity / compact_table__ /
+      tiny_table__get_component_by_entity (2-line validate-then-delegate
+      wrappers): inconclusive in interleaved A/B — get_random and
+      get_random_compact overlapped both ways across 5 rounds (no consistent
+      winner), get_random_compact_miss leaned very slightly better inlined
+      but within the same noise band as the other two. Same pattern as the
+      create_entity wrapper-chain dead end above: these callees are already
+      tiny and single-call-site, so the backend was likely auto-inlining them
+      regardless of the hint. Reverted.
 */
 package ode_ecs_benchmarks
 

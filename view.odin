@@ -434,9 +434,10 @@ package ode_ecs
 
         eid: entity_id
         min_table_col_ix := self.tid_to_cid[min_table.id]
-        assert(self.cap >= shared_table__len(min_table))
+        min_table_len := shared_table__len(min_table) // hoisted: dispatch (switch on Table_Type) once, not once per row
+        assert(self.cap >= min_table_len)
 
-        for i:= 0; i < shared_table__len(min_table); i+=1 {
+        for i:= 0; i < min_table_len; i+=1 {
             eid = shared_table__get_entity_by_row_number(min_table, i)
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
@@ -547,7 +548,8 @@ package ode_ecs
         }
 
         eid: entity_id
-        for i := 0; i < shared_table__len(min_table); i += 1 {
+        min_table_len := shared_table__len(min_table) // hoisted: dispatch (switch on Table_Type) once, not once per row
+        for i := 0; i < min_table_len; i += 1 {
             eid = shared_table__get_entity_by_row_number(min_table, i)
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
             if self.eid_to_rid[eid.ix] != VIEW_NO_RID do continue // already a member

@@ -156,6 +156,65 @@ package maps
         }
     }
 
+    // Single-probe get-or-insert: one Robin Hood walk that either finds an
+    // existing key (found=true, map unmodified) or, when `can_insert` is true,
+    // inserts `insert_value` at the walk's natural point (same placement as
+    // rh_map32__add) and reports found=false. Saves the second full probe that
+    // a separate get() then conditional add() pays on every miss — the walk to
+    // the empty slot is identical in both, so add() was re-doing work get()
+    // had already done. `can_insert` lets a caller gate insertion on its own
+    // external capacity (e.g. Compact_Table's raw.len < cap) without a second
+    // probe to re-check it; err is only ever Container_Is_Full, and only when
+    // an insert was actually attempted (can_insert=true) but this map's own
+    // load-factor limit blocked it — mirrors rh_map32__add's load check.
+    rh_map32__get_or_insert :: #force_inline proc(self: ^Rh_Map32, key: u32, insert_value: u32, can_insert: bool) -> (value: u32, found: bool, err: oc.Error) #no_bounds_check {
+        insertable := can_insert && self.count < self.half_capacity
+
+        idx := rh_map32__hash(self, key)
+        probe_distance := 0
+
+        if !insertable {
+            for probe_distance < self.half_capacity {
+                if self.items[idx].key == RH_MAP32_DELETED {
+                    if can_insert do err = oc.Core_Error.Container_Is_Full
+                    return 0, false, err
+                }
+                if self.items[idx].key == key do return self.items[idx].value, true, nil
+                idx = (idx + 1) & self.mask
+                probe_distance += 1
+            }
+            if can_insert do err = oc.Core_Error.Container_Is_Full
+            return 0, false, err
+        }
+
+        item := Rh_Map32_Item{ key = key, value = insert_value }
+
+        for {
+            if self.items[idx].key == RH_MAP32_DELETED {
+                self.items[idx] = item
+                self.count += 1
+                return insert_value, false, nil
+            }
+
+            if self.items[idx].key == key {
+                return self.items[idx].value, true, nil
+            }
+
+            existing_key := self.items[idx].key
+            existing_distance := (idx - rh_map32__hash(self, existing_key)) & self.mask
+
+            if existing_distance < probe_distance {
+                temp_item := self.items[idx]
+                self.items[idx] = item
+                item = temp_item
+                probe_distance = existing_distance
+            }
+
+            idx = (idx + 1) & self.mask
+            probe_distance += 1
+        }
+    }
+
     @(private)
     // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
     rh_map32__get_from_hash :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32, ix: int) -> (u32, int) #no_bounds_check {
@@ -359,6 +418,49 @@ package maps
         testing.expect(t, map1.count == 0)
         testing.expect(t, rh_map32__get(&map1, 16) == RH_MAP32_DELETED)
         testing.expect(t, rh_map32__get(&map1, 40) == RH_MAP32_DELETED)
+
+        //
+        // get_or_insert
+        //
+
+        // miss + can_insert=true -> inserts and reports found=false
+        v, found, gerr := rh_map32__get_or_insert(&map1, 16, 999, true)
+        testing.expect(t, v == 999 && found == false && gerr == nil)
+        testing.expect(t, map1.count == 1)
+        testing.expect(t, rh_map32__get(&map1, 16) == 999)
+
+        // hit -> returns the existing value untouched, regardless of insert_value
+        v, found, gerr = rh_map32__get_or_insert(&map1, 16, 111, true)
+        testing.expect(t, v == 999 && found == true && gerr == nil)
+        testing.expect(t, map1.count == 1)
+        testing.expect(t, rh_map32__get(&map1, 16) == 999) // unmodified
+
+        // miss + can_insert=false -> no mutation, no error (external cap gate, not a map failure)
+        v, found, gerr = rh_map32__get_or_insert(&map1, 1, 222, false)
+        testing.expect(t, v == 0 && found == false && gerr == nil)
+        testing.expect(t, map1.count == 1)
+        testing.expect(t, rh_map32__get(&map1, 1) == RH_MAP32_DELETED)
+
+        // miss + can_insert=true now succeeds for the same key
+        v, found, gerr = rh_map32__get_or_insert(&map1, 1, 222, true)
+        testing.expect(t, v == 222 && found == false && gerr == nil)
+        testing.expect(t, map1.count == 2)
+
+        // fill to the load-factor limit (half_capacity == capacity == 8 in test mode)
+        for i := 2; i <= 7; i += 1 {
+            v, found, gerr = rh_map32__get_or_insert(&map1, u32(i + 100), u32(i), true)
+            testing.expect(t, found == false && gerr == nil)
+        }
+        testing.expect(t, map1.count == 8)
+
+        // full map: a hit still succeeds (found=true), no Container_Is_Full
+        v, found, gerr = rh_map32__get_or_insert(&map1, 16, 0, true)
+        testing.expect(t, v == 999 && found == true && gerr == nil)
+
+        // full map: a genuine miss is rejected without corrupting state
+        v, found, gerr = rh_map32__get_or_insert(&map1, 999, 1, true)
+        testing.expect(t, v == 0 && found == false && gerr == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, map1.count == 8)
 
         testing.expect(t, rh_map32__terminate(&map1, allocator) == nil)
     }
