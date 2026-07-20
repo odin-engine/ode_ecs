@@ -21,10 +21,10 @@
 # How to install
 
 Use `git clone` to clone this repository into your project folder, and then `import ecs "ode_ecs"`: 
-
 ```  
     git clone https://github.com/odin-engine/ode_ecs.git
 ```  
+Don't forget to pull the latest changes from time to time. We usually don't break the API.
 
 # A Brief Explanation
 
