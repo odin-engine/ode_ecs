@@ -33,4 +33,4 @@ ECS is designed heavily around data-oriented design and cache locality. Iteratin
 
 - O(N) Complexity Scaling: As your world grows from 1,000 entities to 100,000 entities, your frame rate will plummet because every system is checking every entity, even if only 5 of them are relevant.
 
-In ECS you should have systems (basically procs) that iterate over components/Views related to those systems. Like network system should iterate over network copmonents to process them. Physics system should iterate over physics components to process them etc.
+In ECS, systems (essentially procedures) iterate over their related components or views. For instance, the network system processes network components, while the physics system handles physics components.
