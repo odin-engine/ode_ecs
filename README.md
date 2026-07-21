@@ -228,7 +228,7 @@ Or, as a one-liner with `ecs.iterate` — same `it`, `get_component` fused into 
 
 ```odin
     for pos, ai in ecs.iterate(&it, &positions, &ais) {
-        pos.x += 1
+        // do something with pos and ai components
     }
 ```
 
