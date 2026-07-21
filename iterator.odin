@@ -125,6 +125,52 @@ package ode_ecs
         return view_row__get_component_for_table(table, &it.view_row)
     }
 
+    // for-in sugar over Table($T) columns: for v1 in ecs.iterate(&it, &t1) { ... }.
+    // Equivalent to `for iterator_next(&it) { v1 := get_component(&t1, &it) }` — same
+    // dense-fast-path getter, nothing new on the hot path. Table-only (see
+    // view_dense_slice's "Only Table columns participate" note); Compact_Table/
+    // Tiny_Table columns keep using the manual iterator_next + get_component form.
+    iterator__iterate1 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1)) -> (v1: ^T1, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            v1 = iterator__get_component_for_table(t1, it)
+        }
+        return
+    }
+
+    // for-in sugar over two Table($T) columns: for v1, v2 in ecs.iterate(&it, &t1, &t2) { ... }.
+    iterator__iterate2 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2)) -> (v1: ^T1, v2: ^T2, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+        }
+        return
+    }
+
+    // for-in sugar over three Table($T) columns: for v1, v2, v3 in ecs.iterate(&it, &t1, &t2, &t3) { ... }.
+    iterator__iterate3 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3)) -> (v1: ^T1, v2: ^T2, v3: ^T3, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+        }
+        return
+    }
+
+    // for-in sugar over four Table($T) columns: for v1, v2, v3, v4 in ecs.iterate(&it, &t1, &t2, &t3, &t4) { ... }.
+    iterator__iterate4 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3), t4: ^Table($T4)) -> (v1: ^T1, v2: ^T2, v3: ^T3, v4: ^T4, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+            v4 = iterator__get_component_for_table(t4, it)
+        }
+        return
+    }
+
     iterator__get_component_for_compact_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
         return view_row__get_component_for_compact_table(table, &it.view_row)
     }

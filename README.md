@@ -1,7 +1,7 @@
 ![alt text](/img/banner.png?raw=true)
 # 🐏 ODE_ECS (Entity-Component-System) 
 
-⚡A minimal, data-oriented, high-performance Entity-Component-System written in Odin.
+⚡A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 ### Features:
 
@@ -221,6 +221,14 @@ To get an entity or its components inside the iterator loop, you can do this:
         ai = ecs.get_component(&ais, &it)
 
         // ...
+    }
+```
+
+Or, as a one-liner with `ecs.iterate` — same `it`, `get_component` fused into the `for` (Table-only columns; see [docs/view.md](/docs/view.md) for details):
+
+```odin
+    for pos, ai in ecs.iterate(&it, &positions, &ais) {
+        pos.x += 1
     }
 ```
 

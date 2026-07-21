@@ -50,6 +50,18 @@ for ecs.iterator_next(&it) {
 
 Mutating component **values** while iterating is fine. Structural changes (add/remove component, create/destroy entity) are not reflected by a running iterator — call `ecs.iterator_reset(&it)` after them, or avoid structural changes mid-loop (see [pause_packing](database.md#pausing-tail-swap-mutating-tables-while-iterating) for removal-while-iterating patterns).
 
+Or, as a one-liner with `ecs.iterate` — same `it`, same loop, `get_component` fused into the `for`:
+
+```odin
+for pos, ai in ecs.iterate(&it, &positions, &ais) {
+    pos.x += 1
+}
+```
+
+`ecs.iterate` only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `view_dense_slice` below). It's plain sugar over the loop above: `iterator_next` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix it with manual `iterator_next`/`get_component` calls on that `it` in the same or a different loop.
+
+Component counts 1 through 4 are supported (`for pos in ecs.iterate(&it, &positions) { ... }` up to `for a, b, c, d in ecs.iterate(&it, &t1, &t2, &t3, &t4) { ... }`).
+
 ### Batched iteration
 
 `iterator_init` takes optional `start_row` / `end_row`, letting you split a view into batches — e.g. to process them on separate threads (parallel *reads* are safe; do structural changes in a single-threaded phase):

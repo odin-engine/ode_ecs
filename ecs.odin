@@ -147,6 +147,7 @@ package ode_ecs
         iterator_init       :: iterator__init
         iterator_next       :: iterator__next
         iterator_reset      :: iterator__reset
+        iterate             :: proc{iterator__iterate1, iterator__iterate2, iterator__iterate3, iterator__iterate4} // for-in sugar: for v1, v2 in iterate(&it, &t1, &t2) { ... }; Table($T) columns only
 
     //
     // Command_Buffer (deferred structural operations, see command_buffer.odin)
