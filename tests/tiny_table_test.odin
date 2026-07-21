@@ -1074,3 +1074,114 @@ package ode_ecs__tests
         testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 1)
     }
+
+    // Re-adding an existing component while the table is at its fixed
+    // TINY_TABLE__ROW_CAP must report Component_Already_Exist, not
+    // Container_Is_Full. Previously only reachable indirectly via
+    // Command_Buffer replay (which never exercised the already-exists-at-cap
+    // recovery path); tested directly here.
+    @(test)
+    tiny_table__add_at_cap_already_exists__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Tiny_Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tiny_table__init(&positions, &db) == nil)
+
+        eids: [ecs.TINY_TABLE__ROW_CAP]ecs.entity_id
+        for i in 0..<ecs.TINY_TABLE__ROW_CAP {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            _, aerr := ecs.add_component(&positions, eid)
+            testing.expect(t, aerr == nil)
+            eids[i] = eid
+        }
+        testing.expect(t, ecs.table_len(&positions) == ecs.TINY_TABLE__ROW_CAP) // table is now full
+
+        extra, eerr := ecs.create_entity(&db)
+        testing.expect(t, eerr == nil)
+
+        p: ^Position
+        err: ecs.Error
+        p, err = ecs.add_component(&positions, eids[0])
+        testing.expect(t, err == ecs.API_Error.Component_Already_Exist)
+        testing.expect(t, p != nil)
+
+        p, err = ecs.add_component(&positions, extra)
+        testing.expect(t, err == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, p == nil)
+    }
+
+    // A saved entity_id whose entity was later destroyed (stale generation,
+    // in-range index) must report Entity_Id_Expired directly from every
+    // Tiny_Table op, not just through destroy_entity.
+    @(test)
+    tiny_table__expired_entity_id__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Tiny_Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tiny_table__init(&positions, &db) == nil)
+
+        eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+        _, aerr := ecs.add_component(&positions, eid)
+        testing.expect(t, aerr == nil)
+
+        testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
+
+        _, err2 := ecs.add_component(&positions, eid)
+        testing.expect(t, err2 == ecs.API_Error.Entity_Id_Expired)
+        testing.expect(t, ecs.remove_component(&positions, eid) == ecs.API_Error.Entity_Id_Expired)
+        testing.expect(t, ecs.get_component(&positions, eid) == nil)
+        testing.expect(t, ecs.has_component(&positions, eid) == false)
+    }
+
+    // pause_packing -> resume_packing with zero holes accumulated, and
+    // pause_packing/resume_packing/pack on a terminated table reporting
+    // Object_Invalid rather than touching dead state.
+    @(test)
+    tiny_table__pause_resume_edge_cases__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Tiny_Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tiny_table__init(&positions, &db) == nil)
+
+        eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+        _, aerr := ecs.add_component(&positions, eid)
+        testing.expect(t, aerr == nil)
+
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+        testing.expect(t, ecs.resume_packing(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+        testing.expect(t, ecs.has_component(&positions, eid))
+
+        testing.expect(t, ecs.tiny_table__terminate(&positions) == nil)
+        testing.expect(t, ecs.pause_packing(&positions) == ecs.API_Error.Object_Invalid)
+        testing.expect(t, ecs.resume_packing(&positions) == ecs.API_Error.Object_Invalid)
+        testing.expect(t, ecs.pack(&positions) == ecs.API_Error.Object_Invalid)
+    }

@@ -237,4 +237,80 @@ package ode_core
         testing.expect(t, err == Core_Error.None)
         testing.expect(t, sparse_arr__len(&ua_1) == 1)
         testing.expect(t, ua_1.items[0] == &c)
+
+        testing.expect(t, sparse_arr__memory_usage(&ua_1) > 0)
+    }
+
+    @(test)
+    sparse_arr__is_valid__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        zero_value: Sparse_Arr(int)
+        testing.expect(t, sparse_arr__is_valid(&zero_value) == false)
+        nil_sa: ^Sparse_Arr(int)
+        testing.expect(t, sparse_arr__is_valid(nil_sa) == false)
+
+        sa: Sparse_Arr(int)
+        alloc_err := sparse_arr__init(&sa, 2, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, sparse_arr__is_valid(&sa))
+
+        alloc_err = sparse_arr__terminate(&sa, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, sparse_arr__is_valid(&sa) == false)
+    }
+
+    // sparse_arr__add's "more than one nil hole" branch: create two
+    // non-adjacent holes, add once, and confirm has_nil_item stays true
+    // (there's still one more hole left) while only the first hole fills.
+    @(test)
+    sparse_arr__multiple_nil_holes__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        a, b, c, d, e, f: int = 1, 2, 3, 4, 5, 6
+
+        sa: Sparse_Arr(int)
+        defer sparse_arr__terminate(&sa, allocator)
+        alloc_err := sparse_arr__init(&sa, 4, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+
+        // Fill to capacity so removing index 0 or 2 leaves a real hole
+        // instead of just shrinking len (removing the tail index is a
+        // different, already-tested code path).
+        _, err := sparse_arr__add(&sa, &a)
+        testing.expect(t, err == Core_Error.None)
+        _, err = sparse_arr__add(&sa, &b)
+        testing.expect(t, err == Core_Error.None)
+        _, err = sparse_arr__add(&sa, &c)
+        testing.expect(t, err == Core_Error.None)
+        _, err = sparse_arr__add(&sa, &d)
+        testing.expect(t, err == Core_Error.None)
+
+        // Two non-adjacent holes: index 0 and index 2 (index 3 is the tail).
+        sparse_arr__remove_by_index(&sa, 0)
+        sparse_arr__remove_by_index(&sa, 2)
+        testing.expect(t, sa.has_nil_item == true)
+
+        // Adding once must fill the FIRST hole (index 0) and correctly
+        // remember that a second hole (index 2) is still there.
+        ix, aerr := sparse_arr__add(&sa, &e)
+        testing.expect(t, aerr == Core_Error.None)
+        testing.expect(t, ix == 0)
+        testing.expect(t, sa.items[0] == &e)
+        testing.expect(t, sa.items[2] == nil)
+        testing.expect(t, sa.has_nil_item == true)
+
+        // And the remaining hole is still usable.
+        ix2, aerr2 := sparse_arr__add(&sa, &f)
+        testing.expect(t, aerr2 == Core_Error.None)
+        testing.expect(t, ix2 == 2)
+        testing.expect(t, sa.has_nil_item == false)
     }

@@ -320,3 +320,41 @@ package ode_core
         testing.expect(t, ix_gen_factory__is_freed(&factory, bad_id))
         testing.expect(t, ix_gen_factory__is_expired(&factory, bad_id))
     }
+
+    @(test)
+    ix_gen_factory__free_id_errors__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        factory: Ix_Gen_Factory
+        defer ix_gen_factory__terminate(&factory, allocator)
+        ix_gen_factory__init(&factory, 2, allocator)
+
+        id, err := ix_gen_factory__new_id(&factory)
+        testing.expect(t, err == Core_Error.None)
+        testing.expect(t, id.ix == 0 && id.gen == 0)
+
+        // Out_Of_Bounds: ix outside [0, cap)
+        oob_id := id
+        oob_id.ix = factory.cap
+        testing.expect(t, ix_gen_factory__free_id(&factory, oob_id) == Core_Error.Out_Of_Bounds)
+
+        // Already_Freed: freeing the same id twice in a row
+        testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
+        testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.Already_Freed)
+
+        // Not_Found: a stale (superseded) generation at a live index
+        id_2, err_2 := ix_gen_factory__new_id(&factory) // reuses ix 0, bumps gen to 1
+        testing.expect(t, err_2 == Core_Error.None)
+        testing.expect(t, id_2.ix == 0 && id_2.gen == 1)
+
+        stale_id := id_2
+        stale_id.gen = 0 // the original, already-superseded generation
+        testing.expect(t, ix_gen_factory__free_id(&factory, stale_id) == Core_Error.Not_Found)
+
+        // The live id at that index is unaffected by the rejected frees above.
+        testing.expect(t, ix_gen_factory__is_expired(&factory, id_2) == false)
+    }

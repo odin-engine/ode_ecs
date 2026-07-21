@@ -766,3 +766,89 @@ package ode_ecs__tests
             testing.expect(t, rerr == ecs.API_Error.Relations_Table_Not_Created)
             testing.expect(t, ecs.command_buffer_len(&cb2) == 0) // cleared despite the error
     }
+
+    // Cross-buffer ordering on ONE database: two independently-recorded
+    // buffers against the same db, where the second buffer's command depends
+    // on the first's effect. The doc comment (command_buffer.odin) promises
+    // "cross-buffer ordering is the order you replay them in" — verify both
+    // directions actually behave that way.
+    @(test)
+    cb_cross_buffer_ordering__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            positions: ecs.Table(Position)
+            cb_a, cb_b: ecs.Command_Buffer
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+            defer ecs.command_buffer_terminate(&cb_a)
+            defer ecs.command_buffer_terminate(&cb_b)
+
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb_a, &db, commands_cap = 8, payload_cap = 256) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb_b, &db, commands_cap = 8, payload_cap = 256) == nil)
+
+            eid, err := ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+
+            // Recorded independently: A destroys eid, B (unaware of A) adds a
+            // component to the same still-alive-at-record-time eid.
+            testing.expect(t, ecs.cmd_destroy_entity(&cb_a, eid) == nil)
+            testing.expect(t, ecs.cmd_add_component(&cb_b, &positions, eid, Position{9, 9}) == nil)
+
+            // Replay A then B: B's add must be skipped (eid already expired).
+            skipped_a, rerr_a := ecs.replay(&cb_a)
+            testing.expect(t, rerr_a == nil)
+            testing.expect(t, skipped_a == 0)
+            testing.expect(t, ecs.is_expired(&db, eid))
+
+            skipped_b, rerr_b := ecs.replay(&cb_b)
+            testing.expect(t, rerr_b == nil)
+            testing.expect(t, skipped_b == 1)
+            testing.expect(t, ecs.table_len(&positions) == 0)
+
+        //
+        // Same setup, reversed replay order: B then A — B's add must now
+        // succeed (eid still alive at that point), proving the outcome is
+        // governed purely by replay order, not recording order.
+        //
+            db2: ecs.Database
+            positions2: ecs.Table(Position)
+            cb_a2, cb_b2: ecs.Command_Buffer
+            defer ecs.terminate(&db2)
+            defer ecs.command_buffer_terminate(&cb_a2)
+            defer ecs.command_buffer_terminate(&cb_b2)
+
+            testing.expect(t, ecs.init(&db2, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&positions2, &db2, 10) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb_a2, &db2, commands_cap = 8, payload_cap = 256) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb_b2, &db2, commands_cap = 8, payload_cap = 256) == nil)
+
+            eid2, err2 := ecs.create_entity(&db2)
+            testing.expect(t, err2 == nil)
+
+            testing.expect(t, ecs.cmd_destroy_entity(&cb_a2, eid2) == nil)
+            testing.expect(t, ecs.cmd_add_component(&cb_b2, &positions2, eid2, Position{9, 9}) == nil)
+
+            skipped_b2, rerr_b2 := ecs.replay(&cb_b2)
+            testing.expect(t, rerr_b2 == nil)
+            testing.expect(t, skipped_b2 == 0) // eid2 still alive: add succeeds
+            testing.expect(t, ecs.table_len(&positions2) == 1)
+
+            skipped_a2, rerr_a2 := ecs.replay(&cb_a2)
+            testing.expect(t, rerr_a2 == nil)
+            testing.expect(t, skipped_a2 == 0)
+            testing.expect(t, ecs.is_expired(&db2, eid2))
+            testing.expect(t, ecs.table_len(&positions2) == 0) // destroy also removed the component
+    }

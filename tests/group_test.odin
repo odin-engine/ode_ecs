@@ -300,6 +300,60 @@ package ode_ecs__tests
         group__verify(t, &group, &pos, &vel)
     }
 
+    // Degenerate but valid case: a group owning exactly one table. Every
+    // existing group test in this file uses two+ owned tables — this
+    // exercises the min_table-selection-equivalent single-table loop bodies
+    // (rebuild, swap-in/out, pause/resume) with only one iteration.
+    @(test)
+    group__single_owned_table__test :: proc(t: ^testing.T) {
+        db: ecs.Database
+        pos: ecs.Table(Group_Pos)
+        group: ecs.Group
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, 100) == nil)
+        testing.expect(t, ecs.table_init(&pos, &db, 100) == nil)
+        testing.expect(t, ecs.group_init(&group, &db, {&pos}) == nil)
+        testing.expect(t, ecs.is_valid(&group))
+        testing.expect(t, ecs.group_len(&group) == 0)
+
+        eids: [10]ecs.entity_id
+        for i in 0..<10 {
+            eids[i], _ = ecs.create_entity(&db)
+            p, _ := ecs.add_component(&pos, eids[i]); p^ = { f64(eids[i].ix), 1 }
+        }
+
+        // A single-owned-table group trivially contains every row of that table.
+        testing.expect(t, ecs.group_len(&group) == 10)
+        ps := ecs.group_dense_slice(&group, &pos)
+        testing.expect(t, len(ps) == 10)
+        for i in 0..<10 {
+            eid := ecs.get_entity(&pos, i)
+            testing.expect(t, ecs.get_component(&pos, eid) == &ps[i])
+        }
+
+        // Removing the sole owned component removes the entity from the group.
+        testing.expect(t, ecs.remove_component(&pos, eids[3]) == nil)
+        testing.expect(t, ecs.group_len(&group) == 9)
+
+        // Pause/resume at group scope with a single owned table.
+        testing.expect(t, ecs.pause_packing(&group) == nil)
+        testing.expect(t, db.tail_swap_paused == false, "group-level pause must not touch the database-wide flag")
+
+        testing.expect(t, ecs.remove_component(&pos, eids[0]) == nil)
+        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "dirty group must not hand out slices while paused")
+
+        testing.expect(t, ecs.resume_packing(&group) == nil)
+        testing.expect(t, ecs.group_len(&group) == 8) // 10 - eids[3] - eids[0]
+
+        ps2 := ecs.group_dense_slice(&group, &pos)
+        testing.expect(t, len(ps2) == 8)
+        for i in 0..<8 {
+            eid := ecs.get_entity(&pos, i)
+            testing.expect(t, ecs.get_component(&pos, eid) == &ps2[i])
+        }
+    }
+
     @(test)
     group__db_clear__test :: proc(t: ^testing.T) {
         db: ecs.Database

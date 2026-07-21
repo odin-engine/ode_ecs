@@ -1362,6 +1362,77 @@ package ode_ecs__tests
         testing.expect(t, p == nil)
     }
 
+    // A saved entity_id whose entity was later destroyed (stale generation,
+    // in-range index) is distinct from an out-of-bounds index — every Table
+    // op must report Entity_Id_Expired for it directly, not just through
+    // destroy_entity/Relations/Overbase call sites.
+    @(test)
+    table_expired_entity_id__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+
+        eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+        _, aerr := ecs.add_component(&positions, eid)
+        testing.expect(t, aerr == nil)
+
+        testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
+
+        _, err2 := ecs.add_component(&positions, eid)
+        testing.expect(t, err2 == ecs.API_Error.Entity_Id_Expired)
+        testing.expect(t, ecs.remove_component(&positions, eid) == ecs.API_Error.Entity_Id_Expired)
+        testing.expect(t, ecs.get_component(&positions, eid) == nil)
+        testing.expect(t, ecs.has_component(&positions, eid) == false)
+    }
+
+    // pause_packing -> resume_packing with zero holes accumulated (every
+    // existing pause/resume test removes >= 1 row before resuming) must be a
+    // correct no-op, and pause_packing/resume_packing/pack on a terminated
+    // table must report Object_Invalid rather than touching dead state.
+    @(test)
+    table_pause_resume_edge_cases__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+
+        eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+        _, aerr := ecs.add_component(&positions, eid)
+        testing.expect(t, aerr == nil)
+
+        // Zero holes between pause and resume.
+        testing.expect(t, ecs.pause_packing(&positions) == nil)
+        testing.expect(t, ecs.resume_packing(&positions) == nil)
+        testing.expect(t, positions.holes_count == 0)
+        testing.expect(t, ecs.table_len(&positions) == 1)
+        testing.expect(t, ecs.has_component(&positions, eid))
+
+        // Terminated table: pause/resume/pack all report Object_Invalid.
+        testing.expect(t, ecs.table_terminate(&positions) == nil)
+        testing.expect(t, ecs.pause_packing(&positions) == ecs.API_Error.Object_Invalid)
+        testing.expect(t, ecs.resume_packing(&positions) == ecs.API_Error.Object_Invalid)
+        testing.expect(t, ecs.pack(&positions) == ecs.API_Error.Object_Invalid)
+    }
+
     // database__clear reports Object_Invalid when a view was invalidated by a
     // terminated table, but must still clear everything — no torn state where
     // the bits are zeroed while the id factory and tables keep their data.

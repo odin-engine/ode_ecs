@@ -569,3 +569,23 @@ package maps
         testing.expect(t, key_map__add(&m, key_of(1)) == nil)
         testing.expect(t, key_map__exists(&m, key_of(1)))
     }
+
+    @(test)
+    key_map__is_valid__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        zero_value: Key_Map
+        testing.expect(t, key_map__is_valid(&zero_value) == false)
+        testing.expect(t, key_map__is_valid(nil) == false)
+
+        m: Key_Map
+        testing.expect(t, key_map__init(&m, 8, allocator) == nil)
+        testing.expect(t, key_map__is_valid(&m))
+
+        testing.expect(t, key_map__terminate(&m, allocator) == nil)
+        testing.expect(t, key_map__is_valid(&m) == false)
+    }

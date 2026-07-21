@@ -187,4 +187,29 @@ package ode_core
         testing.expect(t, err == Core_Error.None)
         testing.expect(t, dense_arr__len(&arr) == 1)
         testing.expect(t, arr.items[0] == 99)
+
+        testing.expect(t, dense_arr__memory_usage(&arr) > 0)
+    }
+
+    @(test)
+    dense_arr__is_valid__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        zero_value: Dense_Arr(int)
+        testing.expect(t, dense_arr__is_valid(&zero_value) == false)
+        nil_da: ^Dense_Arr(int)
+        testing.expect(t, dense_arr__is_valid(nil_da) == false)
+
+        da: Dense_Arr(int)
+        alloc_err := dense_arr__init(&da, 2, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, dense_arr__is_valid(&da))
+
+        alloc_err = dense_arr__terminate(&da, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, dense_arr__is_valid(&da) == false)
     }

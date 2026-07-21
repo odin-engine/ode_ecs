@@ -363,6 +363,69 @@ package ode_ecs__tests
         testing.expect(t, ecs.tag_table__len(&is_alive) == 1)
     }
 
+    // A saved entity_id whose entity was later destroyed (stale generation,
+    // in-range index) must report Entity_Id_Expired directly from every
+    // Tag_Table op, not just through destroy_entity.
+    @(test)
+    tag_table__expired_entity_id__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        is_alive: ecs.Tag_Table
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tag_table__init(&is_alive, &db, 10) == nil)
+
+        eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+        testing.expect(t, ecs.add_tag(&is_alive, eid) == nil)
+
+        testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
+
+        testing.expect(t, ecs.add_tag(&is_alive, eid) == ecs.API_Error.Entity_Id_Expired)
+        testing.expect(t, ecs.untag(&is_alive, eid) == ecs.API_Error.Entity_Id_Expired)
+        testing.expect(t, ecs.has_tag(&is_alive, eid) == false)
+    }
+
+    // pause_packing -> resume_packing with zero holes accumulated, and
+    // pause_packing/resume_packing/pack on a terminated table reporting
+    // Object_Invalid rather than touching dead state.
+    @(test)
+    tag_table__pause_resume_edge_cases__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        is_alive: ecs.Tag_Table
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tag_table__init(&is_alive, &db, 10) == nil)
+
+        eid, err := ecs.create_entity(&db)
+        testing.expect(t, err == nil)
+        testing.expect(t, ecs.add_tag(&is_alive, eid) == nil)
+
+        testing.expect(t, ecs.pause_packing(&is_alive) == nil)
+        testing.expect(t, ecs.resume_packing(&is_alive) == nil)
+        testing.expect(t, is_alive.holes_count == 0)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 1)
+        testing.expect(t, ecs.has_tag(&is_alive, eid))
+
+        testing.expect(t, ecs.tag_table__terminate(&is_alive) == nil)
+        testing.expect(t, ecs.pause_packing(&is_alive) == ecs.API_Error.Object_Invalid)
+        testing.expect(t, ecs.resume_packing(&is_alive) == ecs.API_Error.Object_Invalid)
+        testing.expect(t, ecs.pack(&is_alive) == ecs.API_Error.Object_Invalid)
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Attach/detach (parity with table/compact_table/tiny_table suites)
 

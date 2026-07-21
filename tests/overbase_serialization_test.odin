@@ -460,3 +460,333 @@ package ode_ecs__tests
             // ob2's shared id-space was not touched by db2's deserialize.
             testing.expect(t, ecs.entities_len(&ob2) == entities_len_before)
     }
+
+///////////////////////////////////////////////////////////////////////////////
+// Relations_Table and Tag_Table on a shared-Overbase Database — the row/link
+// validation branches for these two table kinds are separate code paths from
+// the named-component branch and were untouched by any test above.
+
+    // Relations links (parent/first_child/next_sibling/prev_sibling) go
+    // through the same snapshot__validate_row_eid helper as table rows, but
+    // via their own code path in database__deserialize.
+    @(test)
+    overbase_deserialize_shared_relations__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            ob: ecs.Overbase
+            world_db: ecs.Database
+            render_db: ecs.Database
+            positions: ecs.Table(Ob_Position)
+            rt: ecs.Relations_Table
+        //
+        // Test
+        //
+            defer ecs.overbase_terminate(&ob)
+            defer ecs.terminate(&world_db)
+            defer ecs.terminate(&render_db)
+
+            testing.expect(t, ecs.overbase_init(&ob, entities_cap = 10, databases_cap = 2, allocator = allocator) == nil)
+            testing.expect(t, ecs.init_from_overbase(&world_db, &ob) == nil)
+            testing.expect(t, ecs.init_from_overbase(&render_db, &ob) == nil)
+            testing.expect(t, ecs.table_init(&positions, &world_db, 10) == nil)
+            testing.expect(t, ecs.relations_table__init(&rt, &world_db, 10) == nil)
+
+            parent, perr := ecs.create_entity(&ob)
+            testing.expect(t, perr == nil)
+            child, cerr := ecs.create_entity(&ob)
+            testing.expect(t, cerr == nil)
+
+            pos_p, pperr := ecs.add_component(&positions, parent)
+            testing.expect(t, pperr == nil)
+            pos_p^ = Ob_Position{ x = 1, y = 0 }
+            _, pcerr := ecs.add_component(&positions, child)
+            testing.expect(t, pcerr == nil)
+
+            testing.expect(t, ecs.set_parent(&world_db, child, parent) == nil)
+
+            // world_db's snapshot carries positions + the parent/child link,
+            // but no entity-id section at all (it doesn't own ob).
+            size, _ := ecs.serialized_size(&world_db)
+            buf := make([]byte, size, allocator)
+            defer delete(buf, allocator)
+            _, serr := ecs.serialize(&world_db, buf)
+            testing.expect(t, serr == nil)
+
+            //
+            // (a) Happy path: mutate unrelated state, restore — the relation
+            // round-trips and the shared id-space stays untouched.
+            //
+            pos_p.x = -1
+            testing.expect(t, ecs.deserialize(&world_db, buf) == nil)
+
+            testing.expect(t, ecs.get_component(&positions, parent).x == 1)
+            is_child, icerr := ecs.is_child_of(&world_db, child, parent)
+            testing.expect(t, icerr == nil && is_child)
+            testing.expect(t, ecs.entities_len(&render_db) == 2)
+            testing.expect(t, !ecs.is_expired(&render_db, parent))
+            testing.expect(t, !ecs.is_expired(&render_db, child))
+
+            //
+            // (b) Stale rejection: destroy+recycle child's slot, then try to
+            // restore the SAME buf again — its saved first_child link now
+            // references a stale id; deserialize must reject, not write it.
+            //
+            testing.expect(t, ecs.destroy_entity(&world_db, child) == nil)
+            new_eid, nerr := ecs.create_entity(&ob)
+            testing.expect(t, nerr == nil)
+            testing.expect(t, new_eid.ix == child.ix) // LIFO reuse
+
+            derr := ecs.deserialize(&world_db, buf)
+            testing.expect(t, derr == ecs.API_Error.Snapshot_Invalid)
+
+            // Rejected load touched nothing.
+            testing.expect(t, ecs.entities_len(&render_db) == 2) // parent, new_eid
+            testing.expect(t, ecs.is_expired(&render_db, child))
+            testing.expect(t, !ecs.is_expired(&render_db, new_eid))
+    }
+
+    // Tag_Table rows are entity ids directly (no component payload) — a
+    // separate branch in the validation loop from the named-component case.
+    // Also exercises defensive behavior: has_tag must read as false for a
+    // stale id rather than reporting stale data, during the transient window
+    // where world_db's own tag table hasn't caught up with the live Overbase.
+    @(test)
+    overbase_deserialize_shared_tag_table__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            ob: ecs.Overbase
+            world_db: ecs.Database
+            render_db: ecs.Database
+            is_alive: ecs.Tag_Table
+        //
+        // Test
+        //
+            defer ecs.overbase_terminate(&ob)
+            defer ecs.terminate(&world_db)
+            defer ecs.terminate(&render_db)
+
+            testing.expect(t, ecs.overbase_init(&ob, entities_cap = 10, databases_cap = 2, allocator = allocator) == nil)
+            testing.expect(t, ecs.init_from_overbase(&world_db, &ob) == nil)
+            testing.expect(t, ecs.init_from_overbase(&render_db, &ob) == nil)
+            testing.expect(t, ecs.tag_table__init(&is_alive, &world_db, 10) == nil)
+
+            e0, e0err := ecs.create_entity(&ob)
+            testing.expect(t, e0err == nil)
+            e1, e1err := ecs.create_entity(&ob)
+            testing.expect(t, e1err == nil)
+
+            testing.expect(t, ecs.add_tag(&is_alive, e0) == nil)
+            testing.expect(t, ecs.add_tag(&is_alive, e1) == nil)
+
+            size, _ := ecs.serialized_size(&world_db)
+            buf := make([]byte, size, allocator)
+            defer delete(buf, allocator)
+            _, serr := ecs.serialize(&world_db, buf)
+            testing.expect(t, serr == nil)
+
+            //
+            // (a) Happy path
+            //
+            testing.expect(t, ecs.deserialize(&world_db, buf) == nil)
+            testing.expect(t, ecs.table_len(&is_alive) == 2)
+            testing.expect(t, ecs.has_tag(&is_alive, e0))
+            testing.expect(t, ecs.has_tag(&is_alive, e1))
+            testing.expect(t, ecs.entities_len(&render_db) == 2)
+
+            //
+            // (b) Stale rejection: destroy+recycle e1 before restoring buf
+            // again — its saved tag row now references a stale id.
+            //
+            testing.expect(t, ecs.destroy_entity(&world_db, e1) == nil)
+            new_eid, nerr := ecs.create_entity(&ob)
+            testing.expect(t, nerr == nil)
+            testing.expect(t, new_eid.ix == e1.ix) // LIFO reuse
+
+            derr := ecs.deserialize(&world_db, buf)
+            testing.expect(t, derr == ecs.API_Error.Snapshot_Invalid)
+
+            // Rejected load touched nothing: shared id-space unaffected...
+            testing.expect(t, ecs.entities_len(&render_db) == 2) // e0, new_eid
+            testing.expect(t, ecs.is_expired(&render_db, e1))
+            testing.expect(t, !ecs.is_expired(&render_db, new_eid))
+
+            // ...and world_db's own (untouched, still-from-(a)) tag table
+            // correctly reports the stale id as absent rather than serving
+            // its old row — is_entity_correct guards it, same as any other
+            // table kind.
+            testing.expect(t, ecs.has_tag(&is_alive, e1) == false)
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// serialized_size/serialize buffer-sizing for a shared Database — the branch
+// that omits the id-section cost.
+
+    @(test)
+    overbase_shared_database_serialize_buffer_too_small__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            ob: ecs.Overbase
+            world_db: ecs.Database
+            positions: ecs.Table(Ob_Position)
+
+            standalone_db: ecs.Database
+            standalone_positions: ecs.Table(Ob_Position)
+        //
+        // Test
+        //
+            defer ecs.overbase_terminate(&ob)
+            defer ecs.terminate(&world_db)
+            defer ecs.terminate(&standalone_db)
+
+            testing.expect(t, ecs.overbase_init(&ob, entities_cap = 10, databases_cap = 1, allocator = allocator) == nil)
+            testing.expect(t, ecs.init_from_overbase(&world_db, &ob) == nil)
+            testing.expect(t, ecs.table_init(&positions, &world_db, 10) == nil)
+
+            testing.expect(t, ecs.init(&standalone_db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&standalone_positions, &standalone_db, 10) == nil)
+
+            // Same schema, same data, on both.
+            for i := 0; i < 3; i += 1 {
+                eid, err := ecs.create_entity(&world_db)
+                testing.expect(t, err == nil)
+                pos, perr := ecs.add_component(&positions, eid)
+                testing.expect(t, perr == nil)
+                pos^ = Ob_Position{ x = i, y = 0 }
+
+                seid, serr2 := ecs.create_entity(&standalone_db)
+                testing.expect(t, serr2 == nil)
+                spos, sperr := ecs.add_component(&standalone_positions, seid)
+                testing.expect(t, sperr == nil)
+                spos^ = Ob_Position{ x = i, y = 0 }
+            }
+
+            shared_size, shared_size_err := ecs.serialized_size(&world_db)
+            testing.expect(t, shared_size_err == nil)
+            standalone_size, standalone_size_err := ecs.serialized_size(&standalone_db)
+            testing.expect(t, standalone_size_err == nil)
+
+            // The id-section is genuinely omitted from the shared Database's
+            // buffer, not merely ignored when reading it back.
+            testing.expect(t, shared_size < standalone_size)
+
+            // Buffer-too-small still fires correctly for the smaller
+            // (tables-only) format.
+            small := make([]byte, shared_size - 1, allocator)
+            defer delete(small, allocator)
+            _, e := ecs.serialize(&world_db, small)
+            testing.expect(t, e == ecs.API_Error.Serialize_Buffer_Too_Small)
+
+            // And the correctly-sized buffer still works.
+            buf := make([]byte, shared_size, allocator)
+            defer delete(buf, allocator)
+            written, werr := ecs.serialize(&world_db, buf)
+            testing.expect(t, werr == nil)
+            testing.expect(t, written == shared_size)
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Adversarial: flipping SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION itself
+
+    // Every other corruption test in the suite flips magic/version/length
+    // bytes. None flips this new flag bit, which changes how many bytes
+    // deserialize expects between the header and the first table section —
+    // exercise it directly in both directions and confirm a clean Error,
+    // never a panic, and that the database stays usable afterward.
+    @(test)
+    overbase_serialize_flag_bit_corruption__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            standalone_db: ecs.Database
+            standalone_positions: ecs.Table(Ob_Position)
+
+            ob: ecs.Overbase
+            world_db: ecs.Database
+            positions: ecs.Table(Ob_Position)
+        //
+        // Test
+        //
+            defer ecs.terminate(&standalone_db)
+            defer ecs.overbase_terminate(&ob)
+            defer ecs.terminate(&world_db)
+
+            // Standalone (owns_overbase == true) — buffer legitimately HAS
+            // the entity-id section (flag byte is at offset 16: magic:8 +
+            // version:4 + endian_check:4; bit value 0x02).
+            testing.expect(t, ecs.init(&standalone_db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&standalone_positions, &standalone_db, 10) == nil)
+            s_eid, s_err := ecs.create_entity(&standalone_db)
+            testing.expect(t, s_err == nil)
+            _, s_perr := ecs.add_component(&standalone_positions, s_eid)
+            testing.expect(t, s_perr == nil)
+
+            s_size, _ := ecs.serialized_size(&standalone_db)
+            s_buf := make([]byte, s_size, allocator)
+            defer delete(s_buf, allocator)
+            _, s_serr := ecs.serialize(&standalone_db, s_buf)
+            testing.expect(t, s_serr == nil)
+
+            s_corrupt := make([]byte, s_size, allocator)
+            defer delete(s_corrupt, allocator)
+            copy(s_corrupt, s_buf)
+            s_corrupt[16] ~= 0x02 // flip HAS_ENTITY_ID_SECTION off
+
+            // Exact resulting error variant depends on incidental byte
+            // values downstream (the reader misinterprets id-section bytes
+            // as a table header); what matters is a clean Error, never a
+            // panic, and that the database is left usable afterward.
+            testing.expect(t, ecs.deserialize(&standalone_db, s_corrupt) != nil)
+            testing.expect(t, ecs.deserialize(&standalone_db, s_buf) == nil)
+
+            // Shared (owns_overbase == false) — buffer legitimately has NO
+            // entity-id section.
+            testing.expect(t, ecs.overbase_init(&ob, entities_cap = 10, databases_cap = 1, allocator = allocator) == nil)
+            testing.expect(t, ecs.init_from_overbase(&world_db, &ob) == nil)
+            testing.expect(t, ecs.table_init(&positions, &world_db, 10) == nil)
+
+            w_eid, w_err := ecs.create_entity(&ob)
+            testing.expect(t, w_err == nil)
+            _, w_perr := ecs.add_component(&positions, w_eid)
+            testing.expect(t, w_perr == nil)
+
+            w_size, _ := ecs.serialized_size(&world_db)
+            w_buf := make([]byte, w_size, allocator)
+            defer delete(w_buf, allocator)
+            _, w_serr := ecs.serialize(&world_db, w_buf)
+            testing.expect(t, w_serr == nil)
+
+            w_corrupt := make([]byte, w_size, allocator)
+            defer delete(w_corrupt, allocator)
+            copy(w_corrupt, w_buf)
+            w_corrupt[16] ~= 0x02 // flip HAS_ENTITY_ID_SECTION on
+
+            testing.expect(t, ecs.deserialize(&world_db, w_corrupt) != nil)
+            testing.expect(t, ecs.deserialize(&world_db, w_buf) == nil)
+    }
