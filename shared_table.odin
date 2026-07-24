@@ -146,6 +146,35 @@ package ode_ecs
         return DELETED_INDEX
     }
 
+    @(private)
+    // The table's dense rid -> eid mapping as one plain slice covering rows
+    // [0, len) — the same span shared_table__get_entity_by_row_number serves,
+    // holes (mid-pause removals, ix == DELETED_INDEX) included. Lets bulk
+    // scans (view rebuild/refilter) pay the type dispatch once instead of
+    // once per row.
+    shared_table__rid_to_eid_slice :: proc (self: ^Shared_Table) -> []entity_id {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                t := cast(^Table_Raw) self
+                // rows is []byte but its len field holds the ROW count
+                // (see table_raw__len) — not a byte count
+                return t.rid_to_eid[:len(t.rows)]
+            case Table_Type.Tiny_Table:
+                t := cast(^Tiny_Table_Base) self
+                return t.rid_to_eid[:t.len]
+            case Table_Type.Compact_Table:
+                t := cast(^Compact_Table_Raw) self
+                return t.rid_to_eid[:len(t.rows)] // same rows-len convention as Table
+            case Table_Type.Tag_Table:
+                return (cast(^Tag_Table) self).rows
+        }
+
+        assert(false) // should not happen
+        return nil
+    }
+
     shared_table__get_entity_by_row_number :: proc (self: ^Shared_Table, #any_int row_number: int) -> entity_id {
         switch self.type {
             case Table_Type.Unknown:

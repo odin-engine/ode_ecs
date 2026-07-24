@@ -237,6 +237,10 @@ package ode_ecs
         n := 0
         c := self.first_child[parent.ix]
         for !is_not_set(c) {
+            // scratch holds at most cap children; exceeding it means the
+            // sibling links are corrupted (e.g. a cycle) — fail loudly instead
+            // of writing out of bounds
+            when VALIDATIONS do assert(n < len(self.scratch), "relations links corrupted — sibling list exceeds cap")
             self.scratch[n] = c
             n += 1
             c = self.next_sibling[c.ix]

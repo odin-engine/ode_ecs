@@ -119,6 +119,15 @@
       move notify loops): VALIDATIONS-gated after measuring ~2% on churn
       scenarios when unconditional; release builds (ECS_VALIDATIONS=false)
       measure neutral with the gate.
+    - view__rebuild/refilter over shared_table__rid_to_eid_slice (type dispatch
+      once per scan instead of a 5-case switch per row): rebuild ~5.3 -> ~5.0
+      ns/op (-5%) at release flags, consistent across interleaved rounds.
+    - destroy: ctz (count_trailing_zeros) set-bit extraction instead of Odin's
+      full-domain `for id in bit_set` scan — neutral at TABLES_MULT=1 (the 128
+      register-resident bit tests were overlapping the removal work), kept for
+      the true O(components) iteration: at TABLES_MULT>1 the old form scanned
+      128*MULT positions per destroy, the ctz form touches only set bits and
+      each word once.
 */
 package ode_ecs_benchmarks
 

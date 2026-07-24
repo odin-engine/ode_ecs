@@ -730,6 +730,179 @@ package ode_ecs__tests
             testing.expect(t, ecs.table_len(&is_alive) == 1) // eids[2] tag rolled back
     }
 
+    // Structural validation of the relations blob and duplicate row eids:
+    // pass 1 must reject snapshots whose bytes are individually valid (live
+    // eids everywhere) but structurally corrupt — before this validation, a
+    // sibling cycle would loop children_of / the destroy cascade forever and
+    // write out of bounds, and a duplicate row eid would alias two live rows
+    // to one index entry. Each case patches a fresh copy of a valid snapshot
+    // and must (a) fail with Snapshot_Invalid, (b) leave the live DB intact.
+    @(test)
+    serialization_malformed_snapshot__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            ENTITIES_CAP :: 8
+
+            db: ecs.Database
+            positions: ecs.Table(Position)
+            relations: ecs.Relations_Table
+
+        //
+        // Build a small world: p is parent of c1 and c2; a and b are loose
+        //
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap = ENTITIES_CAP, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&positions, &db, ENTITIES_CAP) == nil)
+            testing.expect(t, ecs.relations_table__init(&relations, &db, ENTITIES_CAP) == nil)
+
+            err: ecs.Error
+            p, c1, c2, a, b: ecs.entity_id
+            p, err  = ecs.create_entity(&db); testing.expect(t, err == nil)
+            c1, err = ecs.create_entity(&db); testing.expect(t, err == nil)
+            c2, err = ecs.create_entity(&db); testing.expect(t, err == nil)
+            a, err  = ecs.create_entity(&db); testing.expect(t, err == nil)
+            b, err  = ecs.create_entity(&db); testing.expect(t, err == nil)
+
+            _, perr := ecs.add_component(&positions, p);  testing.expect(t, perr == nil)
+            _, perr  = ecs.add_component(&positions, c1); testing.expect(t, perr == nil)
+
+            testing.expect(t, ecs.set_parent(&db, parent = p, child = c1) == nil)
+            testing.expect(t, ecs.set_parent(&db, parent = p, child = c2) == nil)
+
+            size, _ := ecs.serialized_size(&db)
+            buf := make([]byte, size, allocator)
+            defer delete(buf, allocator)
+            _, serr := ecs.serialize(&db, buf)
+            testing.expect(t, serr == nil)
+
+        //
+        // Offsets. The relations blob is the last thing in the buffer:
+        // Snap_Relations_Header (16) + 4 link arrays (saved_cap * 8 each) +
+        // children_count (saved_cap * 4, padded to 8).
+        //
+            cc_padded := (ENTITIES_CAP * 4 + 7) &~ 7
+            rel_start := len(buf) - (16 + 4 * ENTITIES_CAP * 8 + cc_padded)
+            parent_off := rel_start + 16
+            fc_off := parent_off + ENTITIES_CAP * 8
+            ns_off := fc_off + ENTITIES_CAP * 8
+            ps_off := ns_off + ENTITIES_CAP * 8
+            cc_off := ps_off + ENTITIES_CAP * 8
+
+            rel_arrays :: proc(buf: []byte, off: int) -> []ecs.entity_id {
+                return slice.reinterpret([]ecs.entity_id, buf[off:][:ENTITIES_CAP * size_of(ecs.entity_id)])
+            }
+            rel_cc :: proc(buf: []byte, off: int) -> []i32 {
+                return slice.reinterpret([]i32, buf[off:][:ENTITIES_CAP * size_of(i32)])
+            }
+
+            // the DB must come through every failed load untouched
+            verify_intact :: proc(t: ^testing.T, db: ^ecs.Database, positions: ^ecs.Table(Position), p: ecs.entity_id) {
+                testing.expect(t, ecs.entities_len(db) == 5)
+                testing.expect(t, ecs.table_len(positions) == 2)
+                kids, kerr := ecs.children_of(db, p)
+                testing.expect(t, kerr == nil && len(kids) == 2)
+            }
+
+            corrupt := make([]byte, size, allocator)
+            defer delete(corrupt, allocator)
+
+        //
+        // Case 1: next_sibling cycle (c2 -> c1 -> c2). Individually live eids,
+        // structurally a loop.
+        //
+            copy(corrupt, buf)
+            rel_arrays(corrupt, ns_off)[c1.ix] = c2
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 2: prev/next mutual-inverse violation (self prev link)
+        //
+            copy(corrupt, buf)
+            rel_arrays(corrupt, ps_off)[c2.ix] = c2
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 3: a child's parent[] disagrees with the list it sits in
+        //
+            copy(corrupt, buf)
+            rel_arrays(corrupt, parent_off)[c1.ix] = c2
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 4: children_count doesn't match the actual list length
+        //
+            copy(corrupt, buf)
+            rel_cc(corrupt, cc_off)[p.ix] = 5
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 5: header count doesn't match the actual number of links
+        // (pass 2 would install it as rt.count unverified)
+        //
+            copy(corrupt, buf)
+            (slice.reinterpret([]i64, corrupt[rel_start:][:16]))[1] = 3 // rh.count
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 6: a never-created (dead) slot carries a link
+        //
+            copy(corrupt, buf)
+            rel_arrays(corrupt, parent_off)[ENTITIES_CAP - 1] = p
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 7: parent cycle a <-> b with locally consistent child lists —
+        // the case only the parent-chain acyclicity walk can catch (the
+        // destroy cascade would BFS it forever)
+        //
+            copy(corrupt, buf)
+            rel_arrays(corrupt, parent_off)[a.ix] = b
+            rel_arrays(corrupt, parent_off)[b.ix] = a
+            rel_arrays(corrupt, fc_off)[a.ix] = b
+            rel_arrays(corrupt, fc_off)[b.ix] = a
+            rel_cc(corrupt, cc_off)[a.ix] = 1
+            rel_cc(corrupt, cc_off)[b.ix] = 1
+            (slice.reinterpret([]i64, corrupt[rel_start:][:16]))[1] = 4 // rh.count: 2 old + 2 new links
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // Case 8: duplicate row eid within the positions section. The section
+        // starts after the header (56 bytes) and the entity-id blob
+        // (saved_cap * 8, no freed entries here); its eids array starts after
+        // the 56-byte table header and the padded type-name string.
+        //
+            copy(corrupt, buf)
+            section_off := 56 + ENTITIES_CAP * 8
+            name_len := (slice.reinterpret([]i64, corrupt[section_off:][:56]))[6] // name_len field
+            eids_off := section_off + 56 + int((name_len + 7) &~ 7)
+            section_eids := slice.reinterpret([]ecs.entity_id, corrupt[eids_off:][:2 * size_of(ecs.entity_id)])
+            testing.expect(t, section_eids[0] == p && section_eids[1] == c1) // layout sanity
+            section_eids[1] = p
+            testing.expect(t, ecs.deserialize(&db, corrupt) == ecs.API_Error.Snapshot_Invalid)
+            verify_intact(t, &db, &positions, p)
+
+        //
+        // The untouched original still loads fine after all rejections
+        //
+            testing.expect(t, ecs.deserialize(&db, buf) == nil)
+            verify_intact(t, &db, &positions, p)
+    }
+
     // save_to_file → load_from_file round trip through an actual file on disk
     // (the in-memory buffer path is covered by serialization_round_trip__test).
     @(test)

@@ -375,6 +375,94 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
+// view__rebuild / view__refilter over every table type (pins the
+// shared_table__rid_to_eid_slice scan paths, including mid-pause holes)
+
+    @(test)
+    view_rebuild_all_table_types__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        N :: 200
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        ais: ecs.Compact_Table(AI)
+        marked: ecs.Tag_Table
+        tiny_ais: ecs.Tiny_Table(AI)
+        view: ecs.View      // Table + Compact + Tag columns
+        tiny_view: ecs.View // Tiny column (rebuild scans the smallest table — the tiny one)
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap = N, allocator = allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, N) == nil)
+        testing.expect(t, ecs.compact_table__init(&ais, &db, N) == nil)
+        testing.expect(t, ecs.tag_table__init(&marked, &db, N) == nil)
+        testing.expect(t, ecs.tiny_table__init(&tiny_ais, &db) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions, &ais, &marked}) == nil)
+        testing.expect(t, ecs.view_init(&tiny_view, &db, {&tiny_ais, &positions}) == nil)
+
+        eids: [N]ecs.entity_id
+        for i in 0..<N {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            eids[i] = eid
+
+            _, err1 := ecs.add_component(&positions, eid)
+            testing.expect(t, err1 == nil)
+            if i % 2 == 0 {
+                _, err2 := ecs.add_component(&ais, eid)
+                testing.expect(t, err2 == nil)
+            }
+            if i % 3 == 0 do testing.expect(t, ecs.add_tag(&marked, eid) == nil)
+            if i < 8 {
+                _, err3 := ecs.add_component(&tiny_ais, eid)
+                testing.expect(t, err3 == nil)
+            }
+        }
+
+        expected := 0
+        for i in 0..<N do if i % 2 == 0 && i % 3 == 0 do expected += 1
+
+        testing.expect_value(t, ecs.view_len(&view), expected)
+        testing.expect(t, ecs.rebuild(&view) == nil) // full re-scan must agree with incremental
+        testing.expect_value(t, ecs.view_len(&view), expected)
+
+        testing.expect_value(t, ecs.view_len(&tiny_view), 8)
+        testing.expect(t, ecs.rebuild(&tiny_view) == nil)
+        testing.expect_value(t, ecs.view_len(&tiny_view), 8)
+
+        // Rebuild mid-pause: the scan slices now contain holes that must be
+        // skipped, and removed entities must drop out of the rebuilt view.
+        ecs.pause_packing(&db)
+        removed := 0
+        for i in 0..<N {
+            if i % 12 == 0 { // half of the members (members are the multiples of 6)
+                testing.expect(t, ecs.remove_component(&ais, eids[i]) == nil)
+                removed += 1
+            }
+        }
+        testing.expect(t, ais.holes_count > 0) // scan really sees holes
+
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect_value(t, ecs.view_len(&view), expected - removed)
+
+        testing.expect(t, ecs.resume_packing(&db) == nil)
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect_value(t, ecs.view_len(&view), expected - removed)
+
+        // membership spot check after all rebuilds (VIEW_NO_RID == max(u32))
+        for i in 0..<N {
+            in_view := view.eid_to_rid[eids[i].ix] != ecs.view_record_id(max(u32))
+            should := i % 6 == 0 && i % 12 != 0
+            testing.expect(t, in_view == should)
+        }
+    }
+
+///////////////////////////////////////////////////////////////////////////////
 // API consistency
 
     // Re-adding an existing tag on a FULL tag table must be a no-op (nil),

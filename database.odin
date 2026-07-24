@@ -5,7 +5,8 @@ package ode_ecs
 
 // Base
     import "base:runtime"
-    
+    import "base:intrinsics"
+
 // Core
     import "core:slice"
 
@@ -289,6 +290,10 @@ package ode_ecs
                 #no_bounds_check {
                     c := rt.first_child[eid.ix]
                     for !is_not_set(c) {
+                        // a subtree has at most cap descendants; overflowing
+                        // scratch means the links are corrupted (e.g. a
+                        // parent cycle) — fail loudly, don't write OOB
+                        when VALIDATIONS do assert(tail < len(rt.scratch), "relations links corrupted — descendant count exceeds cap")
                         rt.scratch[tail] = c
                         tail += 1
                         c = rt.next_sibling[c.ix]
@@ -297,6 +302,7 @@ package ode_ecs
                     for head := 0; head < tail; head += 1 {
                         c = rt.first_child[rt.scratch[head].ix]
                         for !is_not_set(c) {
+                            when VALIDATIONS do assert(tail < len(rt.scratch), "relations links corrupted — descendant count exceeds cap")
                             rt.scratch[tail] = c
                             tail += 1
                             c = rt.next_sibling[c.ix]
@@ -326,15 +332,23 @@ package ode_ecs
         self.destroying_eid_ix = eid.ix
         defer self.destroying_eid_ix = DELETED_INDEX
 
-        // Iterate only the entity's set bits (the tables it belongs to) instead of
-        // scanning every attached table — O(components), not O(TABLES_CAP)
+        // Extract only the entity's set bits (the tables it belongs to) with
+        // count_trailing_zeros — O(components) work. Odin's `for id in bit_set`
+        // would instead test every position of the 128-bit domain (× TABLES_MULT
+        // words), paying ~128 bit tests per destroy for a 3-component entity.
         when TABLES_MULT == 1 {
-            for id in bits {
+            v := transmute(u128) bits
+            for v != 0 {
+                id := int(intrinsics.count_trailing_zeros(v))
+                v &= v - 1 // clear lowest set bit
                 database__remove_component_by_table_id(self, id, eid) or_return
             }
         } else {
             for word, wi in bits.value {
-                for b in word {
+                v := transmute(u128) word
+                for v != 0 {
+                    b := int(intrinsics.count_trailing_zeros(v))
+                    v &= v - 1
                     database__remove_component_by_table_id(self, wi * BIT_SET_VALUES_CAP + b, eid) or_return
                 }
             }

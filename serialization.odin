@@ -515,6 +515,138 @@ package ode_ecs
         return nil
     }
 
+    @(private)
+    // Structural validation of a snapshot's relations blob, before any of it is
+    // copied into the live Relations_Table. Link-target liveness alone is not
+    // enough: the runtime consumers (relations_table__children_of and the
+    // destroy-children cascade) walk next_sibling with #no_bounds_check writes
+    // into scratch[cap], so a sibling cycle or an inconsistent doubly-linked
+    // list in the blob would loop forever and write out of bounds. O(saved_cap).
+    //
+    // stamps: shared validation scratch (len == live entities cap); values
+    // <= stamp_base are owned by the section duplicate checks, this proc uses
+    // values above stamp_base for parent-chain epochs.
+    snapshot__validate_relations :: proc(
+        self: ^Database,
+        parent, first_child, next_sibling, prev_sibling: []entity_id,
+        cc: []i32,
+        saved_count: int,
+        saved_items: []entity_id,
+        use_saved: bool,
+        stamps: []i32,
+        stamp_base: i32,
+    ) -> Error {
+        saved_cap := len(parent)
+        cap := self.relations.cap
+
+        // a. Per-slot local checks: liveness, in-range links, doubly-linked
+        //    mutual inverses, parent agreement between siblings, head property.
+        //    All structural comparisons are on .ix — liveness is checked per
+        //    link, and a live index maps to exactly one generation, so index
+        //    equality implies id equality.
+        links_count := 0 // slots with a parent (== relations in use)
+        cc_total := 0
+        for ix in 0..<saved_cap {
+            p  := parent[ix]
+            fc := first_child[ix]
+            ns := next_sibling[ix]
+            ps := prev_sibling[ix]
+            n_cc := cc[ix]
+
+            if n_cc < 0 || int(n_cc) > cap do return API_Error.Snapshot_Invalid
+
+            if is_not_set(p) && is_not_set(fc) && is_not_set(ns) && is_not_set(ps) {
+                if n_cc != 0 do return API_Error.Snapshot_Invalid // count without a child list
+                continue
+            }
+
+            // a used slot must belong to a live entity itself
+            if use_saved {
+                if saved_items[ix].ix != ix do return API_Error.Snapshot_Invalid
+            } else {
+                if self.overbase.id_factory.items[ix].ix != ix do return API_Error.Snapshot_Invalid
+            }
+
+            // every set link must be a live entity AND index into the saved
+            // arrays (the walks below index them by link.ix)
+            for e in ([4]entity_id{ p, fc, ns, ps }) {
+                if is_not_set(e) do continue
+                snapshot__validate_row_eid(self, e, saved_items, use_saved) or_return
+                if e.ix >= saved_cap do return API_Error.Snapshot_Invalid
+            }
+
+            if !is_not_set(ns) {
+                if is_not_set(p) do return API_Error.Snapshot_Invalid // sibling implies a parent
+                if is_not_set(parent[ns.ix]) || parent[ns.ix].ix != p.ix do return API_Error.Snapshot_Invalid
+                if is_not_set(prev_sibling[ns.ix]) || prev_sibling[ns.ix].ix != ix do return API_Error.Snapshot_Invalid
+            }
+            if !is_not_set(ps) {
+                if is_not_set(p) do return API_Error.Snapshot_Invalid
+                if is_not_set(next_sibling[ps.ix]) || next_sibling[ps.ix].ix != ix do return API_Error.Snapshot_Invalid
+                if is_not_set(parent[ps.ix]) || parent[ps.ix].ix != p.ix do return API_Error.Snapshot_Invalid
+            } else if !is_not_set(p) {
+                // no prev sibling => this node is the head of its parent's list
+                if is_not_set(first_child[p.ix]) || first_child[p.ix].ix != ix do return API_Error.Snapshot_Invalid
+            }
+            if !is_not_set(fc) {
+                if is_not_set(parent[fc.ix]) || parent[fc.ix].ix != ix do return API_Error.Snapshot_Invalid
+                if !is_not_set(prev_sibling[fc.ix]) do return API_Error.Snapshot_Invalid // head has no prev
+            } else if n_cc != 0 {
+                return API_Error.Snapshot_Invalid
+            }
+
+            if !is_not_set(p) do links_count += 1
+            cc_total += int(n_cc)
+        }
+
+        // every child link is counted once by its parent, and the header count
+        // (which pass 2 installs as rt.count) must agree
+        if links_count != saved_count do return API_Error.Snapshot_Invalid
+        if cc_total != saved_count do return API_Error.Snapshot_Invalid
+
+        // b. Walk every child list with a hard budget; its length must match
+        //    children_count. With (a) passed, next_sibling has at most one
+        //    predecessor per node so a walk cannot re-enter itself — the budget
+        //    is belt-and-braces. Detached sibling circles (mutually consistent
+        //    but reachable from no head) still pass (a); they are caught here
+        //    because their nodes count into links_count but are never walked.
+        walked_total := 0
+        for ix in 0..<saved_cap {
+            c := first_child[ix]
+            if is_not_set(c) do continue
+            n := 0
+            for !is_not_set(c) {
+                n += 1
+                if n > cap do return API_Error.Snapshot_Invalid // cycle budget
+                c = next_sibling[c.ix]
+            }
+            if n != int(cc[ix]) do return API_Error.Snapshot_Invalid
+            walked_total += n
+        }
+        if walked_total != saved_count do return API_Error.Snapshot_Invalid
+
+        // c. Parent-chain acyclicity. (a)+(b) still admit e.g. a<->b where each
+        //    is the other's parent with consistent child lists — the destroy
+        //    cascade would BFS that forever. Epoch-marked walk-up: each node is
+        //    marked at most once with a value > stamp_base, later walks stop at
+        //    any marked node, so the whole pass is amortized O(saved_cap).
+        for ix in 0..<saved_cap {
+            if is_not_set(parent[ix]) do continue
+            epoch := stamp_base + 1 + i32(ix)
+            j := ix
+            for {
+                if stamps[j] == epoch do return API_Error.Snapshot_Invalid // cycle
+                if stamps[j] > stamp_base do break // reached a chain already proven acyclic
+                stamps[j] = epoch
+                p := parent[j]
+                if is_not_set(p) do break // reached a root
+                j = p.ix
+            }
+        }
+
+        return nil
+    }
+
     // Loads a snapshot into an already-initialized database with a matching
     // schema (same tables inited in the same order, same component types) and
     // capacities >= the saved ones. All existing entities/components/relations
@@ -582,8 +714,23 @@ package ode_ecs
         db_has_relations := self.relations != nil && self.relations.state == Object_State.Normal
         if has_relations != db_has_relations do return API_Error.Snapshot_Schema_Mismatch
 
+        // Validation scratch, one allocation for the whole pass (db allocator,
+        // not context — callers may run under a panic allocator):
+        // - per-section duplicate-eid stamps (value = 1-based section ordinal;
+        //   two rows of one section naming the same entity would alias one
+        //   index entry to two live rows in pass 2)
+        // - relations parent-chain acyclicity epochs (values above section_count)
+        // Sized to the LIVE entities cap: row eids are validated against the
+        // live Overbase on the non-owning path, so their ix is bounded by the
+        // live cap, not saved_cap.
+        stamps: []i32
+        if int(hdr.section_count) > 0 || has_relations {
+            stamps = make([]i32, self.overbase.id_factory.cap, self.allocator) or_return
+        }
+        defer if stamps != nil do delete(stamps, self.allocator)
+
         prev_id := -1
-        for _ in 0..<int(hdr.section_count) {
+        for section_ix in 0..<int(hdr.section_count) {
             th: Snap_Table_Header
             snap_reader__read(&r, &th, size_of(th)) or_return
 
@@ -617,6 +764,10 @@ package ode_ecs
                     // every row's entity must be alive in the id-space this
                     // load trusts (the snapshot's own, or the live Overbase)
                     snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
+                    // ...and appear at most once in this section: a duplicate
+                    // would produce two live rows aliasing one index entry
+                    if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
+                    stamps[eid.ix] = i32(section_ix + 1)
                 }
                 _ = snap_reader__bytes(&r, n * ti.size) or_return // rows blob
                 snap_reader__pad8(&r) or_return
@@ -628,6 +779,8 @@ package ode_ecs
                 eids := snap_reader__entity_ids(&r, n) or_return
                 for eid in eids {
                     snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
+                    if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
+                    stamps[eid.ix] = i32(section_ix + 1)
                 }
             }
         }
@@ -636,22 +789,35 @@ package ode_ecs
             rh: Snap_Relations_Header
             snap_reader__read(&r, &rh, size_of(rh)) or_return
             if rh.count < 0 || int(rh.count) > self.relations.cap do return API_Error.Snapshot_Capacity_Too_Small
+            // The live link arrays are sized to the LIVE entities cap and pass 2
+            // copies saved_cap entries into them — must also hold on the
+            // non-owning path, which skips the saved_cap check at the top
+            if saved_cap > len(self.relations.parent) do return API_Error.Snapshot_Capacity_Too_Small
 
-            for _ in 0..<4 { // parent, first_child, next_sibling, prev_sibling
-                links := snap_reader__entity_ids(&r, saved_cap) or_return
-                for e in links {
-                    if is_not_set(e) do continue
-                    snapshot__validate_row_eid(self, e, saved_items, apply_entity_ids) or_return
-                }
-            }
-            _ = snap_reader__bytes(&r, saved_cap * size_of(i32)) or_return // children_count
+            s_parent       := snap_reader__entity_ids(&r, saved_cap) or_return
+            s_first_child  := snap_reader__entity_ids(&r, saved_cap) or_return
+            s_next_sibling := snap_reader__entity_ids(&r, saved_cap) or_return
+            s_prev_sibling := snap_reader__entity_ids(&r, saved_cap) or_return
+            cc_bytes       := snap_reader__bytes(&r, saved_cap * size_of(i32)) or_return
+            s_cc           := slice.reinterpret([]i32, cc_bytes)
             snap_reader__pad8(&r) or_return
+
+            snapshot__validate_relations(
+                self, s_parent, s_first_child, s_next_sibling, s_prev_sibling, s_cc,
+                int(rh.count), saved_items, apply_entity_ids,
+                stamps, i32(hdr.section_count),
+            ) or_return
         }
 
         if r.offset != len(data) do return API_Error.Snapshot_Invalid
 
         //
-        // Pass 2 — apply (validated above, so nothing below is expected to fail)
+        // Pass 2 — apply. Validated above, so nothing below can fail: every
+        // row eid is live and unique within its section (so the index maps
+        // can't overflow — they are sized next_power_of_two(cap*2), and a
+        // section holds at most cap distinct rows), the relations blob is a
+        // structurally consistent forest, and all capacities were checked.
+        // The or_returns below are defense in depth only.
         //
 
         // Reset to a clean post-init state. No gen bump: the factory items are

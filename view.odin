@@ -437,19 +437,20 @@ package ode_ecs
         min_records_count: int = max(int)
         min_table: ^Shared_Table
         for table in self.tables.items {
-            if shared_table__len(table) < min_records_count {
+            table_len := shared_table__len(table) // one dispatch, not two per new minimum
+            if table_len < min_records_count {
                 min_table = table
-                min_records_count = shared_table__len(table)
+                min_records_count = table_len
             }
         }
 
-        eid: entity_id
-        min_table_col_ix := self.tid_to_cid[min_table.id]
-        min_table_len := shared_table__len(min_table) // hoisted: dispatch (switch on Table_Type) once, not once per row
-        assert(self.cap >= min_table_len)
+        // One dispatch for the whole scan: the smallest table's rid -> eid rows
+        // as a plain slice (holes included, skipped below) instead of a
+        // type-switch per row.
+        min_eids := shared_table__rid_to_eid_slice(min_table)
+        assert(self.cap >= len(min_eids))
 
-        for i:= 0; i < min_table_len; i+=1 {
-            eid = shared_table__get_entity_by_row_number(min_table, i)
+        for eid in min_eids {
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
             // check if view bits is subset of entity bits
@@ -552,16 +553,15 @@ package ode_ecs
         min_records_count: int = max(int)
         min_table: ^Shared_Table
         for table in self.tables.items {
-            if shared_table__len(table) < min_records_count {
+            table_len := shared_table__len(table) // one dispatch, not two per new minimum
+            if table_len < min_records_count {
                 min_table = table
-                min_records_count = shared_table__len(table)
+                min_records_count = table_len
             }
         }
 
-        eid: entity_id
-        min_table_len := shared_table__len(min_table) // hoisted: dispatch (switch on Table_Type) once, not once per row
-        for i := 0; i < min_table_len; i += 1 {
-            eid = shared_table__get_entity_by_row_number(min_table, i)
+        // one dispatch for the whole scan, see view__rebuild
+        for eid in shared_table__rid_to_eid_slice(min_table) {
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
             if self.eid_to_rid[eid.ix] != VIEW_NO_RID do continue // already a member
             if !view__components_match(self, eid) do continue
