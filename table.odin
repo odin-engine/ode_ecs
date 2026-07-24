@@ -197,7 +197,17 @@ package ode_ecs
 
     @(private)
     table_raw__rid_to_ptr :: #force_inline proc "contextless" (self: ^Table_Raw, #any_int rid: int) -> rawptr {
-        return rawptr(uintptr(raw_data(self.rows)) + uintptr(rid) * uintptr(self.type_info.size))
+        return table_raw__rid_to_ptr_sized(self, rid, self.type_info.size)
+    }
+
+    // elem_size as an explicit parameter (instead of a self.type_info.size field
+    // read) lets a #force_inline caller that knows T at compile time (size_of(T)
+    // is a constant) fold the multiply into a shift; callers that only have a
+    // type-erased ^Table_Raw (Command_Buffer replay, Group) pass self.type_info.size
+    // and get identical codegen to the non-sized path.
+    @(private)
+    table_raw__rid_to_ptr_sized :: #force_inline proc "contextless" (self: ^Table_Raw, #any_int rid: int, elem_size: int) -> rawptr {
+        return rawptr(uintptr(raw_data(self.rows)) + uintptr(rid) * uintptr(elem_size))
     }
 
     @(private)
@@ -278,9 +288,18 @@ package ode_ecs
     }
 
     @(private)
+    // Type-erased entry point (Command_Buffer replay, database-wide sweeps,
+    // Group — none of which have T at compile time): reads self.type_info.size.
+    table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
+        return table_raw__remove_component_sized(self, target_eid, self.type_info.size, loc)
+    }
+
+    @(private)
+    // See table_raw__add_component_sized for why elem_size is an explicit
+    // parameter instead of a self.type_info.size field read.
     // #no_bounds_check: callers validate target_eid (len(eid_to_rid) == db.overbase.id_factory.cap);
     // all row indexes derive from raw.len < cap or from the rid index
-    table_raw__remove_component :: proc(self: ^Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) #no_bounds_check {
+    table_raw__remove_component_sized :: #force_inline proc(self: ^Table_Raw, target_eid: entity_id, elem_size: int, loc:= #caller_location) -> (err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found
@@ -290,8 +309,8 @@ package ode_ecs
         // Check if component exists
         if target_rid == TABLE_NO_RID do return oc.Core_Error.Not_Found
 
-        T_size := self.type_info.size
-        target := table_raw__rid_to_ptr(self, target_rid)
+        T_size := elem_size
+        target := table_raw__rid_to_ptr_sized(self, target_rid, elem_size)
 
         // Cached once: nothing between here and the deferred-tail-swap check
         // below changes the pause state, so a second call would just re-chase
@@ -308,7 +327,7 @@ package ode_ecs
             } else {
                 group__swap_out(self.owner, target_eid)
                 target_rid = self.eid_to_rid[target_eid.ix]
-                target = table_raw__rid_to_ptr(self, target_rid)
+                target = table_raw__rid_to_ptr_sized(self, target_rid, elem_size)
             }
         }
 
@@ -346,7 +365,7 @@ package ode_ecs
 
         when VALIDATIONS do assert(!is_not_set(tail_eid))
 
-        tail := table_raw__rid_to_ptr(self, tail_rid)
+        tail := table_raw__rid_to_ptr_sized(self, tail_rid, elem_size)
 
         // Replace removed component with tail
         if int(target_rid) == tail_rid {
@@ -398,14 +417,27 @@ package ode_ecs
     }
 
     @(private)
+    // Type-erased entry point (Command_Buffer replay — see
+    // command_buffer.odin's shared_table__add_component dispatch, which is
+    // the only outside caller): reads self.type_info.size.
+    table_raw__add_component :: proc(self: ^Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
+        return table_raw__add_component_sized(self, eid, self.type_info.size, data)
+    }
+
+    @(private)
     // Adds (or finds) the entity's row and returns a pointer to the component.
     // If `data` is not nil it is copied into the component BEFORE the group hook
     // and subscriber notifications run (view filters read component data through
     // the row refs), and it also overwrites the existing value on the
     // Component_Already_Exist path — "last write wins", used by Command_Buffer.
+    // elem_size is an explicit parameter (rather than a self.type_info.size field
+    // read) so that a #force_inline caller which knows T at compile time
+    // (table__add_component passing size_of(T)) gets the multiply folded into a
+    // constant/shift; table_raw__add_component above preserves the old runtime-size
+    // behavior byte-for-byte for callers that only have a type-erased ^Table_Raw.
     // #no_bounds_check: callers validate eid via database__is_entity_correct,
     // len(eid_to_rid) == db.overbase.id_factory.cap; row indexes derive from raw.len < cap
-    table_raw__add_component :: proc(self: ^Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
+    table_raw__add_component_sized :: #force_inline proc(self: ^Table_Raw, eid: entity_id, elem_size: int, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         rid := self.eid_to_rid[eid.ix]
@@ -417,8 +449,8 @@ package ode_ecs
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
 
             // Get component
-            component = table_raw__rid_to_ptr(self, raw.len)
-            if data != nil do mem.copy(component, data, self.type_info.size)
+            component = table_raw__rid_to_ptr_sized(self, raw.len, elem_size)
+            if data != nil do mem.copy(component, data, elem_size)
 
             // Update eid_to_rid
             self.eid_to_rid[eid.ix] = u32(raw.len)
@@ -436,12 +468,12 @@ package ode_ecs
             // Before the subscriber loop so views record the final addresses.
             if self.owner != nil && group__on_add(self.owner, eid) {
                 // the swap moved the new row — re-derive the returned pointer
-                component = table_raw__rid_to_ptr(self, self.eid_to_rid[eid.ix])
+                component = table_raw__rid_to_ptr_sized(self, self.eid_to_rid[eid.ix], elem_size)
             }
         } else {
-            component = table_raw__rid_to_ptr(self, rid)
+            component = table_raw__rid_to_ptr_sized(self, rid, elem_size)
             if data != nil {
-                mem.copy(component, data, self.type_info.size)
+                mem.copy(component, data, elem_size)
                 // The overwritten value can flip a view's filter verdict either
                 // way; the plain add-notify below short-circuits on existing
                 // members, so re-run filters explicitly (Command_Buffer
@@ -468,11 +500,19 @@ package ode_ecs
         return
     }
 
+    // Type-erased entry point (database-wide resume_packing sweeps, Group,
+    // Command_Buffer-adjacent callers): reads self.type_info.size.
+    @(private)
+    table_raw__pack :: proc(self: ^Table_Raw) -> Error {
+        return table_raw__pack_sized(self, self.type_info.size)
+    }
+
     // Compact holes left by removals made while tail swap was paused: each hole is
     // filled with the current last live row — exactly holes_count moves, the minimum
     // possible (rows are unordered, so order does not need to be preserved).
+    // elem_size explicit parameter: see table_raw__add_component_sized.
     @(private)
-    table_raw__pack :: proc(self: ^Table_Raw) -> Error {
+    table_raw__pack_sized :: #force_inline proc(self: ^Table_Raw, elem_size: int) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
         if self.holes_count <= 0 {
             self.first_hole_rid = max(int)
@@ -480,7 +520,7 @@ package ode_ecs
         }
 
         raw := (^runtime.Raw_Slice)(&self.rows)
-        T_size := self.type_info.size
+        T_size := elem_size
         rows := raw_data(self.rows)
 
         front := self.first_hole_rid
@@ -641,7 +681,7 @@ package ode_ecs
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        c, aerr := table_raw__add_component(cast(^Table_Raw) self, eid)
+        c, aerr := table_raw__add_component_sized(cast(^Table_Raw) self, eid, size_of(T))
         return cast(^T) c, aerr
     }
 
@@ -651,7 +691,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil)
         }
-        return table_raw__pack(cast(^Table_Raw) self)
+        return table_raw__pack_sized(cast(^Table_Raw) self, size_of(T))
     }
 
     // Pause tail swapping for this table only, independent of the
@@ -683,7 +723,7 @@ package ode_ecs
 
         database__is_entity_correct(self.db, eid) or_return
 
-        return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
+        return table_raw__remove_component_sized(cast(^Table_Raw) self, eid, size_of(T), loc)
     }
 
     // Goes through subscribed views with filters and reruns filter for entity `eid` and its components

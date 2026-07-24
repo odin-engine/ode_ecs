@@ -180,8 +180,16 @@ package ode_ecs
     }
 
     @(private)
+    // Type-erased entry point (Command_Buffer replay, database-wide sweeps):
+    // reads self.type_info.size.
     tiny_table_raw__remove_component :: proc(self: ^Tiny_Table_Raw, target_eid: entity_id) -> (err: Error) {
-        if self.len <= 0 do return oc.Core_Error.Not_Found 
+        return tiny_table_raw__remove_component_sized(self, target_eid, self.type_info.size)
+    }
+
+    // elem_size explicit parameter: see table_raw__add_component_sized (table.odin).
+    @(private)
+    tiny_table_raw__remove_component_sized :: #force_inline proc(self: ^Tiny_Table_Raw, target_eid: entity_id, elem_size: int) -> (err: Error) {
+        if self.len <= 0 do return oc.Core_Error.Not_Found
 
         // One probe serves both the existence check and the removal below —
         // remove_found reuses the located item instead of re-probing the key
@@ -192,7 +200,7 @@ package ode_ecs
 
         target := target_item.value
 
-        T_size := self.type_info.size
+        T_size := elem_size
 
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
@@ -293,15 +301,22 @@ package ode_ecs
     }
 
     @(private)
+    // Type-erased entry point (Command_Buffer replay): reads self.type_info.size.
+    tiny_table_raw__add_component :: proc(self: ^Tiny_Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
+        return tiny_table_raw__add_component_sized(self, eid, self.type_info.size, data)
+    }
+
+    @(private)
     // Adds (or finds) the entity's row and returns a pointer to the component.
     // If `data` is not nil it is copied into the component BEFORE the subscriber
     // notifications run (view filters read component data through the row refs),
     // and it also overwrites the existing value on the Component_Already_Exist
     // path — "last write wins", used by Command_Buffer.
+    // elem_size explicit parameter: see table_raw__add_component_sized (table.odin).
     // Contract: callers validate eid via database__is_entity_correct.
     // The raw pointer math below matches &Tiny_Table(T).rows[len] — guaranteed
     // by the offset_of #assert in tiny_table__init.
-    tiny_table_raw__add_component :: proc(self: ^Tiny_Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
+    tiny_table_raw__add_component_sized :: #force_inline proc(self: ^Tiny_Table_Raw, eid: entity_id, elem_size: int, data: rawptr = nil) -> (component: rawptr, err: Error) {
         component = oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
 
         // Check if component already exist
@@ -310,7 +325,7 @@ package ode_ecs
             // existing component on a full table must still report Component_Already_Exist
             if self.len >= TINY_TABLE__ROW_CAP do return nil, oc.Core_Error.Container_Is_Full
 
-            T_size := self.type_info.size
+            T_size := elem_size
 
             // Get component
             component = rawptr(uintptr(&self.rows[0]) + uintptr(self.len) * uintptr(T_size))
@@ -329,7 +344,7 @@ package ode_ecs
             self.len += 1
         } else {
             if data != nil {
-                mem.copy(component, data, self.type_info.size)
+                mem.copy(component, data, elem_size)
                 // See table_raw__add_component: an overwrite can flip a view's
                 // filter verdict, and the add-notify below skips existing members.
                 // Tiny_Table keeps no separate with-filter list — check per view.
@@ -377,17 +392,25 @@ package ode_ecs
         return nil
     }
 
-    // Compact holes left by removals made while tail swap was paused,
-    // see table_raw__pack for the algorithm
+    // Type-erased entry point (database-wide resume_packing sweeps): reads
+    // self.type_info.size.
     @(private)
     tiny_table_raw__pack :: proc(self: ^Tiny_Table_Raw) -> Error {
+        return tiny_table_raw__pack_sized(self, self.type_info.size)
+    }
+
+    // Compact holes left by removals made while tail swap was paused,
+    // see table_raw__pack for the algorithm. elem_size explicit parameter:
+    // see table_raw__pack_sized (table.odin).
+    @(private)
+    tiny_table_raw__pack_sized :: #force_inline proc(self: ^Tiny_Table_Raw, elem_size: int) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
         if self.holes_count <= 0 {
             self.first_hole_rid = max(int)
             return nil
         }
 
-        T_size := self.type_info.size
+        T_size := elem_size
         rows := rawptr(&self.rows[0])
 
         front := self.first_hole_rid
@@ -512,7 +535,7 @@ package ode_ecs
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
-        c, aerr := tiny_table_raw__add_component(cast(^Tiny_Table_Raw) self, eid)
+        c, aerr := tiny_table_raw__add_component_sized(cast(^Tiny_Table_Raw) self, eid, size_of(T))
         return cast(^T) c, aerr
     }
 
@@ -522,7 +545,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil)
         }
-        return tiny_table_raw__pack(cast(^Tiny_Table_Raw) self)
+        return tiny_table_raw__pack_sized(cast(^Tiny_Table_Raw) self, size_of(T))
     }
 
     // Pause tail swapping for this table only, independent of the
@@ -552,7 +575,7 @@ package ode_ecs
 
         database__is_entity_correct(self.db, eid) or_return
 
-        return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
+        return tiny_table_raw__remove_component_sized(cast(^Tiny_Table_Raw) self, eid, size_of(T))
     }
 
     // Goes through subscribed views with filters and reruns filter for entity `eid` and its components
