@@ -302,6 +302,79 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Suspended-view stale guard
+
+    // A view that misses a MEMBER removal while suspended holds rows that
+    // reference table rows no longer backing them — it must come back from
+    // resume flagged `stale`, and rebuild must clear the flag and restore
+    // correct content. Missed ADDS must NOT flag it: they only leave the view
+    // incomplete, which is the documented suspend semantic.
+    @(test)
+    view_suspend_missed_removal_sets_stale__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        positions: ecs.Table(Position)
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, 10, allocator) == nil)
+        testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&positions}) == nil)
+
+        e1, _ := ecs.create_entity(&db)
+        e2, _ := ecs.create_entity(&db)
+        _, _ = ecs.add_component(&positions, e1)
+        _, _ = ecs.add_component(&positions, e2)
+        testing.expect_value(t, ecs.view_len(&view), 2)
+
+        // Missed adds: safe, no stale flag
+        ecs.suspend(&view)
+        e3, _ := ecs.create_entity(&db)
+        _, _ = ecs.add_component(&positions, e3)
+        ecs.resume(&view)
+        testing.expect(t, view.stale == false)
+        testing.expect_value(t, ecs.view_len(&view), 2) // incomplete but valid
+
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect_value(t, ecs.view_len(&view), 3)
+
+        // Missed member removal: view row for e1 now points at moved data
+        ecs.suspend(&view)
+        testing.expect(t, ecs.remove_component(&positions, e1) == nil)
+        ecs.resume(&view)
+        testing.expect(t, view.stale == true)
+
+        // rebuild restores trust and correct content
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect(t, view.stale == false)
+        testing.expect_value(t, ecs.view_len(&view), 2)
+
+        it: ecs.Iterator
+        testing.expect(t, ecs.iterator_init(&it, &view) == nil)
+        visited := 0
+        for ecs.iterator_next(&it) {
+            eid := ecs.get_entity(&it)
+            testing.expect(t, eid == e2 || eid == e3)
+            visited += 1
+        }
+        testing.expect_value(t, visited, 2)
+
+        // Missed destroy_entity is also a member removal — must flag stale
+        ecs.suspend(&view)
+        testing.expect(t, ecs.destroy_entity(&db, e2) == nil)
+        ecs.resume(&view)
+        testing.expect(t, view.stale == true)
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect(t, view.stale == false)
+        testing.expect_value(t, ecs.view_len(&view), 1)
+    }
+
+///////////////////////////////////////////////////////////////////////////////
 // API consistency
 
     // Re-adding an existing tag on a FULL tag table must be a no-op (nil),

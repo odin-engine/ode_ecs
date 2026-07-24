@@ -267,6 +267,75 @@ package ode_ecs__tests
             testing.expect(t, pos != nil && pos.x == 6)
     }
 
+    // Regression: a deferred add that OVERWRITES an existing component must
+    // re-run subscribed views' filters — the overwritten value can flip the
+    // filter verdict either way, and the plain add-notification short-circuits
+    // on entities already in the view.
+    @(test)
+    cb_overwrite_reruns_view_filter__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            positions: ecs.Table(Position)
+            view: ecs.View // positions with x > 0
+            cb: ecs.Command_Buffer
+
+            positive_x :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
+                positions := cast(^ecs.Table(Position)) user_data
+                pos := ecs.get_component(positions, row)
+                if pos == nil do return false
+                return pos.x > 0
+            }
+
+        //
+        // Test
+        //
+            defer ecs.terminate(&db)
+            defer ecs.command_buffer_terminate(&cb)
+
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+            testing.expect(t, ecs.view_init(&view, &db, {&positions}, filter = positive_x) == nil)
+            view.user_data = &positions
+            testing.expect(t, ecs.command_buffer_init(&cb, &db, commands_cap = 8, payload_cap = 256) == nil)
+
+            eid, err := ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+
+            pos, perr := ecs.add_component(&positions, eid)
+            testing.expect(t, perr == nil)
+            pos.x = 5
+            testing.expect(t, ecs.rerun_views_filters(&positions, eid) == nil)
+            testing.expect(t, ecs.view_len(&view) == 1) // member: x > 0
+
+            // Overwrite flips filter true -> false: entity must LEAVE the view
+            testing.expect(t, ecs.cmd_add_component(&cb, &positions, eid, Position{ x = -1, y = 0 }) == nil)
+            skipped, rerr := ecs.replay(&cb)
+            testing.expect(t, rerr == nil && skipped == 0)
+            testing.expect(t, ecs.view_len(&view) == 0)
+
+            // Overwrite flips filter false -> true: entity must REJOIN the view
+            testing.expect(t, ecs.cmd_add_component(&cb, &positions, eid, Position{ x = 7, y = 0 }) == nil)
+            skipped, rerr = ecs.replay(&cb)
+            testing.expect(t, rerr == nil && skipped == 0)
+            testing.expect(t, ecs.view_len(&view) == 1)
+
+            // Overwrite that keeps the verdict: membership unchanged
+            testing.expect(t, ecs.cmd_add_component(&cb, &positions, eid, Position{ x = 9, y = 0 }) == nil)
+            skipped, rerr = ecs.replay(&cb)
+            testing.expect(t, rerr == nil && skipped == 0)
+            testing.expect(t, ecs.view_len(&view) == 1)
+            pos = ecs.get_component(&positions, eid)
+            testing.expect(t, pos != nil && pos.x == 9)
+    }
+
     @(test)
     cb_group__test :: proc(t: ^testing.T) {
         //

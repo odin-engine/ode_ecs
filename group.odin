@@ -147,8 +147,15 @@ package ode_ecs
         return nil
     }
 
-    // Number of entities in the group
+    // Number of entities in the group.
+    // While the group is dirty (membership changes deferred by a paused tail
+    // swap) the stored len is stale — it only becomes exact again after
+    // resume_packing rebuilds the group. Asserts on that window under
+    // VALIDATIONS, mirroring group__dense_slice's nil return.
     group__len :: #force_inline proc "contextless" (self: ^Group) -> int {
+        when VALIDATIONS {
+            assert_contextless(!self.dirty, "group_len while the group is dirty (paused packing) — resume_packing first")
+        }
         return self.len
     }
 
@@ -308,21 +315,24 @@ package ode_ecs
     @(private)
     // Called by an owned table after a component was added (bits already updated).
     // Idempotent: the add path also notifies on the already-exists branch.
-    group__on_add :: proc(self: ^Group, eid: entity_id) {
+    // Returns whether rows were moved, so the caller only re-derives its
+    // component pointer when the swap actually happened.
+    group__on_add :: proc(self: ^Group, eid: entity_id) -> (moved: bool) {
         // full match? (needs every owned component)
-        if !uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) do return
+        if !uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) do return false
 
         if group__is_packing_paused(self) {
             // rows must not move while paused — rebuild on resume
             self.dirty = true
-            return
+            return false
         }
 
         // already inside the prefix? (members sit at the same rid < len in every
         // owned table, so checking one table suffices)
         #no_bounds_check {
-            if int(self.tables[0].eid_to_rid[eid.ix]) < self.len do return
+            if int(self.tables[0].eid_to_rid[eid.ix]) < self.len do return false
         }
 
         group__swap_in(self, eid)
+        return true
     }

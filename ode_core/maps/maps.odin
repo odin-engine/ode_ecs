@@ -17,6 +17,10 @@ package maps
 
     MAPS_TESTING :: #config(maps_testing, false) // set to true to enable testing code
 
+    // Same switch as ode_core/ecs: -define:ECS_VALIDATIONS=false compiles out
+    // hot-path sanity asserts here too.
+    VALIDATIONS :: #config(ECS_VALIDATIONS, true)
+
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases
 //

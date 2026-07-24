@@ -23,7 +23,7 @@ ecs.cmd_remove_parent(&cb, deserter_eid) // alias: ecs.cmd_unparent
 skipped, err := ecs.replay(&cb) // applies in order, then clears the buffer
 ```
 
-Semantics: a command whose entity id expired before it applied (destroyed by an earlier command, another buffer, or your code) is skipped and counted in `skipped` — destroys and removes are idempotent; adding a component that already exists **overwrites its value** (last write wins). Real errors (e.g. a full table) don't abort the replay — remaining commands still run and the first error is returned.
+Semantics: a command whose entity id expired before it applied (destroyed by an earlier command, another buffer, or your code) is skipped and counted in `skipped` — destroys and removes are idempotent; adding a component that already exists **overwrites its value** (last write wins). An overwrite also re-runs the filters of subscribed filtered views, so a value change that flips a filter verdict updates view membership during replay — no manual `rerun_views_filters` needed. Real errors (e.g. a full table) don't abort the replay — remaining commands still run and the first error is returned.
 
 Relations commands follow the same rules: a `cmd_set_parent` whose *parent* expired by replay time is skipped (the child keeps whatever parent it had), a `cmd_remove_parent` for a child that has no parent is skipped, while a cycle (`Relation_Cycle`), a full relations table, or a database without a `Relations_Table` (`Relations_Table_Not_Created` — the check happens at replay, not at record) are real errors.
 

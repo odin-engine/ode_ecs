@@ -284,9 +284,10 @@ package ode_ecs__tests
 
         ecs.pause_packing(&db)
 
-        // removing a middle entity leaves a hole, nothing moves
+        // removing a middle entity leaves a hole, nothing moves — len keeps
+        // covering the hole slot so row-number iteration stays complete
         testing.expect(t, ecs.untag(&is_alive, eids[2]) == nil)
-        testing.expect(t, ecs.tag_table__len(&is_alive) == 4)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 5)
         testing.expect(t, is_alive.holes_count == 1)
         testing.expect(t, ecs.get_entity(&is_alive, 2).ix == ecs.DELETED_INDEX) // hole marker
         testing.expect(t, ecs.get_entity(&is_alive, 1) == eids[1]) // stable (tail swap would have moved it)
@@ -295,10 +296,12 @@ package ode_ecs__tests
         // removing the tail row shrinks the span without leaving a hole
         testing.expect(t, ecs.untag(&is_alive, eids[4]) == nil)
         testing.expect(t, is_alive.holes_count == 1)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 4)
 
         // removing the new tail absorbs the trailing hole at row 2 as well
         testing.expect(t, ecs.untag(&is_alive, eids[3]) == nil)
         testing.expect(t, is_alive.holes_count == 0)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 2)
 
         // punch a hole and pack explicitly (pack is usable mid-pause)
         testing.expect(t, ecs.untag(&is_alive, eids[0]) == nil)
@@ -351,8 +354,8 @@ package ode_ecs__tests
         testing.expect(t, db.tail_swap_paused == false)
 
         testing.expect(t, ecs.untag(&is_alive, eids[1]) == nil)
-        testing.expect(t, ecs.tag_table__len(&is_alive) == 2) // live-tag count drops immediately
-        testing.expect(t, is_alive.holes_count == 1) // but the row span still has a hole
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 3) // row span keeps the hole slot until resume
+        testing.expect(t, is_alive.holes_count == 1)
         testing.expect(t, ecs.get_entity(&is_alive, 1).ix == ecs.DELETED_INDEX)
 
         testing.expect(t, ecs.resume_packing(&is_alive) == nil)
@@ -361,6 +364,64 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.untag(&is_alive, eids[0]) == nil)
         testing.expect(t, ecs.tag_table__len(&is_alive) == 1)
+    }
+
+    // Regression: while packing is paused, len must cover the whole row span
+    // (including holes) so the documented row-number loop still visits every
+    // live tag. With the old live-count len, removing a middle tag shrank len
+    // below the last live rid and the loop silently skipped that tag.
+    @(test)
+    tag_table__paused_len_iteration__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        is_alive: ecs.Tag_Table
+
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+        testing.expect(t, ecs.tag_table__init(&is_alive, &db, 10) == nil)
+
+        eids: [3]ecs.entity_id
+        for i in 0..<3 {
+            eid, cerr := ecs.create_entity(&db)
+            testing.expect(t, cerr == nil)
+            testing.expect(t, ecs.add_tag(&is_alive, eid) == nil)
+            eids[i] = eid
+        }
+
+        visit :: proc(t: ^testing.T, table: ^ecs.Tag_Table, expected: []ecs.entity_id) {
+            visited: [4]ecs.entity_id
+            visited_count := 0
+            for rid in 0..<ecs.tag_table__len(table) {
+                eid := ecs.get_entity(table, rid)
+                if ecs.is_not_set(eid) do continue // hole left by a paused removal
+                visited[visited_count] = eid
+                visited_count += 1
+            }
+            testing.expect(t, visited_count == len(expected))
+            for expected_eid in expected {
+                found := false
+                for i in 0..<visited_count {
+                    if visited[i] == expected_eid do found = true
+                }
+                testing.expect(t, found)
+            }
+        }
+
+        testing.expect(t, ecs.pause_packing(&is_alive) == nil)
+        testing.expect(t, ecs.untag(&is_alive, eids[1]) == nil) // middle removal punches a hole
+
+        // eids[2] sits at rid 2 while only 2 tags are live — len must still be 3
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 3)
+        visit(t, &is_alive, {eids[0], eids[2]})
+
+        testing.expect(t, ecs.resume_packing(&is_alive) == nil)
+        testing.expect(t, ecs.tag_table__len(&is_alive) == 2)
+        visit(t, &is_alive, {eids[0], eids[2]})
     }
 
     // A saved entity_id whose entity was later destroyed (stale generation,

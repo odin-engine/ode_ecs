@@ -161,6 +161,14 @@ package ode_ecs
         bits: Uni_Bits,
         exclude_bits: Uni_Bits, // tables whose entities must NOT be in this view
         suspended: bool,
+        // Set when a member-removal or row-move notification was skipped
+        // because the view was suspended: rows can then reference destroyed
+        // entities or table rows owned by someone else, so iterating reads
+        // garbage until view__rebuild. Missed adds don't set it (they only
+        // leave the view incomplete — safe). resume() keeps the flag; only a
+        // rebuild (or clear) restores trust. Iterator init asserts on it
+        // under VALIDATIONS.
+        stale: bool,
 
         // Whole-view summary of the per-column states, refreshed by view__dense_resolve
         // (iterator init/reset). Aligned only when every Table column is aligned.
@@ -217,6 +225,7 @@ package ode_ecs
         uni_bits__clear(&self.exclude_bits)
         self.excludes = {}
         self.suspended = false
+        self.stale = false
 
         self.db = db
 
@@ -411,6 +420,8 @@ package ode_ecs
         }
         self.dense_state = View_Dense_State.Aligned
 
+        self.stale = false // empty view is trivially in sync
+
         return nil
     }
 
@@ -442,7 +453,7 @@ package ode_ecs
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
             // check if view bits is subset of entity bits
-            if view_entity_match(self, eid) {
+            if view__components_match(self, eid) {
                 view__add_record(self, eid) or_return
             }
         }
@@ -553,7 +564,7 @@ package ode_ecs
             eid = shared_table__get_entity_by_row_number(min_table, i)
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
             if self.eid_to_rid[eid.ix] != VIEW_NO_RID do continue // already a member
-            if !view_entity_match(self, eid) do continue
+            if !view__components_match(self, eid) do continue
 
             view_row_raw__fill(self.temp_row, self, eid)
             if view__filter_match_private(self, self.temp_row) {
@@ -573,7 +584,10 @@ package ode_ecs
         self.suspended = true
     }
 
-    // Resume updating view after calling suspend 
+    // Resume updating view after calling suspend. If the view missed any
+    // membership-changing notification while suspended it stays `stale` —
+    // call rebuild() before iterating (iterator init asserts on it under
+    // VALIDATIONS).
     view__resume :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
@@ -714,6 +728,23 @@ package ode_ecs
     view__filter_match_private :: proc(self: ^View, row_raw: ^View_Row_Raw) -> bool {
         if self.filter == nil do return true
         return self.filter(&View_Row{ view = self, raw = row_raw }, self.user_data)
+    }
+
+    @(private)
+    // Suspended view skipped a member-removal or row-move notification for eid:
+    // if the entity is a member, its view row now references table rows that no
+    // longer back it (the table tail-swapped / packed regardless) — iterating
+    // would read garbage, so flag the view stale. Missed ADDS are deliberately
+    // not flagged: they only leave the view incomplete, which is the documented
+    // suspend semantic (rebuild to catch up).
+    // VALIDATIONS-only: the flag is read solely by VALIDATIONS asserts, and
+    // keeping this branch out of the notify loops costs release builds nothing
+    // (unguarded it measured ~2% on the churn benchmarks).
+    // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.overbase.id_factory.cap
+    view__missed_update_for_member :: #force_inline proc "contextless" (self: ^View, eid: entity_id) #no_bounds_check {
+        when VALIDATIONS {
+            if self.eid_to_rid[eid.ix] != VIEW_NO_RID do self.stale = true
+        }
     }
 
     @(private)

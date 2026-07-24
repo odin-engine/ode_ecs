@@ -46,8 +46,8 @@ package ode_core
         self.cap = cap
 
         self.items = make([]ix_gen, cap, allocator) or_return
-        self.freed = make([]int, cap, allocator) or_return 
-        ix_gen_factory__clear(self)
+        self.freed = make([]int, cap, allocator) or_return
+        ix_gen_factory__clear(self, bump_gen = false) // fresh items, gens start at 0
 
         return runtime.Allocator_Error.None
     }
@@ -84,15 +84,15 @@ package ode_core
             self.freed[self.freed_count] = DELETED_INDEX
 
             p = &self.items[ix]
-        
-            assert(p.ix == DELETED_INDEX) // sanity check
+
+            when VALIDATIONS do assert(p.ix == DELETED_INDEX) // sanity check
             p.ix = ix
             p.gen = p.gen >= GEN_MAX ? 0 : p.gen + 1
 
             id = p^
         } else {
             p = &self.items[self.created_count]
-            assert(p.ix == DELETED_INDEX) // sanity check
+            when VALIDATIONS do assert(p.ix == DELETED_INDEX) // sanity check
             p.ix = self.created_count
 
             id = p^
@@ -158,8 +158,11 @@ package ode_core
 
     // bump_gen advances every slot's generation so ids handed out before the
     // clear stop matching ids created after it (the fresh-create path in
-    // ix_gen_factory__new_id reuses the stored gen without bumping).
-    ix_gen_factory__clear :: proc(self: ^Ix_Gen_Factory, bump_gen := false) {
+    // ix_gen_factory__new_id reuses the stored gen without bumping). It
+    // defaults to true because the false path silently revives pre-clear ids;
+    // pass false only when the items are about to be overwritten wholesale
+    // (init, deserialization).
+    ix_gen_factory__clear :: proc(self: ^Ix_Gen_Factory, bump_gen := true) {
         assert(self != nil)
         assert(self.items != nil)
         assert(self.freed != nil)
@@ -357,4 +360,74 @@ package ode_core
 
         // The live id at that index is unaffected by the rejected frees above.
         testing.expect(t, ix_gen_factory__is_expired(&factory, id_2) == false)
+    }
+
+    // 8-bit generation wrap driven through the public path: after GEN_MAX + 1
+    // free/new cycles on the same slot the generation returns to its starting
+    // value, so a stale id held across the full cycle reads as live again (the
+    // documented ABA limit of an 8-bit generation).
+    @(test)
+    ix_gen_factory__gen_wraparound__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        factory: Ix_Gen_Factory
+        defer ix_gen_factory__terminate(&factory, allocator)
+        ix_gen_factory__init(&factory, 1, allocator)
+
+        first_id, err := ix_gen_factory__new_id(&factory)
+        testing.expect(t, err == Core_Error.None)
+        testing.expect(t, first_id.ix == 0 && first_id.gen == 0)
+
+        seen_zero_again := false
+        id := first_id
+        for _ in 0..<int(GEN_MAX) { // 255 cycles: gen runs 1..255, stale everywhere
+            testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
+            id, err = ix_gen_factory__new_id(&factory)
+            testing.expect(t, err == Core_Error.None)
+            testing.expect(t, ix_gen_factory__is_expired(&factory, first_id))
+            if id.gen == 0 do seen_zero_again = true
+        }
+        testing.expect(t, seen_zero_again == false)
+        testing.expect(t, id.gen == GEN_MAX)
+
+        // cycle 256 wraps 255 -> 0 and the original id collides back to live
+        testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
+        id, err = ix_gen_factory__new_id(&factory)
+        testing.expect(t, err == Core_Error.None)
+        testing.expect(t, id.gen == 0)
+        testing.expect(t, id == first_id)
+        testing.expect(t, ix_gen_factory__is_expired(&factory, first_id) == false)
+    }
+
+    // The clear default (bump_gen = true) must expire ids issued before the
+    // clear — the false path revives them, which is why it is opt-in only.
+    @(test)
+    ix_gen_factory__clear_default_expires__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        factory: Ix_Gen_Factory
+        defer ix_gen_factory__terminate(&factory, allocator)
+        ix_gen_factory__init(&factory, 2, allocator)
+
+        old_id, err := ix_gen_factory__new_id(&factory)
+        testing.expect(t, err == Core_Error.None)
+
+        ix_gen_factory__clear(&factory) // default bump_gen = true
+
+        testing.expect(t, ix_gen_factory__is_expired(&factory, old_id))
+
+        // the recreated slot hands out a different generation than old_id's
+        new_id, err_2 := ix_gen_factory__new_id(&factory)
+        testing.expect(t, err_2 == Core_Error.None)
+        testing.expect(t, new_id.ix == old_id.ix)
+        testing.expect(t, new_id != old_id)
+        testing.expect(t, ix_gen_factory__is_expired(&factory, old_id))
     }

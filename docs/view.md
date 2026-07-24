@@ -165,7 +165,7 @@ health.hp = 0
 ecs.rerun_views_filters(&healths, eid) // re-runs filters of subscribed views for eid
 ```
 
-(A proc group over `table__rerun_views_filters` / `compact_table__rerun_views_filters` / `tiny_table__rerun_views_filters`.)
+(A proc group over `table__rerun_views_filters` / `compact_table__rerun_views_filters` / `tiny_table__rerun_views_filters`. Note there is no Tag_Table entry: tags carry no component data for a filter to read, so a filtered view that includes a tag table must re-run its filter through one of its *data* tables.)
 
 After *bulk* mutations, re-evaluate the whole view in one sweep instead:
 
@@ -188,6 +188,20 @@ ecs.suspend(&view)
 ecs.resume(&view)
 ecs.rebuild(&view) // the view missed the updates — rebuild it
 ```
+
+What a suspended view misses matters:
+
+- **Missed adds** are safe — the view is merely incomplete until you `rebuild`.
+- **Missed removals or row moves of entities already in the view** are not: the
+  view's rows then reference table rows that no longer belong to those entities
+  (tables keep tail-swapping regardless), so iterating reads other entities'
+  data. The view tracks this with an internal `stale` flag (`ECS_VALIDATIONS`
+  builds only): initializing an iterator over a stale view asserts with a
+  message telling you to `rebuild`. `rebuild` (or `clear`) resets the flag.
+
+So the rule stays: after a suspend window that could have removed or moved
+members, `rebuild` before iterating. The assert is a safety net, not a
+substitute.
 
 ## Other operations
 

@@ -15,8 +15,8 @@ package maps
 ///////////////////////////////////////////////////////////////////////////////
 // Rh_Map32 - Robin Hood map with 8-byte items (u32 key -> u32 value).
 //
-// Same algorithm as Rh_Map, but an item is 8 bytes instead of 16, so twice as
-// many probes fit in a cache line and the map's memory footprint halves.
+// Robin Hood hashing with 8-byte items, so many probes fit in one cache line
+// and the memory footprint stays small.
 // Made for eid.ix -> row-id indexes (Compact_Table): keys and values are
 // bounded by entities/table capacity, which must fit in u32.
 // RH_MAP32_DELETED (max(u32)) is reserved — it is both the empty-slot key
@@ -366,7 +366,7 @@ package maps
         testing.expect(t, rh_map32__add(&map1, 32, 104) == nil)
         testing.expect(t, rh_map32__add(&map1, 64, 105) == nil)
 
-        // Robin Hood layout, mirrors rh_map__test's classic example
+        // Robin Hood layout, the classic textbook example
         testing.expect(t, map1.items[0].value == 100)
         testing.expect(t, map1.items[1].value == 104)
         testing.expect(t, map1.items[2].value == 105)

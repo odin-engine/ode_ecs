@@ -130,7 +130,15 @@ package ode_ecs
     compact_table_base__notify_excluding_views :: proc(self: ^Compact_Table_Base, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__components_match(view, eid) {
+                when VALIDATIONS {
+                    // see table_base__notify_excluding_views
+                    aerr := view__add_record(view, eid)
+                    assert(aerr != API_Error.Cannot_Add_Record_To_View_Container_Is_Full, "excluding view is full — entity silently dropped, raise the view's included tables' caps")
+                } else {
+                    view__add_record(view, eid)
+                }
+            }
         }
     }
 
@@ -237,6 +245,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
 
             database__remove_component(self.db, target_eid, self.id)
@@ -247,7 +256,7 @@ package ode_ecs
         tail_rid := raw.len - 1
         tail_eid := self.rid_to_eid[tail_rid]
 
-        assert(!is_not_set(tail_eid))
+        when VALIDATIONS do assert(!is_not_set(tail_eid))
 
         tail := compact_table_raw__rid_to_ptr(self, tail_rid)
 
@@ -260,6 +269,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
         }
         else {
@@ -279,6 +289,9 @@ package ode_ecs
                 if !view.suspended {
                     view__remove_record(view, target_eid)
                     view__update_component_rid(view, self, tail_eid, target_rid)
+                } else {
+                    view__missed_update_for_member(view, target_eid)
+                    view__missed_update_for_member(view, tail_eid)
                 }
             }
         }
@@ -332,14 +345,21 @@ package ode_ecs
             raw.len += 1
         } else {
             component = compact_table_raw__rid_to_ptr(self, rid)
-            if data != nil do mem.copy(component, data, self.type_info.size)
+            if data != nil {
+                mem.copy(component, data, self.type_info.size)
+                // See table_raw__add_component: an overwrite can flip a view's
+                // filter verdict, and the add-notify below skips existing members
+                for view in self.subscribers_with_filter.items {
+                    if !view.suspended do view__rerun_filter(view, eid)
+                }
+            }
             err = API_Error.Component_Already_Exist
         }
 
         // Notify subscribed views. Also runs on the already-exists path on purpose: it
         // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for view in self.subscribers.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 
         // Views excluding this table lose the entity (no-op if it wasn't a member)
@@ -391,6 +411,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                else do view__missed_update_for_member(view, moved_eid)
             }
 
             back -= 1
@@ -504,6 +525,12 @@ package ode_ecs
     }
     
     compact_table__add_component :: proc(self: ^Compact_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
@@ -538,8 +565,14 @@ package ode_ecs
     }
 
     compact_table__remove_component :: proc(self: ^Compact_Table($T), eid: entity_id, loc:= #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(eid.ix >= 0, loc = loc)
+            assert(self.type_info.id == typeid_of(T), loc = loc)
+        }
+
         database__is_entity_correct(self.db, eid) or_return
-       
+
         return compact_table_raw__remove_component(cast(^Compact_Table_Raw) self, eid, loc)
     }
 
@@ -564,6 +597,12 @@ package ode_ecs
 
     @(require_results)
     compact_table__get_component_by_entity :: proc (self: ^Compact_Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
@@ -617,9 +656,9 @@ package ode_ecs
 
     // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
     compact_table__move_component :: proc(dest: ^Compact_Table($T), src: ^Compact_Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
-        dest_component, _ = copy_component(dest, src, eid) or_return
+        dest_component, _ = compact_table__copy_component(dest, src, eid) or_return
 
-        remove_component(src, eid) or_return
+        compact_table__remove_component(src, eid) or_return
 
         return dest_component, nil
     }

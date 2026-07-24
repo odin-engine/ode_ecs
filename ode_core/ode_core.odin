@@ -11,7 +11,12 @@ package ode_core
     import "core:mem"
 
 ///////////////////////////////////////////////////////////////////////////////
-// 
+//
+
+    // Mirrors the ECS-level flag (ecs.odin): -define:ECS_VALIDATIONS=false
+    // also compiles out ode_core's hot-path sanity asserts, keeping the
+    // "validations off = no checks in the game loop" promise in one switch.
+    VALIDATIONS :: #config(ECS_VALIDATIONS, true)
 
     DELETED_INDEX :: -1
 

@@ -127,7 +127,15 @@ package ode_ecs
         if self.db.destroying_eid_ix == eid.ix do return
         for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
             view := self.subscribers_excluding[i]
-            if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if view != nil && !view.suspended && view__components_match(view, eid) {
+                when VALIDATIONS {
+                    // see table_base__notify_excluding_views
+                    aerr := view__add_record(view, eid)
+                    assert(aerr != API_Error.Cannot_Add_Record_To_View_Container_Is_Full, "excluding view is full — entity silently dropped, raise the view's included tables' caps")
+                } else {
+                    view__add_record(view, eid)
+                }
+            }
         }
     }
 
@@ -153,7 +161,12 @@ package ode_ecs
 
     @(private)
     tiny_table_base__memory_usage :: proc (self: ^Tiny_Table_Base) -> int {
-        if self == nil || self.type_info == nil do return DELETED_INDEX
+        // 0, not a negative sentinel — database__memory_usage sums the results,
+        // and a -1 from an uninitialized table would silently skew the total
+        if self == nil || self.type_info == nil {
+            when VALIDATIONS do assert(false, "memory_usage on an uninitialized Tiny_Table")
+            return 0
+        }
         return size_of(self^) + self.type_info.size * TINY_TABLE__ROW_CAP
     }
 
@@ -204,7 +217,9 @@ package ode_ecs
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
                 view := self.subscribers[i]
-                if view != nil && !view.suspended do view__remove_record(view, target_eid)
+                if view == nil do continue
+                if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
 
             database__remove_component(self.db, target_eid, self.id)
@@ -215,11 +230,12 @@ package ode_ecs
         tail_rid := self.len - 1
         tail_eid := self.rid_to_eid[tail_rid]
 
-        assert(!is_not_set(tail_eid))
+        when VALIDATIONS do assert(!is_not_set(tail_eid))
 
-        tail :=oc_maps.tt_map__get(&self.eid_to_ptr, tail_eid.ix)
-        assert(tail != nil)
-        
+        // tail sits at rid len-1 by construction — derive its pointer directly
+        // instead of a tt_map hash+probe (same as the other tables)
+        tail := rawptr(uintptr(&self.rows[0]) + uintptr(tail_rid) * uintptr(T_size))
+
         target_rid := int(uintptr(target) - uintptr(&self.rows[0])) / T_size
 
         // Replace removed component with tail
@@ -230,12 +246,14 @@ package ode_ecs
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
                 view := self.subscribers[i]
-                if view != nil && !view.suspended do view__remove_record(view, target_eid)
+                if view == nil do continue
+                if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
         }
         else {
             tail_eid := self.rid_to_eid[tail_rid]
-            assert(!is_not_set(tail_eid))
+            when VALIDATIONS do assert(!is_not_set(tail_eid))
 
             // DATA COPY
             mem.copy(target, tail, T_size)
@@ -251,9 +269,13 @@ package ode_ecs
             // Notify subscribed views
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
                 view := self.subscribers[i]
-                if view != nil && !view.suspended {
+                if view == nil do continue
+                if !view.suspended {
                     view__remove_record(view, target_eid)
                     view__update_component_rid(view, self, tail_eid, target_rid)
+                } else {
+                    view__missed_update_for_member(view, target_eid)
+                    view__missed_update_for_member(view, tail_eid)
                 }
             }
         }
@@ -306,7 +328,16 @@ package ode_ecs
 
             self.len += 1
         } else {
-            if data != nil do mem.copy(component, data, self.type_info.size)
+            if data != nil {
+                mem.copy(component, data, self.type_info.size)
+                // See table_raw__add_component: an overwrite can flip a view's
+                // filter verdict, and the add-notify below skips existing members.
+                // Tiny_Table keeps no separate with-filter list — check per view.
+                for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+                    view := self.subscribers[i]
+                    if view != nil && !view.suspended && view.filter != nil do view__rerun_filter(view, eid)
+                }
+            }
             err = API_Error.Component_Already_Exist
         }
 
@@ -314,7 +345,7 @@ package ode_ecs
         // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
             view := self.subscribers[i]
-            if view != nil && !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if view != nil && !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 
         // Views excluding this table lose the entity (no-op if it wasn't a member)
@@ -386,7 +417,9 @@ package ode_ecs
 
             for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
                 view := self.subscribers[i]
-                if view != nil && !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                if view == nil do continue
+                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                else do view__missed_update_for_member(view, moved_eid)
             }
 
             back -= 1
@@ -470,6 +503,12 @@ package ode_ecs
 
     // Add component for entity `eid`
     tiny_table__add_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
@@ -505,6 +544,12 @@ package ode_ecs
 
     // Remove component for entity `eid`
     tiny_table__remove_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (err: Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         database__is_entity_correct(self.db, eid) or_return
 
         return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
@@ -526,6 +571,12 @@ package ode_ecs
 
     @(require_results)
     tiny_table__get_component_by_entity :: proc (self: ^Tiny_Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 

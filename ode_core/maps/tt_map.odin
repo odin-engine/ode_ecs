@@ -85,7 +85,7 @@ package maps
     } 
 
     tt_map__add :: proc(self: ^Tt_Map($CAP, $V), key: int, value: V) -> oc.Core_Error {
-        assert(value != nil)
+        when VALIDATIONS do assert(value != nil) // hot path: runs on every Tiny_Table add/remove/pack
 
         p := tt_map__find_item(self, key)
 

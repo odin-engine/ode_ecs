@@ -108,7 +108,9 @@ package ode_ecs
         total := size_of(self^)
 
         if self.rows != nil {
-            total += size_of(self.rows[0]) * len(self.rows)
+            // cap, not len(self.rows) — the slice's len field tracks the live
+            // row span, but all cap slots are allocated
+            total += size_of(entity_id) * self.cap
         }
 
         total += oc_maps.rh_map32__memory_usage(&self.eid_to_rid)
@@ -116,8 +118,11 @@ package ode_ecs
         return total
     }
 
+    // Row-slot count, including holes left by removals while packing is
+    // paused (same semantics as the other tables) — so `for rid in 0..<len`
+    // with an is_not_set skip visits every live tag even mid-pause.
     tag_table__len :: #force_inline proc "contextless" (self: ^Tag_Table) -> int {
-        return oc_maps.rh_map32__len(&self.eid_to_rid)
+        return len(self.rows)
     }
 
     tag_table__cap :: #force_inline proc "contextless" (self: ^Tag_Table) -> int {
@@ -129,6 +134,11 @@ package ode_ecs
     }
 
     tag_table__add_tag :: proc(self: ^Tag_Table, eid: entity_id, loc:= #caller_location) -> (err: Error) {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(eid.ix >= 0, loc = loc)
+        }
+
         database__is_entity_correct(self.db, eid) or_return
 
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -170,6 +180,11 @@ package ode_ecs
     }
 
     tag_table__remove_tag :: proc(self: ^Tag_Table, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(target_eid.ix >= 0, loc = loc)
+        }
+
         database__is_entity_correct(self.db, target_eid) or_return
 
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -206,6 +221,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
 
             // Update eid_to_bits in db
@@ -225,11 +241,12 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
 
         } else {
             tail_eid := self.rows[tail_rid]
-            assert(!is_not_set(tail_eid))
+            when VALIDATIONS do assert(!is_not_set(tail_eid))
 
             // Update tail indexes (value-only update — slots don't move, so
             // target_slot stays valid for the remove_at)
@@ -247,6 +264,9 @@ package ode_ecs
                     // feeds the dense safety net — the moved tag now occupies the
                     // removed row's id
                     view__update_component_rid(view, self, tail_eid, target_rid)
+                } else {
+                    view__missed_update_for_member(view, target_eid)
+                    view__missed_update_for_member(view, tail_eid)
                 }
             }
         }
@@ -311,6 +331,14 @@ package ode_ecs
             self.rows[back].ix = DELETED_INDEX
 
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(moved_eid.ix), u32(front))
+
+            // keep subscriber rids current, same as the other tables' pack
+            // (tag columns carry no data, but see the remove_tag note on the
+            // dense safety net)
+            for view in self.subscribers.items {
+                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                else do view__missed_update_for_member(view, moved_eid)
+            }
 
             back -= 1
             front += 1
@@ -391,6 +419,14 @@ package ode_ecs
     tag_table__notify_excluding_views :: proc(self: ^Tag_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__components_match(view, eid) {
+                when VALIDATIONS {
+                    // see table_base__notify_excluding_views
+                    aerr := view__add_record(view, eid)
+                    assert(aerr != API_Error.Cannot_Add_Record_To_View_Container_Is_Full, "excluding view is full — entity silently dropped, raise the view's included tables' caps")
+                } else {
+                    view__add_record(view, eid)
+                }
+            }
         }
     }

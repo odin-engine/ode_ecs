@@ -146,7 +146,16 @@ package ode_ecs
     table_base__notify_excluding_views :: proc(self: ^Table_Base, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__components_match(view, eid) {
+                when VALIDATIONS {
+                    // An excluding view's cap is derived from ITS included tables,
+                    // not from this table — a full one silently drops the entity
+                    aerr := view__add_record(view, eid)
+                    assert(aerr != API_Error.Cannot_Add_Record_To_View_Container_Is_Full, "excluding view is full — entity silently dropped, raise the view's included tables' caps")
+                } else {
+                    view__add_record(view, eid)
+                }
+            }
         }
     }
 
@@ -214,6 +223,9 @@ package ode_ecs
             if !view.suspended {
                 view__update_component_rid(view, self, eid_a, rid_b)
                 view__update_component_rid(view, self, eid_b, rid_a)
+            } else {
+                view__missed_update_for_member(view, eid_a)
+                view__missed_update_for_member(view, eid_b)
             }
         }
     }
@@ -321,6 +333,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
 
             database__remove_component(self.db, target_eid, self.id)
@@ -331,7 +344,7 @@ package ode_ecs
         tail_rid := raw.len - 1
         tail_eid := self.rid_to_eid[tail_rid]
 
-        assert(!is_not_set(tail_eid))
+        when VALIDATIONS do assert(!is_not_set(tail_eid))
 
         tail := table_raw__rid_to_ptr(self, tail_rid)
 
@@ -343,6 +356,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__remove_record(view, target_eid)
+                else do view__missed_update_for_member(view, target_eid)
             }
         }
         else {
@@ -361,11 +375,17 @@ package ode_ecs
                 if !view.suspended {
                     view__remove_record(view, target_eid)
                     view__update_component_rid(view, self, tail_eid, target_rid)
+                } else {
+                    view__missed_update_for_member(view, target_eid)
+                    view__missed_update_for_member(view, tail_eid)
                 }
             }
         }
 
-        // Zero tail
+        // Zero tail. Deliberate cost on every removal (all four table types):
+        // it upholds the contract that a freshly added component reads as
+        // zero-initialized. Dropping it would shave the remove path but leak
+        // stale component data into future adds.
         mem.zero(tail, T_size)
         raw.len -= 1
 
@@ -414,21 +434,30 @@ package ode_ecs
             // Group maintenance: if the entity now has every owned component, swap
             // its rows into the group prefix (deferred while tail swap is paused).
             // Before the subscriber loop so views record the final addresses.
-            if self.owner != nil {
-                group__on_add(self.owner, eid)
-                // the swap may have moved the new row — re-derive the returned pointer
+            if self.owner != nil && group__on_add(self.owner, eid) {
+                // the swap moved the new row — re-derive the returned pointer
                 component = table_raw__rid_to_ptr(self, self.eid_to_rid[eid.ix])
             }
         } else {
             component = table_raw__rid_to_ptr(self, rid)
-            if data != nil do mem.copy(component, data, self.type_info.size)
+            if data != nil {
+                mem.copy(component, data, self.type_info.size)
+                // The overwritten value can flip a view's filter verdict either
+                // way; the plain add-notify below short-circuits on existing
+                // members, so re-run filters explicitly (Command_Buffer
+                // "last write wins" path — the only caller passing data here
+                // for an existing component).
+                for view in self.subscribers_with_filter.items {
+                    if !view.suspended do view__rerun_filter(view, eid)
+                }
+            }
             err = API_Error.Component_Already_Exist
         }
 
         // Notify subscribed views. Also runs on the already-exists path on purpose: it
         // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for view in self.subscribers.items {
-            if !view.suspended && view_entity_match(view, eid) do view__add_record(view, eid)
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 
         // Views excluding this table lose the entity (no-op if it wasn't a member)
@@ -481,6 +510,7 @@ package ode_ecs
 
             for view in self.subscribers.items {
                 if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                else do view__missed_update_for_member(view, moved_eid)
             }
 
             back -= 1
@@ -602,6 +632,12 @@ package ode_ecs
     }
     
     table__add_component :: proc(self: ^Table($T), eid: entity_id) -> (component: ^T, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         err = database__is_entity_correct(self.db, eid)
         if err != nil do return nil, err
 
@@ -639,8 +675,14 @@ package ode_ecs
     }
 
     table__remove_component :: proc(self: ^Table($T), eid: entity_id, loc:= #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(eid.ix >= 0, loc = loc)
+            assert(self.type_info.id == typeid_of(T), loc = loc)
+        }
+
         database__is_entity_correct(self.db, eid) or_return
-       
+
         return table_raw__remove_component(cast(^Table_Raw) self, eid, loc)
     }
 
@@ -665,6 +707,12 @@ package ode_ecs
 
     @(require_results)
     table__get_component_by_entity :: proc (self: ^Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
 
@@ -722,9 +770,9 @@ package ode_ecs
 
     // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
     table__move_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
-        dest_component, _ = copy_component(dest, src, eid) or_return
+        dest_component, _ = table__copy_component(dest, src, eid) or_return
 
-        remove_component(src, eid) or_return
+        table__remove_component(src, eid) or_return
 
         return dest_component, nil
     }

@@ -1705,7 +1705,8 @@ package ode_ecs__tests
         testing.expect(t, ais.holes_count == 3)
         testing.expect(t, tiny_positions.holes_count == 3)
         testing.expect(t, ecs.view_len(&view) == 3)
-        testing.expect(t, ecs.table_len(&marked) == 3) // tag rows keep tail swapping, no holes
+        testing.expect(t, marked.holes_count == 3)          // tag rows hole up like the others mid-pause
+        testing.expect(t, ecs.table_len(&marked) == 6)      // len keeps covering the hole slots
 
         // rebuilding a view over holey tables skips the holes
         testing.expect(t, ecs.rebuild(&view) == nil)
@@ -1719,6 +1720,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&positions) == 3)
         testing.expect(t, ecs.table_len(&ais) == 3)
         testing.expect(t, ecs.table_len(&tiny_positions) == 3)
+        testing.expect(t, marked.holes_count == 0)
+        testing.expect(t, ecs.table_len(&marked) == 3)
         testing.expect(t, ecs.entities_len(&db) == 3)
 
         // survivors are intact in all tables

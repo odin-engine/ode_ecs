@@ -43,6 +43,9 @@ package ode_ecs
             assert(start_row >= 0)
             assert(end_row <= len(view.rows))
             assert(start_row <= end_row)
+            // The view missed membership updates while suspended — its rows may
+            // reference destroyed entities / foreign table rows. rebuild() it first.
+            assert(!view.stale, "view is stale (missed updates while suspended) — rebuild() it before iterating")
         }
        
         self.view = view 
@@ -67,6 +70,10 @@ package ode_ecs
             self.records_size = 0
             self.dense = false
             return API_Error.Object_Invalid
+        }
+
+        when VALIDATIONS {
+            assert(!self.view.stale, "view is stale (missed updates while suspended) — rebuild() it before iterating")
         }
 
         self.dense = view__dense_resolve(self.view)
@@ -97,6 +104,11 @@ package ode_ecs
     // NOTE: the iterator caches the view's length (and dense-alignment state) at
     // init/reset. Structural changes while iterating — add/remove component,
     // create/destroy entity — are not reflected; call iterator_reset after them.
+    // On the dense fast path this failure is SILENT: get_component reads
+    // table.rows[it.index] directly, so a mid-iteration tail swap / group swap /
+    // pack makes it return a different entity's component with no crash and no
+    // wrong-looking eid. Defer structural changes with a Command_Buffer (or
+    // pause_packing) instead of mutating mid-loop.
     iterator__next :: #force_inline proc "contextless" (self: ^Iterator) -> bool {
 
         self.raw_index += self.one_record_size

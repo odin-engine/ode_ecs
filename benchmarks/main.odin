@@ -67,7 +67,7 @@
       churn_partial for the backing-choice branch alone. At N=100K the 400 KB
       array is L2-resident and its independent loads overlap (memory-level
       parallelism); the map probe is a dependent hash->load->compare chain.
-    - Rh_Map "high bits" Fibonacci hash ((k*C) >> shift instead of & mask):
+    - Rh_Map32 "high bits" Fibonacci hash ((k*C) >> shift instead of & mask):
       hits 1.48 -> 1.8 ns/op, misses 5.3 -> 6.0. Entity indexes are dense
       consecutive ints, and the low-bits multiplicative hash is a bijection on
       any aligned power-of-2 key range — zero collisions, strictly better than
@@ -110,6 +110,15 @@
       create_entity wrapper-chain dead end above: these callees are already
       tiny and single-call-site, so the backend was likely auto-inlining them
       regardless of the hint. Reverted.
+
+    Measured wins / accepted costs (2026-07):
+    - Tiny_Table remove: deriving the tail pointer as &rows[len-1] instead of a
+      tt_map probe — churn_tiny ~13.1 -> ~12.6 ns/op (-3.5%) at release flags,
+      consistent across interleaved rounds.
+    - Suspended-view stale guard (view__missed_update_for_member in the remove/
+      move notify loops): VALIDATIONS-gated after measuring ~2% on churn
+      scenarios when unconditional; release builds (ECS_VALIDATIONS=false)
+      measure neutral with the gate.
 */
 package ode_ecs_benchmarks
 

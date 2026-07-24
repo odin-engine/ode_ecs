@@ -661,7 +661,7 @@ package ode_ecs
         // at all, may depend on it; see overbase_deserialize to restore it
         // explicitly).
         if apply_entity_ids {
-            oc.ix_gen_factory__clear(&self.overbase.id_factory)
+            oc.ix_gen_factory__clear(&self.overbase.id_factory, bump_gen = false)
         }
         slice.zero(self.eid_to_bits)
 

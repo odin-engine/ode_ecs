@@ -148,7 +148,7 @@ package ode_ecs
 
         // No gen bump: the factory items are fully overwritten from the
         // snapshot right after.
-        oc.ix_gen_factory__clear(&self.id_factory)
+        oc.ix_gen_factory__clear(&self.id_factory, bump_gen = false)
 
         r = Snap_Reader{ data = data }
         snap_reader__read(&r, &hdr, size_of(hdr)) or_return

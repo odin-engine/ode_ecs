@@ -327,7 +327,6 @@ package ode_ecs
             table__clear,
             compact_table__clear,
             view__clear,
-            table_raw__clear,
             tiny_table__clear,
             tag_table__clear,
             relations_table__clear,
