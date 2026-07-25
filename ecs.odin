@@ -443,6 +443,11 @@ package ode_ecs
             relations_table__cap,
         }
 
+        // Live rows in row order as one contiguous slice. Prefer this over
+        // reading a Table's `rows` field directly in a hot loop — see
+        // table__dense_slice's doc comment for why the codegen differs.
+        table_dense_slice   :: table__dense_slice
+
         // Memory in bytes
         memory_usage        :: proc {
             database__memory_usage,
