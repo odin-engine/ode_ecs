@@ -1,7 +1,7 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    ODE_ECS is an fast sparse/dense ECS with tail swap, written in Odin.  
+    A minimal, data-oriented, high-performance ECS written in Odin.  
 */
 package ode_ecs
 
