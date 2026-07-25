@@ -1,17 +1,19 @@
 # 🐑 Updates Timeline
 
 **July 2026**
+* \*new\* [Arch_Table](arch_table.md) feature - archetype-style (SoA) tables, with full `View`, `Group`, `Command_Buffer` and snapshot-serialization support alongside regular Tables; see [Archetype vs. Sparse-Dense ECS](ecs_types.md).
+* \*new\* Unified `next()` iteration sugar - one proc group covering both `Iterator` and `Arch_Iterator`, 0 to 7 typed components per call; replaces `iterator_next`/`iterate`.
 * \*new\* [Overbase](overbase.md) feature - share one entity ID space across multiple Databases.
 * \*new\* [Pause packing](/README.md#mutating-tables-while-iterating-pause_packing--resume_packing--pack) feature - deferred-tail-swap mode.
 * \*new\* [Groups](group.md) feature -  the fastest way to iterate entities that have a specific set of components.
 * \*new\* [Relations_Table](relations.md) feature - parent/child entity relations.
 * \*new\* [Command buffers](command_buffer.md) - defer the structural changes.
-* \*new\* [Saving and loading (snapshots)](/README.md#-saving-and-loading-snapshots) - database serialization.
+* \*new\* [Saving and loading (snapshots)](serialization.md) - database serialization.
 * \*new\* View `excludes` — `view_init(..., excludes = {&table})`, `refilter(&view)` feature.
-* \*new\* +5 new samples.
+* \*new\* +8 new samples, including [Sample14](/samples/sample14/main.odin) (Arch_Table, mixed into a View and a Group).
 * \*new\* Added a dense (aligned) path optimization for Views (~2x speed increase if aligned).
 * \*new\* View filter rerun path optimized: each re-evaluated row is now filled once instead of twice.
-* Micro-optimizations.
+* Reduced memory footprint and faster structural churn across `Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table` and `View`.
 * Improvements, polishing and bug fixes.
 * More tests. 
 * Improved README and docs.

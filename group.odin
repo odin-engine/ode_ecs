@@ -34,8 +34,13 @@ package ode_ecs
         state: Object_State,
         db: ^Database,
 
-        tables: []^Table_Raw, // owned tables
-        bits: Uni_Bits,       // ids of owned tables
+        tables: []^Table_Raw,       // owned Table($T)s
+        arch_tables: []^Arch_Table, // owned Arch_Tables — a separate slice, not a
+                                    // tagged union, so a Table-only group (every
+                                    // group before this field existed) pays zero
+                                    // extra cost: the loops over this slice below
+                                    // are simply empty when it's nil/len-0.
+        bits: Uni_Bits,             // ids of owned tables (either kind)
 
         // number of entities in the group == length of the aligned prefix
         // shared by every owned table
@@ -55,8 +60,7 @@ package ode_ecs
         if self == nil do return false
         if self.state != Object_State.Normal do return false
         if self.db == nil do return false
-        if self.tables == nil do return false
-        if len(self.tables) <= 0 do return false
+        if len(self.tables) + len(self.arch_tables) <= 0 do return false
 
         return true
     }
@@ -82,13 +86,22 @@ package ode_ecs
         slice.sort(sorted_owned)
         uniq_tables := slice.unique(sorted_owned)
 
+        table_count, arch_count := 0, 0
         for table in uniq_tables {
             when VALIDATIONS {
                 assert(shared_table__is_valid(table), loc = loc)
                 assert(table.db == db, loc = loc)
             }
-            if table.type != Table_Type.Table do return API_Error.Only_Table_Can_Be_Owned_By_Group
-            if (cast(^Table_Raw) table).owner != nil do return API_Error.Table_Already_Owned_By_Group
+            #partial switch table.type {
+                case Table_Type.Table:
+                    if (cast(^Table_Raw) table).owner != nil do return API_Error.Table_Already_Owned_By_Group
+                    table_count += 1
+                case Table_Type.Arch_Table:
+                    if (cast(^Arch_Table) table).owner != nil do return API_Error.Table_Already_Owned_By_Group
+                    arch_count += 1
+                case:
+                    return API_Error.Only_Table_Can_Be_Owned_By_Group
+            }
         }
 
         // A re-init'd struct (issue #8) may carry state from its previous life.
@@ -99,17 +112,26 @@ package ode_ecs
 
         self.db = db
 
-        self.tables = make([]^Table_Raw, len(uniq_tables), db.allocator) or_return
+        self.tables = make([]^Table_Raw, table_count, db.allocator) or_return
+        self.arch_tables = make([]^Arch_Table, arch_count, db.allocator) or_return
 
-        for table, index in uniq_tables {
-            self.tables[index] = cast(^Table_Raw) table
+        ti, ai := 0, 0
+        for table in uniq_tables {
             uni_bits__add(&self.bits, table.id)
+            if table.type == Table_Type.Table {
+                self.tables[ti] = cast(^Table_Raw) table
+                ti += 1
+            } else {
+                self.arch_tables[ai] = cast(^Arch_Table) table
+                ai += 1
+            }
         }
 
         database__attach_group(db, self) or_return
 
         // Claim ownership only after nothing can fail anymore.
         for table in self.tables do table.owner = self
+        for at in self.arch_tables do at.owner = self
 
         self.state = Object_State.Normal
 
@@ -126,15 +148,20 @@ package ode_ecs
         }
 
         // Release ownership. A table that was itself terminated already reset
-        // its owner field (see table_raw__terminate).
+        // its owner field (see table_raw__terminate / arch_table__terminate).
         for table in self.tables {
             if table != nil && table.owner == self do table.owner = nil
+        }
+        for at in self.arch_tables {
+            if at != nil && at.owner == self do at.owner = nil
         }
 
         database__detach_group(self.db, self)
 
         delete(self.tables, self.db.allocator) or_return
+        delete(self.arch_tables, self.db.allocator) or_return
         self.tables = nil
+        self.arch_tables = nil
 
         uni_bits__clear(&self.bits)
         self.len = 0
@@ -180,6 +207,22 @@ package ode_ecs
         }
     }
 
+    // Same as group__dense_slice, for an owned Arch_Table's column: table.rows
+    // has no single-typed field to slice (columns are type-erased), so this
+    // derives the column's pointer via arch_table__column_index instead.
+    group__dense_slice_arch :: proc(self: ^Group, table: ^Arch_Table, $T: typeid) -> []T {
+        if self == nil || table == nil do return nil
+        if self.state != Object_State.Normal do return nil
+        if table.owner != self do return nil
+        if self.dirty do return nil
+
+        col_idx := arch_table__column_index(table, typeid_of(T))
+        if col_idx < 0 do return nil
+
+        col := &table.columns[col_idx]
+        return slice.from_ptr(cast(^T) raw_data(col.rows), self.len)
+    }
+
     // Rebuild the group prefix from scratch — O(smallest owned table) matches, each
     // paying O(owned tables) swaps. Normally never needed (membership is maintained
     // incrementally); database__resume_packing calls it for dirty groups. While
@@ -194,15 +237,28 @@ package ode_ecs
 
         self.len = 0
 
-        // iterate the smallest owned table, swap every full match into the prefix
-        min_table := self.tables[0]
+        // iterate the smallest owned table (Table or Arch_Table), swap every
+        // full match into the prefix. Not a hot path (init/resume_packing
+        // only), so the extra branch to pick between the two kinds costs
+        // nothing that matters.
+        min_len := max(int)
+        min_rid_to_eid: []entity_id
         for table in self.tables {
-            if table_raw__len(table) < table_raw__len(min_table) do min_table = table
+            l := table_raw__len(table)
+            if l < min_len {
+                min_len = l
+                min_rid_to_eid = table.rid_to_eid[:l]
+            }
+        }
+        for at in self.arch_tables {
+            l := arch_table__len(at)
+            if l < min_len {
+                min_len = l
+                min_rid_to_eid = at.rid_to_eid[:l]
+            }
         }
 
-        n := table_raw__len(min_table)
-        for r := 0; r < n; r += 1 {
-            eid := min_table.rid_to_eid[r] // current occupant (swaps below keep unvisited rows unvisited)
+        for eid in min_rid_to_eid { // current occupant (swaps below keep unvisited rows unvisited)
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
             if uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) {
@@ -220,9 +276,8 @@ package ode_ecs
     group__memory_usage :: proc (self: ^Group) -> int {
         total := size_of(self^)
 
-        if self.tables != nil {
-            total += size_of(self.tables[0]) * len(self.tables)
-        }
+        total += size_of(^Table_Raw) * len(self.tables)
+        total += size_of(^Arch_Table) * len(self.arch_tables)
 
         return total
     }
@@ -258,6 +313,10 @@ package ode_ecs
             terr := table_raw__pack(table)
             if err == nil do err = terr
         }
+        for at in self.arch_tables {
+            terr := arch_table__pack(at)
+            if err == nil do err = terr
+        }
 
         gerr := group__rebuild(self)
         if err == nil do err = gerr
@@ -278,6 +337,10 @@ package ode_ecs
             terr := table_raw__pack(table)
             if err == nil do err = terr
         }
+        for at in self.arch_tables {
+            terr := arch_table__pack(at)
+            if err == nil do err = terr
+        }
         return err
     }
 
@@ -294,9 +357,12 @@ package ode_ecs
     @(private)
     // Move entity's rows into the prefix at position len (in every owned table),
     // then grow the prefix. The entity must have all owned components.
-    group__swap_in :: proc(self: ^Group, eid: entity_id) {
+    group__swap_in :: #force_inline proc(self: ^Group, eid: entity_id) {
         for table in self.tables {
             table_raw__swap_rows(table, int(table.eid_to_rid[eid.ix]), self.len)
+        }
+        for at in self.arch_tables {
+            arch_table__swap_rows(at, int(at.eid_to_rid[eid.ix]), self.len)
         }
         self.len += 1
     }
@@ -304,10 +370,13 @@ package ode_ecs
     @(private)
     // Move entity's rows out of the prefix (to position len-1 in every owned
     // table), then shrink the prefix. The entity must currently be a member.
-    group__swap_out :: proc(self: ^Group, eid: entity_id) {
+    group__swap_out :: #force_inline proc(self: ^Group, eid: entity_id) {
         last := self.len - 1
         for table in self.tables {
             table_raw__swap_rows(table, int(table.eid_to_rid[eid.ix]), last)
+        }
+        for at in self.arch_tables {
+            arch_table__swap_rows(at, int(at.eid_to_rid[eid.ix]), last)
         }
         self.len = last
     }
@@ -317,7 +386,7 @@ package ode_ecs
     // Idempotent: the add path also notifies on the already-exists branch.
     // Returns whether rows were moved, so the caller only re-derives its
     // component pointer when the swap actually happened.
-    group__on_add :: proc(self: ^Group, eid: entity_id) -> (moved: bool) {
+    group__on_add :: #force_inline proc(self: ^Group, eid: entity_id) -> (moved: bool) {
         // full match? (needs every owned component)
         if !uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) do return false
 
@@ -328,9 +397,15 @@ package ode_ecs
         }
 
         // already inside the prefix? (members sit at the same rid < len in every
-        // owned table, so checking one table suffices)
+        // owned table, so checking one table suffices — prefer self.tables[0]
+        // since almost every group owns at least one Table; only an
+        // Arch_Table-only group falls to the second branch)
         #no_bounds_check {
-            if int(self.tables[0].eid_to_rid[eid.ix]) < self.len do return false
+            if len(self.tables) > 0 {
+                if int(self.tables[0].eid_to_rid[eid.ix]) < self.len do return false
+            } else {
+                if int(self.arch_tables[0].eid_to_rid[eid.ix]) < self.len do return false
+            }
         }
 
         group__swap_in(self, eid)

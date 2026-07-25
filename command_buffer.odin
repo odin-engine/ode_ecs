@@ -45,11 +45,12 @@ package ode_ecs
     Command_Kind :: enum u8 {
         Destroy_Entity,
         Add_Component,      // Table / Compact_Table / Tiny_Table; value in payload
-        Remove_Component,   // Table / Compact_Table / Tiny_Table
+        Remove_Component,   // Table / Compact_Table / Tiny_Table / Arch_Table (whole row)
         Add_Tag,
         Remove_Tag,
         Set_Parent,         // requires a Relations_Table on the database
         Remove_Parent,
+        Arch_Add_Entity,    // Arch_Table; packed multi-column row value in payload
     }
 
     @(private)
@@ -238,6 +239,85 @@ package ode_ecs
         return command_buffer__record_simple(self, Command_Kind.Remove_Component, cast(^Shared_Table) table, eid, loc)
     }
 
+    // Record: add an entity's row to an Arch_Table with its values (copied into
+    // the buffer now, written at replay; overwrites if the row already exists —
+    // "last write wins", see arch_table__add_entity_from_payload). Values must be
+    // passed in the same order the archetype's columns were declared at
+    // arch_table__init time.
+    command_buffer__arch_add_entity1 :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, v1: $T1, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(arch_table__is_valid(arch), loc = loc)
+            assert(len(arch.columns) == 1, "Arch_Table does not have exactly 1 column", loc = loc)
+            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
+        }
+
+        offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
+        v1 := v1
+        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
+        return command_buffer__append(self, cmd)
+    }
+
+    command_buffer__arch_add_entity2 :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, v1: $T1, v2: $T2, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(arch_table__is_valid(arch), loc = loc)
+            assert(len(arch.columns) == 2, "Arch_Table does not have exactly 2 columns", loc = loc)
+            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
+            assert(arch.columns[1].type_info.id == typeid_of(T2), "component type/order does not match arch_table__init", loc = loc)
+        }
+
+        offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
+        v1, v2 := v1, v2
+        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, 1, &v2, size_of(T2))
+        return command_buffer__append(self, cmd)
+    }
+
+    command_buffer__arch_add_entity3 :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, v1: $T1, v2: $T2, v3: $T3, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(arch_table__is_valid(arch), loc = loc)
+            assert(len(arch.columns) == 3, "Arch_Table does not have exactly 3 columns", loc = loc)
+            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
+            assert(arch.columns[1].type_info.id == typeid_of(T2), "component type/order does not match arch_table__init", loc = loc)
+            assert(arch.columns[2].type_info.id == typeid_of(T3), "component type/order does not match arch_table__init", loc = loc)
+        }
+
+        offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
+        v1, v2, v3 := v1, v2, v3
+        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, 1, &v2, size_of(T2))
+        command_buffer__write_arch_payload_column(self, arch, offset, 2, &v3, size_of(T3))
+        return command_buffer__append(self, cmd)
+    }
+
+    command_buffer__arch_add_entity4 :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, v1: $T1, v2: $T2, v3: $T3, v4: $T4, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(arch_table__is_valid(arch), loc = loc)
+            assert(len(arch.columns) == 4, "Arch_Table does not have exactly 4 columns", loc = loc)
+            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
+            assert(arch.columns[1].type_info.id == typeid_of(T2), "component type/order does not match arch_table__init", loc = loc)
+            assert(arch.columns[2].type_info.id == typeid_of(T3), "component type/order does not match arch_table__init", loc = loc)
+            assert(arch.columns[3].type_info.id == typeid_of(T4), "component type/order does not match arch_table__init", loc = loc)
+        }
+
+        offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
+        v1, v2, v3, v4 := v1, v2, v3, v4
+        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, 1, &v2, size_of(T2))
+        command_buffer__write_arch_payload_column(self, arch, offset, 2, &v3, size_of(T3))
+        command_buffer__write_arch_payload_column(self, arch, offset, 3, &v4, size_of(T4))
+        return command_buffer__append(self, cmd)
+    }
+
+    // Record: remove an entity's row from an Arch_Table (whole row, every
+    // column). Reuses Command_Kind.Remove_Component — shared_table__remove_component's
+    // Table_Type.Arch_Table case already does the right whole-row removal.
+    command_buffer__remove_entity_for_arch_table :: proc(self: ^Command_Buffer, table: ^Arch_Table, eid: entity_id, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(arch_table__is_valid(table), loc = loc)
+        }
+        return command_buffer__record_simple(self, Command_Kind.Remove_Component, cast(^Shared_Table) table, eid, loc)
+    }
+
     command_buffer__add_tag :: proc(self: ^Command_Buffer, table: ^Tag_Table, eid: entity_id, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(tag_table__is_valid(table), loc = loc)
@@ -342,6 +422,16 @@ package ode_ecs
                     if derr != nil && err == nil do err = derr
 
                 case Command_Kind.Add_Component:
+                    if !command__table_matches(cmd) {
+                        skipped += 1
+                        continue
+                    }
+                    data := rawptr(uintptr(raw_data(self.payload)) + uintptr(cmd.payload_offset))
+                    _, aerr := shared_table__add_component(cmd.table, cmd.eid, data)
+                    if aerr == API_Error.Component_Already_Exist do aerr = nil // overwrite: last write wins
+                    if aerr != nil && err == nil do err = aerr
+
+                case Command_Kind.Arch_Add_Entity:
                     if !command__table_matches(cmd) {
                         skipped += 1
                         continue
@@ -461,6 +551,54 @@ package ode_ecs
     }
 
     @(private)
+    // Reserves a payload_size-byte slot (aligned to the widest column) for an
+    // Arch_Add_Entity command and returns the ready-to-append Command header;
+    // callers copy each column's value in at arch.col_payload_offsets[i] via
+    // command_buffer__write_arch_payload_column, then command_buffer__append it.
+    command_buffer__record_arch_add_header :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, loc := #caller_location) -> (offset: int, cmd: Command, err: Error) {
+        when VALIDATIONS {
+            assert(command_buffer__is_valid(self), loc = loc)
+            assert(!self.replaying, loc = loc)
+            assert(arch.db == self.db, loc = loc)
+            assert(eid.ix >= 0, loc = loc)
+        }
+
+        // Command capacity first: a payload bump for a command that never
+        // lands would leak arena space.
+        if self.count >= len(self.commands) do return 0, Command{}, oc.Core_Error.Container_Is_Full
+
+        max_align := 1
+        for col in arch.columns {
+            if col.type_info.align > max_align do max_align = col.type_info.align
+        }
+
+        base := uintptr(raw_data(self.payload))
+        aligned := mem.align_forward_uintptr(base + uintptr(self.payload_used), uintptr(max_align))
+        off := int(aligned - base)
+        if off + arch.payload_size > len(self.payload) do return 0, Command{}, oc.Core_Error.Container_Is_Full
+
+        self.payload_used = off + arch.payload_size
+
+        cmd = Command{
+            kind = Command_Kind.Arch_Add_Entity,
+            eid = eid,
+            table = cast(^Shared_Table) arch,
+            table_id = arch.id,
+            payload_offset = off,
+            payload_size = arch.payload_size,
+        }
+
+        return off, cmd, nil
+    }
+
+    @(private)
+    command_buffer__write_arch_payload_column :: #force_inline proc(self: ^Command_Buffer, arch: ^Arch_Table, offset: int, col_index: int, value: rawptr, size: int) {
+        base := uintptr(raw_data(self.payload)) + uintptr(offset)
+        dst := rawptr(base + uintptr(arch.col_payload_offsets[col_index]))
+        mem.copy(dst, value, size)
+    }
+
+    @(private)
     // Is the recorded table still the table it was at record time?
     // shared_table__clear_state (terminate) resets state/type/id, and a
     // terminate + re-init as a different table changes id; an Add whose
@@ -477,6 +615,11 @@ package ode_ecs
         if cmd.kind == Command_Kind.Add_Component {
             ti := shared_table__type_info(t)
             if ti == nil || ti.size != cmd.payload_size do return false
+        }
+
+        if cmd.kind == Command_Kind.Arch_Add_Entity {
+            if t.type != Table_Type.Arch_Table do return false
+            if (cast(^Arch_Table) t).payload_size != cmd.payload_size do return false
         }
 
         return true

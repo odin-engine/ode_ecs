@@ -60,6 +60,9 @@ package ode_ecs
                     // tags carry no component data; this slot is never read
                     // (kept without a map probe, matching the old always-nil ref)
                     self.rids[cid] = u32(VIEW_NO_RID)
+                case Table_Type.Arch_Table:
+                    // shared index across every column, same direct load as Table
+                    self.rids[cid] = (cast(^Arch_Table) table).eid_to_rid[eid.ix]
             }
         }
     }
@@ -102,6 +105,23 @@ package ode_ecs
     view_row__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
         #no_bounds_check {
             return &table.rows[view_row.raw.rids[view_row.view.tid_to_cid[table.id]]]
+        }
+    }
+
+    @(private)
+    // Arch_Table columns don't participate in Iterator's it.dense fast path
+    // (only Table_Type.Table columns can be Aligned — see view__dense_resolve),
+    // so this is always the rid-indirection path, same shape as the
+    // Compact_Table/Tiny_Table accessors below. col_idx is resolved by a
+    // linear scan every call (no per-View caching, unlike Arch_Iterator's
+    // col_idx cache) — this proc is new, isolated, and only reachable when a
+    // caller explicitly asks for an Arch_Table column, so it cannot regress
+    // any existing Table/Compact_Table/Tiny_Table read path.
+    view_row__get_component_for_arch_table :: #force_inline proc "contextless" (table: ^Arch_Table, view_row: ^View_Row, $T: typeid) -> ^T #no_bounds_check {
+        #no_bounds_check {
+            rid := view_row.raw.rids[view_row.view.tid_to_cid[table.id]]
+            col_idx := arch_table__column_index(table, typeid_of(T))
+            return arch_table__component_ptr_by_col(table, rid, col_idx, T)
         }
     }
 
@@ -648,6 +668,14 @@ package ode_ecs
     view__get_component_for_tiny_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Tiny_Table($T)) -> ^T {
         #no_bounds_check {
             return &table.rows[rec.rids[self.tid_to_cid[table.id]]]
+        }
+    }
+
+    view__get_component_for_arch_table :: #force_inline proc "contextless" (self: ^View, rec: ^View_Row_Raw, table: ^Arch_Table, $T: typeid) -> ^T {
+        #no_bounds_check {
+            rid := rec.rids[self.tid_to_cid[table.id]]
+            col_idx := arch_table__column_index(table, typeid_of(T))
+            return arch_table__component_ptr_by_col(table, rid, col_idx, T)
         }
     }
 

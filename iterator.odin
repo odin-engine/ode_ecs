@@ -183,12 +183,112 @@ package ode_ecs
         return
     }
 
+    // for-in sugar family over Table($T) columns, like iterate1..4 but also
+    // returning the entity id (no separate get_entity(&it) call needed) and
+    // extended to arity 7, matching Arch_Iterator's next1..next7. Preferred
+    // over iterate1..4 going forward — iterate1..4 remain for compatibility.
+    // for eid, v1 in ecs.next(&it, &t1) { ... }
+    // The 0-arg case is plain iterator__next (bool advance, in the same `next`
+    // group): for ecs.next(&it) { eid := ecs.get_entity(&it); ... }.
+    iterator__next1 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1)) -> (eid: entity_id, v1: ^T1, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+        }
+        return
+    }
+
+    iterator__next2 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2)) -> (eid: entity_id, v1: ^T1, v2: ^T2, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+        }
+        return
+    }
+
+    iterator__next3 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3)) -> (eid: entity_id, v1: ^T1, v2: ^T2, v3: ^T3, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+        }
+        return
+    }
+
+    iterator__next4 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3), t4: ^Table($T4)) -> (eid: entity_id, v1: ^T1, v2: ^T2, v3: ^T3, v4: ^T4, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+            v4 = iterator__get_component_for_table(t4, it)
+        }
+        return
+    }
+
+    iterator__next5 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3), t4: ^Table($T4), t5: ^Table($T5)) -> (eid: entity_id, v1: ^T1, v2: ^T2, v3: ^T3, v4: ^T4, v5: ^T5, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+            v4 = iterator__get_component_for_table(t4, it)
+            v5 = iterator__get_component_for_table(t5, it)
+        }
+        return
+    }
+
+    iterator__next6 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3), t4: ^Table($T4), t5: ^Table($T5), t6: ^Table($T6)) -> (eid: entity_id, v1: ^T1, v2: ^T2, v3: ^T3, v4: ^T4, v5: ^T5, v6: ^T6, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+            v4 = iterator__get_component_for_table(t4, it)
+            v5 = iterator__get_component_for_table(t5, it)
+            v6 = iterator__get_component_for_table(t6, it)
+        }
+        return
+    }
+
+    iterator__next7 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3), t4: ^Table($T4), t5: ^Table($T5), t6: ^Table($T6), t7: ^Table($T7)) -> (eid: entity_id, v1: ^T1, v2: ^T2, v3: ^T3, v4: ^T4, v5: ^T5, v6: ^T6, v7: ^T7, cond: bool) {
+        cond = iterator__next(it)
+        if cond {
+            eid = iterator__get_entity(it)
+            v1 = iterator__get_component_for_table(t1, it)
+            v2 = iterator__get_component_for_table(t2, it)
+            v3 = iterator__get_component_for_table(t3, it)
+            v4 = iterator__get_component_for_table(t4, it)
+            v5 = iterator__get_component_for_table(t5, it)
+            v6 = iterator__get_component_for_table(t6, it)
+            v7 = iterator__get_component_for_table(t7, it)
+        }
+        return
+    }
+
     iterator__get_component_for_compact_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
         return view_row__get_component_for_compact_table(table, &it.view_row)
     }
 
     iterator__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
         return view_row__get_component_for_tiny_table(table, &it.view_row)
+    }
+
+    // Arch_Table columns don't participate in it.dense (only Table_Type.Table
+    // columns can be Aligned) — always the rid-indirection path, like
+    // Compact_Table/Tiny_Table above. Not part of iterator__next1..7 (those
+    // stay Table($T)-only, see their doc comment) — read an Arch_Table column
+    // inside a mixed View manually: iterator_next(&it) + get_component(&arch, &it, T).
+    iterator__get_component_for_arch_table :: #force_inline proc "contextless" (table: ^Arch_Table, it: ^Iterator, $T: typeid) -> ^T #no_bounds_check {
+        return view_row__get_component_for_arch_table(table, &it.view_row, T)
     }
 
     iterator__get_entity :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {

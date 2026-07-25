@@ -77,6 +77,7 @@ package ode_ecs
         create_entity :: proc {
             database__create_entity,
             overbase__create_entity,
+            arch_table__create_entity,
         }
 
         // Generation of entity does not match the one in provided entity_id
@@ -138,7 +139,8 @@ package ode_ecs
         group_init          :: group__init                          // Take exclusive ownership of tables; members stay in an aligned prefix
         group_terminate     :: group__terminate
         group_len           :: group__len                           // Number of entities in the group
-        group_dense_slice   :: group__dense_slice                   // Members' components of one owned table as a contiguous slice, always aligned
+        // Members' components of one owned table as a contiguous slice, always aligned
+        group_dense_slice   :: proc{group__dense_slice, group__dense_slice_arch}
         group_rebuild       :: group__rebuild                       // Rebuild membership from scratch (normally maintained incrementally)
 
     //
@@ -148,6 +150,38 @@ package ode_ecs
         iterator_next       :: iterator__next
         iterator_reset      :: iterator__reset
         iterate             :: proc{iterator__iterate1, iterator__iterate2, iterator__iterate3, iterator__iterate4} // for-in sugar: for v1, v2 in iterate(&it, &t1, &t2) { ... }; Table($T) columns only
+
+    //
+    // Arch_Iterator (dense iterator directly over an Arch_Table's own rows, see
+    // arch_iterator.odin)
+    //
+        arch_iterator_init  :: arch_iterator__init
+        arch_iterator_reset :: arch_iterator__reset
+        // for-in sugar over an Arch_Table's own columns: for eid, pos, ai in next(&it, Position, AI) { ... }.
+        // Component types are supplied per call (up to 7), not bound at arch_iterator_init.
+        // The 0-arg overload (next(&it)) returns just the entity id — no column
+        // resolution at all; fetch components afterward via arch_table__get_component.
+        // Also covers Iterator (View-based): for eid, v1, v2 in next(&it, &t1, &t2) { ... },
+        // Table($T) columns only, like iterate — but next also returns eid and goes up to
+        // arity 7. Preferred over iterate going forward; iterate stays for compatibility.
+        next                 :: proc{
+            arch_iterator__next,
+            arch_iterator__next1,
+            arch_iterator__next2,
+            arch_iterator__next3,
+            arch_iterator__next4,
+            arch_iterator__next5,
+            arch_iterator__next6,
+            arch_iterator__next7,
+            iterator__next,
+            iterator__next1,
+            iterator__next2,
+            iterator__next3,
+            iterator__next4,
+            iterator__next5,
+            iterator__next6,
+            iterator__next7,
+        }
 
     //
     // Command_Buffer (deferred structural operations, see command_buffer.odin)
@@ -177,6 +211,17 @@ package ode_ecs
             command_buffer__remove_component_for_table,
             command_buffer__remove_component_for_compact_table,
             command_buffer__remove_component_for_tiny_table,
+            command_buffer__remove_entity_for_arch_table,
+        }
+
+        // Record: add an Arch_Table row with its values (see arch_table.odin's
+        // "all-or-nothing" note — an archetype has no per-component add, so this
+        // is its own group rather than an overload of cmd_add_component)
+        cmd_arch_add_entity :: proc {
+            command_buffer__arch_add_entity1,
+            command_buffer__arch_add_entity2,
+            command_buffer__arch_add_entity3,
+            command_buffer__arch_add_entity4,
         }
 
         cmd_set_parent      :: command_buffer__set_parent         // Record: make one entity the parent of another
@@ -225,6 +270,7 @@ package ode_ecs
             compact_table__get_entity_by_row_number,
             tiny_table__get_entity_by_row_number,
             tag_table__get_entity_by_row_number,
+            arch_table__get_entity_by_row_number,
             iterator__get_entity,
             view_row__get_entity,
         }
@@ -235,6 +281,7 @@ package ode_ecs
             compact_table__get_entity_by_row_number,
             tiny_table__get_entity_by_row_number,
             tag_table__get_entity_by_row_number,
+            arch_table__get_entity_by_row_number,
         }
 
         //
@@ -277,6 +324,11 @@ package ode_ecs
             view_row__get_component_for_table,
             view_row__get_component_for_compact_table,
             view_row__get_component_for_tiny_table,
+            arch_table__get_component,
+            arch_table__get_component_by_row,
+            iterator__get_component_for_arch_table,
+            view__get_component_for_arch_table,
+            view_row__get_component_for_arch_table,
         }
 
         // Check if entity has component in different tables
@@ -285,6 +337,7 @@ package ode_ecs
             compact_table__has_component,
             tiny_table__has_component,
             tag_table__has_tag,
+            arch_table__has_entity,
         }
 
         // Copy components between tables of the same type
@@ -329,6 +382,7 @@ package ode_ecs
             view__clear,
             tiny_table__clear,
             tag_table__clear,
+            arch_table__clear,
             relations_table__clear,
             command_buffer__clear,
         }
@@ -340,6 +394,7 @@ package ode_ecs
             compact_table__pack,
             tiny_table__pack,
             tag_table__pack,
+            arch_table__pack,
             group__pack,
         }
 
@@ -355,6 +410,7 @@ package ode_ecs
             compact_table__pause_packing,
             tiny_table__pause_packing,
             tag_table__pause_packing,
+            arch_table__pause_packing,
             group__pause_packing,
         }
 
@@ -365,6 +421,7 @@ package ode_ecs
             compact_table__resume_packing,
             tiny_table__resume_packing,
             tag_table__resume_packing,
+            arch_table__resume_packing,
             group__resume_packing,
         }
 
@@ -373,6 +430,7 @@ package ode_ecs
             compact_table__len,
             tiny_table__len,
             tag_table__len,
+            arch_table__len,
             relations_table__len,
         }
 
@@ -381,9 +439,10 @@ package ode_ecs
             compact_table__cap,
             tiny_table__cap,
             tag_table__cap,
+            arch_table__cap,
             relations_table__cap,
         }
- 
+
         // Memory in bytes
         memory_usage        :: proc {
             database__memory_usage,
@@ -394,6 +453,7 @@ package ode_ecs
             group__memory_usage,
             tiny_table__memory_usage,
             tag_table__memory_usage,
+            arch_table__memory_usage,
             relations_table__memory_usage,
             command_buffer__memory_usage,
         }
@@ -408,6 +468,7 @@ package ode_ecs
             group__is_valid,
             tiny_table__is_valid,
             tag_table__is_valid,
+            arch_table__is_valid,
             relations_table__is_valid,
             command_buffer__is_valid,
         }
@@ -443,6 +504,7 @@ package ode_ecs
             Tiny_Table,
             Compact_Table,
             Tag_Table,
+            Arch_Table,
         }
 
         // ECS specific errors

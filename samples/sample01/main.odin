@@ -16,9 +16,7 @@ package ode_ecs_sample1
 // Core
     import "core:fmt"
     import "core:log"
-    import "core:slice"
     import "core:mem"
-    import "core:math"
     import "core:math/rand"
     import "core:time"
      
@@ -115,23 +113,19 @@ main :: proc() {
     //
 
         iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
-            pos: ^Position
-            ph: ^Physical
             err: ecs.Error
             it: ecs.Iterator
 
             err = ecs.iterator_init(&it, view)
             if err != nil { report_error(err); return }
 
-            for ecs.iterator_next(&it) {
+            for _, pos, ph in ecs.next(&it, positions, physics) {
 
                 // Doing some calculations on components
 
-                pos = ecs.get_component(positions, &it)
                 pos.x += 34
                 pos.y += 7
 
-                ph = ecs.get_component(physics, &it)
                 ph.velocity += 0.4
                 ph.mass += 0.1
             }

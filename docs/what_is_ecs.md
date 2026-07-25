@@ -41,7 +41,7 @@ movement_system :: proc(view: ^View) {
 	it: ecs.Iterator
 	ecs.iterator_init(&it, view)
 	
-	for pos, vel in ecs.iterate(&it, &positions, &velocities) {
+	for _, pos, vel in ecs.next(&it, &positions, &velocities) {
 		pos.x += vel.dx
 		pos.y += vel.dy
 	}

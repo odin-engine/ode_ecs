@@ -12,12 +12,7 @@ package ode_ecs_sample5
 // Core
     import "core:fmt"
     import "core:log"
-    import "core:slice"
     import "core:mem"
-    import "core:math"
-    import "core:math/rand"
-    import "core:time"
-    import "core:testing"
      
 // ODE_ECS
     import ecs "../../"
@@ -110,7 +105,7 @@ main :: proc() {
         is_bird_alive := false
         is_chair_alive := false
 
-        for ecs.iterator_next(&it) {
+        for ecs.next(&it) {
             eid = ecs.get_entity(&it)
 
             if eid == human do is_human_alive = true
@@ -134,7 +129,7 @@ main :: proc() {
         is_bird_alive = false  
         is_chair_alive = false
 
-        for ecs.iterator_next(&it) {
+        for ecs.next(&it) {
             eid = ecs.get_entity(&it)
 
             if eid == human do is_human_alive = true
@@ -177,7 +172,7 @@ main :: proc() {
         is_bird_alive = false  
         is_chair_alive = false
 
-        for ecs.iterator_next(&it) {
+        for ecs.next(&it) {
             eid = ecs.get_entity(&it)
 
             if eid == human do is_human_alive = true
@@ -235,7 +230,7 @@ main :: proc() {
         is_bird_alive = false  
         is_chair_alive = false
 
-        for ecs.iterator_next(&it3) {
+        for ecs.next(&it3) {
             eid = ecs.get_entity(&it3)
 
             if eid == human do is_human_alive = true
@@ -337,7 +332,7 @@ main :: proc() {
         // Print list of moving entities (not idle)
         fmt.println()
         fmt.println(ecs.view_len(&view4), "entities are moving (not idle):")
-        for ecs.iterator_next(&it4) {
+        for ecs.next(&it4) {
             eid = ecs.get_entity(&it4)
 
             movement := ecs.get_component(&movement_table, &it4)
@@ -359,7 +354,7 @@ main :: proc() {
         fmt.println()
         fmt.println("View is not updated:")
         ecs.iterator_reset(&it4)
-        for ecs.iterator_next(&it4) {
+        for ecs.next(&it4) {
             eid = ecs.get_entity(&it4)
 
             movement := ecs.get_component(&movement_table, &it4)
@@ -381,7 +376,7 @@ main :: proc() {
         fmt.println()
         fmt.println("Now view is updated after we rerun filters:")
         ecs.iterator_reset(&it4)
-        for ecs.iterator_next(&it4) {
+        for ecs.next(&it4) {
             eid = ecs.get_entity(&it4)
 
             movement := ecs.get_component(&movement_table, &it4)
@@ -412,7 +407,7 @@ main :: proc() {
         fmt.println("Entities with Movement that are NOT tagged alive (all three are tagged, so none):")
         err = ecs.iterator_init(&it5, &view5)
         if err != nil { report_error(err); return }
-        for ecs.iterator_next(&it5) {
+        for ecs.next(&it5) {
             eid = ecs.get_entity(&it5)
 
             switch eid {
@@ -430,7 +425,7 @@ main :: proc() {
         fmt.println("After untagging chair (auto-updated, no rebuild):")
         err = ecs.iterator_reset(&it5)
         if err != nil { report_error(err); return }
-        for ecs.iterator_next(&it5) {
+        for ecs.next(&it5) {
             eid = ecs.get_entity(&it5)
 
             switch eid {

@@ -55,7 +55,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F) // "ODEECSDB" as little-endian bytes
 
     @(private)
-    SNAPSHOT_VERSION :: u32(2)
+    SNAPSHOT_VERSION :: u32(3) // bumped: Snap_Table_Header grew a column_count field for Arch_Table
 
     // Written and compared as a raw u32: a snapshot produced on a machine with
     // different endianness reads back as a different value and is rejected.
@@ -89,11 +89,22 @@ package ode_ecs
         table_id:   i64,
         table_type: i32, // Table_Type
         _pad:       i32,
-        comp_size:  i64, // 0 for Tag_Table
-        comp_align: i64, // 0 for Tag_Table
+        comp_size:  i64, // 0 for Tag_Table/Arch_Table (Arch_Table has no single component type)
+        comp_align: i64, // 0 for Tag_Table/Arch_Table
         cap:        i64, // informational; load only requires len <= target cap
         len:        i64,
-        name_len:   i64, // "pkg.Name" of the component type; 0 for Tag_Table/unnamed
+        name_len:   i64, // "pkg.Name" of the component type; 0 for Tag_Table/Arch_Table/unnamed
+        column_count: i64, // Arch_Table only: number of columns: a Snap_Arch_Column_Header
+                            // + name follows per column, before the shared rid_to_eid blob. 0 for every other table type.
+    }
+
+    @(private)
+    // One per Arch_Table column, written column_count times right after the
+    // Snap_Table_Header, each followed by the column's "pkg.Name" bytes + pad8.
+    Snap_Arch_Column_Header :: struct #packed {
+        comp_size:  i64,
+        comp_align: i64,
+        name_len:   i64,
     }
 
     @(private)
@@ -273,6 +284,8 @@ package ode_ecs
                 return (cast(^Tiny_Table_Base) table).holes_count
             case Table_Type.Tag_Table:
                 return (cast(^Tag_Table) table).holes_count
+            case Table_Type.Arch_Table:
+                return (cast(^Arch_Table) table).holes_count
         }
         return 0
     }
@@ -333,14 +346,27 @@ package ode_ecs
 
             n := shared_table__snapshot_len(table)
 
-            ti := shared_table__type_info(table)
-            if ti != nil {
-                size = snap__align8(size + snapshot__name_len(ti))
-                size += n * size_of(entity_id)          // rid_to_eid
-                size = snap__align8(size + n * ti.size) // rows
+            if table.type == Table_Type.Arch_Table {
+                at := cast(^Arch_Table) table
+                for col in at.columns {
+                    size += size_of(Snap_Arch_Column_Header)
+                    size = snap__align8(size + snapshot__name_len(col.type_info))
+                }
+                size += n * size_of(entity_id) // shared rid_to_eid
+                size = snap__align8(size)
+                for col in at.columns {
+                    size = snap__align8(size + n * col.type_info.size) // one column's rows
+                }
             } else {
-                // Tag_Table: rows are the entity ids themselves
-                size += n * size_of(entity_id)
+                ti := shared_table__type_info(table)
+                if ti != nil {
+                    size = snap__align8(size + snapshot__name_len(ti))
+                    size += n * size_of(entity_id)          // rid_to_eid
+                    size = snap__align8(size + n * ti.size) // rows
+                } else {
+                    // Tag_Table: rows are the entity ids themselves
+                    size += n * size_of(entity_id)
+                }
             }
         }
 
@@ -443,6 +469,9 @@ package ode_ecs
             th.comp_align = i64(ti.align)
             th.name_len = i64(snapshot__name_len(ti))
         }
+        if table.type == Table_Type.Arch_Table {
+            th.column_count = i64(len((cast(^Arch_Table) table).columns))
+        }
         snap_writer__write(w, &th, size_of(th))
 
         switch table.type {
@@ -472,6 +501,27 @@ package ode_ecs
             case Table_Type.Tag_Table:
                 tt := cast(^Tag_Table) table
                 snap_writer__write(w, raw_data(tt.rows), n * size_of(entity_id))
+            case Table_Type.Arch_Table:
+                at := cast(^Arch_Table) table
+
+                for col in at.columns {
+                    cih := Snap_Arch_Column_Header{
+                        comp_size  = i64(col.type_info.size),
+                        comp_align = i64(col.type_info.align),
+                        name_len   = i64(snapshot__name_len(col.type_info)),
+                    }
+                    snap_writer__write(w, &cih, size_of(cih))
+                    snap_writer__write_name(w, col.type_info)
+                    snap_writer__pad8(w)
+                }
+
+                snap_writer__write(w, raw_data(at.rid_to_eid), n * size_of(entity_id))
+                snap_writer__pad8(w)
+
+                for col in at.columns {
+                    snap_writer__write(w, raw_data(col.rows), n * col.type_info.size)
+                    snap_writer__pad8(w)
+                }
         }
     }
 
@@ -750,37 +800,74 @@ package ode_ecs
             name_len := int(th.name_len)
             if name_len < 0 do return API_Error.Snapshot_Invalid
 
-            ti := shared_table__type_info(table)
-            if ti != nil {
-                if int(th.comp_size) != ti.size || int(th.comp_align) != ti.align {
-                    return API_Error.Snapshot_Schema_Mismatch
-                }
-                name_bytes := snap_reader__bytes(&r, name_len) or_return
-                if !snapshot__name_matches(ti, name_bytes) do return API_Error.Snapshot_Schema_Mismatch
-                snap_reader__pad8(&r) or_return
+            if table.type == Table_Type.Arch_Table {
+                at := cast(^Arch_Table) table
 
-                eids := snap_reader__entity_ids(&r, n) or_return
-                for eid in eids {
-                    // every row's entity must be alive in the id-space this
-                    // load trusts (the snapshot's own, or the live Overbase)
-                    snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
-                    // ...and appear at most once in this section: a duplicate
-                    // would produce two live rows aliasing one index entry
-                    if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
-                    stamps[eid.ix] = i32(section_ix + 1)
-                }
-                _ = snap_reader__bytes(&r, n * ti.size) or_return // rows blob
-                snap_reader__pad8(&r) or_return
-            } else {
-                // Tag_Table
                 if th.comp_size != 0 || th.comp_align != 0 || name_len != 0 {
                     return API_Error.Snapshot_Schema_Mismatch
                 }
+                if int(th.column_count) != len(at.columns) do return API_Error.Snapshot_Schema_Mismatch
+
+                for col in at.columns {
+                    cih: Snap_Arch_Column_Header
+                    snap_reader__read(&r, &cih, size_of(cih)) or_return
+                    if int(cih.comp_size) != col.type_info.size || int(cih.comp_align) != col.type_info.align {
+                        return API_Error.Snapshot_Schema_Mismatch
+                    }
+                    cname_len := int(cih.name_len)
+                    if cname_len < 0 do return API_Error.Snapshot_Invalid
+                    cname_bytes := snap_reader__bytes(&r, cname_len) or_return
+                    if !snapshot__name_matches(col.type_info, cname_bytes) do return API_Error.Snapshot_Schema_Mismatch
+                    snap_reader__pad8(&r) or_return
+                }
+
                 eids := snap_reader__entity_ids(&r, n) or_return
                 for eid in eids {
                     snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
                     if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
                     stamps[eid.ix] = i32(section_ix + 1)
+                }
+                snap_reader__pad8(&r) or_return
+
+                for col in at.columns {
+                    _ = snap_reader__bytes(&r, n * col.type_info.size) or_return // rows blob
+                    snap_reader__pad8(&r) or_return
+                }
+            } else {
+                if th.column_count != 0 do return API_Error.Snapshot_Schema_Mismatch
+
+                ti := shared_table__type_info(table)
+                if ti != nil {
+                    if int(th.comp_size) != ti.size || int(th.comp_align) != ti.align {
+                        return API_Error.Snapshot_Schema_Mismatch
+                    }
+                    name_bytes := snap_reader__bytes(&r, name_len) or_return
+                    if !snapshot__name_matches(ti, name_bytes) do return API_Error.Snapshot_Schema_Mismatch
+                    snap_reader__pad8(&r) or_return
+
+                    eids := snap_reader__entity_ids(&r, n) or_return
+                    for eid in eids {
+                        // every row's entity must be alive in the id-space this
+                        // load trusts (the snapshot's own, or the live Overbase)
+                        snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
+                        // ...and appear at most once in this section: a duplicate
+                        // would produce two live rows aliasing one index entry
+                        if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
+                        stamps[eid.ix] = i32(section_ix + 1)
+                    }
+                    _ = snap_reader__bytes(&r, n * ti.size) or_return // rows blob
+                    snap_reader__pad8(&r) or_return
+                } else {
+                    // Tag_Table
+                    if th.comp_size != 0 || th.comp_align != 0 || name_len != 0 {
+                        return API_Error.Snapshot_Schema_Mismatch
+                    }
+                    eids := snap_reader__entity_ids(&r, n) or_return
+                    for eid in eids {
+                        snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
+                        if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
+                        stamps[eid.ix] = i32(section_ix + 1)
+                    }
                 }
             }
         }
@@ -968,6 +1055,36 @@ package ode_ecs
                     oc_maps.rh_map32__add(&tt.eid_to_rid, u32(eid.ix), u32(rid)) or_return
                     uni_bits__add(&db.eid_to_bits[eid.ix], tt.id)
                 }
+            case Table_Type.Arch_Table:
+                at := cast(^Arch_Table) table
+
+                for col in at.columns {
+                    cih: Snap_Arch_Column_Header
+                    snap_reader__read(r, &cih, size_of(cih)) or_return
+                    _ = snap_reader__bytes(r, int(cih.name_len)) or_return
+                    snap_reader__pad8(r) or_return
+                }
+
+                eids := snap_reader__entity_ids(r, n) or_return
+                snap_reader__pad8(r) or_return
+
+                #no_bounds_check for rid in 0..<n {
+                    at.rid_to_eid[rid] = eids[rid]
+                }
+
+                for &col in at.columns {
+                    elem_size := col.type_info.size
+                    snap_reader__read(r, raw_data(col.rows), n * elem_size) or_return
+                    snap_reader__pad8(r) or_return
+                }
+
+                #no_bounds_check for rid in 0..<n {
+                    eid := eids[rid]
+                    at.eid_to_rid[eid.ix] = u32(rid)
+                    uni_bits__add(&db.eid_to_bits[eid.ix], at.id)
+                }
+
+                at.len = n
         }
 
         return nil

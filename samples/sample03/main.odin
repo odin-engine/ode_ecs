@@ -162,23 +162,19 @@ main :: proc() {
     //
 
         iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
-            pos: ^Position
-            ph: ^Physical
             err: ecs.Error
             it: ecs.Iterator
 
             err = ecs.iterator_init(&it, view)
             if err != nil { report_error(err); return }
 
-            for ecs.iterator_next(&it) {
+            for _, pos, ph in ecs.next(&it, positions, physics) {
 
                 // Doing some calculations on components
 
-                pos = ecs.get_component(positions, &it)
                 pos.x += it.raw_index
                 pos.y += it.raw_index
 
-                ph = ecs.get_component(physics, &it)
                 ph.velocity += cast(f32) it.raw_index
                 ph.mass += cast(f32) it.raw_index
             }

@@ -57,6 +57,8 @@ package ode_ecs
                 compact_table_raw__terminate(cast(^Compact_Table_Raw)self) or_return
             case Table_Type.Tag_Table:
                 tag_table__terminate(cast(^Tag_Table)self) or_return
+            case Table_Type.Arch_Table:
+                arch_table__terminate(cast(^Arch_Table)self) or_return
         }
 
         //shared_table__clear_state(self)
@@ -86,7 +88,9 @@ package ode_ecs
                 return compact_table_base__is_valid(cast(^Compact_Table_Base) self)
             case Table_Type.Tag_Table:
                 return tag_table__is_valid(cast(^Tag_Table)self)
-        } 
+            case Table_Type.Arch_Table:
+                return arch_table__is_valid(cast(^Arch_Table)self)
+        }
 
         assert(false) // should not happen
         return true
@@ -104,6 +108,8 @@ package ode_ecs
                 return compact_table_base__memory_usage(cast(^Compact_Table_Base) self)
             case Table_Type.Tag_Table:
                 return tag_table__memory_usage(cast(^Tag_Table)self)
+            case Table_Type.Arch_Table:
+                return arch_table__memory_usage(cast(^Arch_Table) self)
         } 
 
         assert(false) // should not happen
@@ -122,6 +128,8 @@ package ode_ecs
                 return compact_table_raw__len(cast(^Compact_Table_Raw)self)
             case Table_Type.Tag_Table:
                 return tag_table__len(cast(^Tag_Table)self)
+            case Table_Type.Arch_Table:
+                return arch_table__len(cast(^Arch_Table)self)
         } 
 
         assert(false) // should not happen
@@ -140,6 +148,8 @@ package ode_ecs
                 return compact_table_base__cap(cast(^Compact_Table_Base)self)
             case Table_Type.Tag_Table:
                 return tag_table__cap(cast(^Tag_Table)self)
+            case Table_Type.Arch_Table:
+                return arch_table__cap(cast(^Arch_Table)self)
         } 
 
         assert(false) // should not happen
@@ -169,6 +179,9 @@ package ode_ecs
                 return t.rid_to_eid[:len(t.rows)] // same rows-len convention as Table
             case Table_Type.Tag_Table:
                 return (cast(^Tag_Table) self).rows
+            case Table_Type.Arch_Table:
+                t := cast(^Arch_Table) self
+                return t.rid_to_eid[:t.len]
         }
 
         assert(false) // should not happen
@@ -187,6 +200,8 @@ package ode_ecs
                 return compact_table_base__get_entity_by_row_number(cast(^Compact_Table_Base) self, row_number)
             case Table_Type.Tag_Table:
                return tag_table__get_entity_by_row_number(cast(^Tag_Table) self, row_number)
+            case Table_Type.Arch_Table:
+                return arch_table__get_entity_by_row_number(cast(^Arch_Table) self, row_number)
         } 
 
         assert(false) // should not happen
@@ -218,7 +233,9 @@ package ode_ecs
                 return compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
             case Table_Type.Tag_Table:
                 return nil // no component for tag_table
-        } 
+            case Table_Type.Arch_Table:
+                return nil // multi-column row has no single "the" component; use arch_table__get_component(self, eid, $T) instead
+        }
 
         assert(false) // should not happen
         return nil
@@ -241,6 +258,8 @@ package ode_ecs
                 return compact_table_raw__add_component(cast(^Compact_Table_Raw) self, eid, data)
             case Table_Type.Tag_Table:
                 return nil, tag_table__add_tag(cast(^Tag_Table) self, eid) // no component data
+            case Table_Type.Arch_Table:
+                return arch_table__add_entity_from_payload(cast(^Arch_Table) self, eid, data)
         }
 
         assert(false) // should not happen
@@ -261,6 +280,8 @@ package ode_ecs
                 // No component data, but the tag entry itself must be removed so
                 // destroying a tagged entity doesn't leave a stale tag behind.
                 return tag_table__remove_tag(cast(^Tag_Table) self, eid)
+            case Table_Type.Arch_Table:
+                return arch_table__remove_entity(cast(^Arch_Table) self, eid)
         }
 
         assert(false) // should not happen
@@ -281,6 +302,8 @@ package ode_ecs
                 return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
             case Table_Type.Tag_Table:
                 return tag_table__pack(cast(^Tag_Table) self)
+            case Table_Type.Arch_Table:
+                return arch_table__pack(cast(^Arch_Table) self)
         }
 
         assert(false) // should not happen
@@ -305,7 +328,9 @@ package ode_ecs
                 return compact_table_raw__clear(cast(^Compact_Table_Raw) self)
             case Table_Type.Tag_Table:
                 return tag_table__clear(cast(^Tag_Table)self)
-        } 
+            case Table_Type.Arch_Table:
+                return arch_table__clear(cast(^Arch_Table) self)
+        }
 
         return API_Error.Unexpected_Error
     }
@@ -326,7 +351,9 @@ package ode_ecs
                 return compact_table_base__attach_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__attach_subscriber(cast(^Tag_Table)self, view)
-        } 
+            case Table_Type.Arch_Table:
+                return arch_table__attach_subscriber(cast(^Arch_Table)self, view)
+        }
 
         return API_Error.Unexpected_Error
     }
@@ -344,6 +371,8 @@ package ode_ecs
                 return compact_table_base__detach_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__detach_subscriber(cast(^Tag_Table)self, view)
+            case Table_Type.Arch_Table:
+                return arch_table__detach_subscriber(cast(^Arch_Table)self, view)
         }
 
         return API_Error.Unexpected_Error
@@ -364,6 +393,8 @@ package ode_ecs
                 return compact_table_base__attach_exclude_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__attach_exclude_subscriber(cast(^Tag_Table)self, view)
+            case Table_Type.Arch_Table:
+                return arch_table__attach_exclude_subscriber(cast(^Arch_Table)self, view)
         }
 
         return API_Error.Unexpected_Error
@@ -382,6 +413,8 @@ package ode_ecs
                 return compact_table_base__detach_exclude_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__detach_exclude_subscriber(cast(^Tag_Table)self, view)
+            case Table_Type.Arch_Table:
+                return arch_table__detach_exclude_subscriber(cast(^Arch_Table)self, view)
         }
 
         return API_Error.Unexpected_Error

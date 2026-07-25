@@ -16,12 +16,7 @@ package ode_ecs_sample4
 // Core
     import "core:fmt"
     import "core:log"
-    import "core:slice"
     import "core:mem"
-    import "core:math"
-    import "core:math/rand"
-    import "core:time"
-    import "core:testing"
      
 // ODE_ECS
     import ecs "../../"
@@ -274,7 +269,7 @@ main :: proc() {
         fmt.println()
         fmt.println("Iterating over view that is on top of Tiny_Table, Table, Compact_Table and Tag_Table tables:")
         fmt.println("--------------------------------------------------------------")
-        for ecs.iterator_next(&it) {
+        for ecs.next(&it) {
             eid := ecs.get_entity(&it)  
 
             pos := ecs.get_component(&pos_table, &it)

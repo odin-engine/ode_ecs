@@ -28,9 +28,23 @@ The group can be created before or after entities exist — `group_init` builds 
 
 **Ownership rules:**
 
-- Only the plain `Table` type can be owned (not `Compact_Table`, `Tiny_Table`, or `Tag_Table`) — the group needs dense rows it is allowed to reorder. Owning a `Compact_Table` returns `API_Error.Only_Table_Can_Be_Owned_By_Group`.
+- Only `Table` and [`Arch_Table`](arch_table.md) can be owned (not `Compact_Table`, `Tiny_Table`, or `Tag_Table`) — the group needs dense rows it is allowed to reorder. Owning a `Compact_Table` returns `API_Error.Only_Table_Can_Be_Owned_By_Group`.
 - A table can be owned by **at most one** group (`API_Error.Table_Already_Owned_By_Group`). Terminate the owning group to free its tables for another group.
 - Groups have no filters — membership is purely "has all owned components". If you need a filter, use a [View](view.md#filters).
+
+### Owning an Arch_Table
+
+A group can own a mix of `Table`s and `Arch_Table`s — an `Arch_Table` counts as membership in every one of its columns at once (an entity is either in the archetype or not), and a whole-row swap moves every owned column of that archetype in one call:
+
+```odin
+units: ecs.Arch_Table // Position + AI
+
+ecs.arch_table__init(&units, &my_ecs, 100_000, {Position, AI})
+ecs.group_init(&group, &my_ecs, {&velocities, &units}) // Velocity AND (Position+AI)
+
+pos_slice := ecs.group_dense_slice(&group, &units, Position) // note the extra $T argument
+ai_slice  := ecs.group_dense_slice(&group, &units, AI)
+```
 
 ## Iterating
 
@@ -111,7 +125,7 @@ ecs.resume_packing(&my_group) // packs this group's owned tables, then rebuilds 
 
 This is useful to isolate one group from a concurrent database-wide (or another group's) pause/resume cycle — e.g. one thread mutates this group's tables while another thread runs a database-wide pause elsewhere. The two compose (OR together): if the database is also paused, the group stays deferred until *both* its own `resume_packing` and the database-wide one have run. `ecs.pack(&my_group)` packs the group's owned tables mid-pause without rebuilding (the group stays dirty until an explicit `resume_packing`).
 
-A `Table` owned by this group cannot be paused on its own (`ecs.pause_packing(&owned_table)` returns `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group`) — pausing one owned table without the others would desync the lock-step row alignment the group depends on. Pause the group instead.
+A `Table` or `Arch_Table` owned by this group cannot be paused on its own (`ecs.pause_packing(&owned_table)` returns `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group`) — pausing one owned table without the others would desync the lock-step row alignment the group depends on. Pause the group instead.
 
 ## Lifecycle
 

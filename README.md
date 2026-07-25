@@ -3,6 +3,8 @@
 
 ⚡A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
+Remember when you had to [choose between a sparse-dense and an archetype ECS](/docs/ecs_types.md)? Not anymore—ODE_ECS supports both architectures, so you can pick the best approach for your specific use case, **or even mix them**.
+
 ### Features:
 
 * **Simple and type-safe API.**
@@ -10,6 +12,7 @@
 * **Preallocated design** — zero hidden memory allocations during the game loop.
 * **$O(1)$ operations** — all core operations(create/destroy entity, add/remove component, etc.) are constant time.
 * **Custom allocator support.**
+* **Low-level** — means you have more control and options to tune the ECS to your needs.
 * **Maximum cache efficiency** — no additional metadata is stored alongside components.
 * **Ultra-fast iterations** — iterating over components or views is highly optimized (no skipping empty or deleted slots; data is 100% dense for optimal cache locality).
 * **Unlimited component types** (default maximum is 128, easily configured).
@@ -39,6 +42,8 @@ Components are saved in [Tables](#table), with each component type having its ow
 What if you need to iterate over entities with a specific combination of components, such as AI, Network, and Position? While we could query the appropriate tables, doing so every frame is highly inefficient.
 
 Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
+
+Instead of Tables, you can use an **archetype approach** with [Arch_Table](/docs/arch_table.md) (read about the benefits and drawbacks [here](/docs/ecs_types.md)). You can even **mix both architectures** — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
 This is the main part of ODE_ECS.
 
@@ -135,7 +140,7 @@ To iterate over components in a table, you can do this:
 Or this:  
 
 ```odin
-    for i := 0; i < ecs.table_len(positions); i += 1 {
+    for i := 0; i < ecs.table_len(&positions); i += 1 {
         pos := &positions.rows[i]
         fmt.println(pos^)
     }
@@ -198,7 +203,7 @@ To iterate over views, you need to use an `Iterator`:
 
     ecs.iterator_init(&it, &view1)
 
-    for ecs.iterator_next(&it) {
+    for ecs.next(&it) {
         // ...
     }
 ```  
@@ -210,7 +215,7 @@ To get an entity or its components inside the iterator loop, you can do this:
     pos: ^Position // Position component
     ai: ^AI        // AI component
 
-    for ecs.iterator_next(&it) {
+    for ecs.next(&it) {
         // To get the entity
         eid = ecs.get_entity(&it)
 
@@ -224,11 +229,11 @@ To get an entity or its components inside the iterator loop, you can do this:
     }
 ```
 
-Or, as a one-liner with `ecs.iterate` — same `it`, `get_component` fused into the `for` (Table-only columns; see [docs/view.md](/docs/view.md) for details):
+Or, as a one-liner with `ecs.next` — same `it`, `get_entity`/`get_component` fused into the `for` (Table-only columns, component counts 0-7; see [docs/view.md](/docs/view.md) for details):
 
 ```odin
-    for pos, ai in ecs.iterate(&it, &positions, &ais) {
-        // do something with pos and ai components
+    for eid, pos, ai in ecs.next(&it, &positions, &ais) {
+        // do something with eid, pos and ai
     }
 ```
 
@@ -289,16 +294,16 @@ Then you can tag or untag entities like this:
     view : ecs.View
 
     // create a view for all entities that have AI, Position components, and the alive tag
-    ecs.view_init(&view, &db, {&ais, &positions, &is_alive_table})
+    ecs.view_init(&view, &db, {&ais, &positions, &is_alive})
 ```
 
 You can iterate over tagged entities like this:
 
 ```odin
-    // iterate over entities tagged in is_alive_table
+    // iterate over entities tagged in is_alive
     fmt.println("Tagged entities:")
-    for eid in is_alive_table.rows {
-        fmt.println("Entity tagged in `is_alive_table`:", eid)
+    for eid in is_alive.rows {
+        fmt.println("Entity tagged in `is_alive`:", eid)
     }
 ```
 
@@ -350,7 +355,7 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 
 ### ⏸️ Pausing a single table or group
 
-`pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
+`pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`, `Arch_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
 
 ```Odin
 ecs.pause_packing(&monsters)          // pause just this table

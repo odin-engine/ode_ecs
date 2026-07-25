@@ -882,14 +882,15 @@ package ode_ecs__tests
 
         //
         // Case 8: duplicate row eid within the positions section. The section
-        // starts after the header (56 bytes) and the entity-id blob
+        // starts after the Snapshot_Header (56 bytes) and the entity-id blob
         // (saved_cap * 8, no freed entries here); its eids array starts after
-        // the 56-byte table header and the padded type-name string.
+        // the 64-byte Snap_Table_Header (grew by one i64 — column_count, added
+        // for Arch_Table, see SNAPSHOT_VERSION 3) and the padded type-name string.
         //
             copy(corrupt, buf)
             section_off := 56 + ENTITIES_CAP * 8
             name_len := (slice.reinterpret([]i64, corrupt[section_off:][:56]))[6] // name_len field
-            eids_off := section_off + 56 + int((name_len + 7) &~ 7)
+            eids_off := section_off + 64 + int((name_len + 7) &~ 7)
             section_eids := slice.reinterpret([]ecs.entity_id, corrupt[eids_off:][:2 * size_of(ecs.entity_id)])
             testing.expect(t, section_eids[0] == p && section_eids[1] == c1) // layout sanity
             section_eids[1] = p

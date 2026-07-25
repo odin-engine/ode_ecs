@@ -16,9 +16,7 @@ package ode_ecs_sample2
 // Core
     import "core:fmt"
     import "core:log"
-    import "core:slice"
     import "core:mem"
-    import "core:math"
     import "core:math/rand"
     import "core:time"
      

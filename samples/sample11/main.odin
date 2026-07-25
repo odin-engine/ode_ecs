@@ -73,17 +73,14 @@ package ode_ecs_sample11
         w.err = ecs.iterator_init(&it, w.view, w.start_row, w.end_row)
         if w.err != nil do return
 
-        for ecs.iterator_next(&it) {
-            pos := ecs.get_component(w.positions, &it)
-            vel := ecs.get_component(w.velocities, &it)
-
+        for eid, pos, vel in ecs.next(&it, w.positions, w.velocities) {
             pos.x += vel.dx
             pos.y += vel.dy
 
             if pos.x > WORLD_BOUND {
                 // NOT ecs.destroy_entity — a structural change would mutate
                 // shared bookkeeping mid-iteration; record it instead
-                w.err = ecs.cmd_destroy_entity(&w.cb, ecs.get_entity(&it))
+                w.err = ecs.cmd_destroy_entity(&w.cb, eid)
                 if w.err != nil do return
                 w.out_of_bounds += 1
             }

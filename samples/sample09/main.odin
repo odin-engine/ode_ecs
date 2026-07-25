@@ -118,10 +118,7 @@ main :: proc() {
         err = ecs.iterator_init(&it, &view)
         if err != nil { report_error(err); return }
 
-        for ecs.iterator_next(&it) {
-            eid := ecs.get_entity(&it)
-            health := ecs.get_component(&healths, &it)
-
+        for eid, health in ecs.next(&it, &healths) {
             // "kill" entities that are at 0 hp — deferred until replay
             if health.hp <= 0 {
                 err = ecs.cmd_destroy_entity(&cb, eid)

@@ -6,8 +6,6 @@ package ode_ecs_basics
 
 // Core
     import "core:fmt"
-    import "core:mem"
-    import "core:slice"
 
 // ODE_ECS
     import ecs "../../"
@@ -101,16 +99,7 @@ main :: proc() {
 
     ecs.iterator_init(&it, &view)
 
-    for ecs.iterator_next(&it) {
-        // Get entity with iterator
-        eid = ecs.get_entity(&it)
-
-        // Get Position component with iterator
-        pos1 = ecs.get_component(&positions, &it)
-
-        // Get AI component with iterator
-        ai = ecs.get_component(&ais, &it)
-
+    for eid, pos1, ai in ecs.next(&it, &positions, &ais) {
         fmt.println("Iterating over view: ", eid, pos1, ai)
     }
 

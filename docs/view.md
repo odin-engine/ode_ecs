@@ -38,7 +38,7 @@ ecs.rebuild(&view) // O(n) over the smallest included table
 it: ecs.Iterator
 ecs.iterator_init(&it, &view)
 
-for ecs.iterator_next(&it) {
+for ecs.next(&it) {
     eid := ecs.get_entity(&it)
     pos := ecs.get_component(&positions, &it)
     ai  := ecs.get_component(&ais, &it)
@@ -48,19 +48,23 @@ for ecs.iterator_next(&it) {
 }
 ```
 
+`ecs.next(&it)` with no table arguments just advances the cursor and reports whether a row is left (same proc as the old `ecs.iterator_next`, now folded into the unified `next` name) — fetch the entity/components yourself, as above.
+
 Mutating component **values** while iterating is fine. Structural changes (add/remove component, create/destroy entity) are not reflected by a running iterator — call `ecs.iterator_reset(&it)` after them, or avoid structural changes mid-loop (see [pause_packing](database.md#pausing-tail-swap-mutating-tables-while-iterating) for removal-while-iterating patterns).
 
-Or, as a one-liner with `ecs.iterate` — same `it`, same loop, `get_component` fused into the `for`:
+Or, pass the tables you want read as extra arguments to fuse `get_entity`/`get_component` into the same call — same `it`, same loop, and the entity id comes back too:
 
 ```odin
-for pos, ai in ecs.iterate(&it, &positions, &ais) {
-    // do something with pos and ai components
+for eid, pos, ai in ecs.next(&it, &positions, &ais) {
+    fmt.println(eid, pos, ai)
 }
 ```
 
-`ecs.iterate` only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `view_dense_slice` below). It's plain sugar over the loop above: `iterator_next` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix it with manual `iterator_next`/`get_component` calls on that `it` in the same or a different loop.
+The typed form only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `view_dense_slice` below, and same restriction `Arch_Table` columns have, see [Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view)). It's plain sugar over the loop above: cursor-advance plus `get_entity` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix the 0-arg and typed forms on that `it` in the same or a different loop.
 
-Component counts 1 through 4 are supported (`for pos in ecs.iterate(&it, &positions) { ... }` up to `for a, b, c, d in ecs.iterate(&it, &t1, &t2, &t3, &t4) { ... }`).
+Component counts 0 through 7 are supported: `for ecs.next(&it) { ... }` (no columns, manual `get_entity`/`get_component`) up to `for eid, a, b, c, d, e, f, g in ecs.next(&it, &t1, &t2, &t3, &t4, &t5, &t6, &t7) { ... }`.
+
+> `ecs.iterate` (component counts 1–4, no entity id in the return) still exists and works exactly as before — `ecs.next` is the newer, preferred form going forward.
 
 ### Batched iteration
 
