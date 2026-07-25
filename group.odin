@@ -7,7 +7,7 @@
     maintains this invariant: the entities that have ALL owned components occupy
     the contiguous prefix [0, group.len) of every owned table, at the SAME row
     index in each. Where a View *detects* alignment, a Group *enforces* it by
-    swapping table rows on add/remove — so group_dense_slice is always valid:
+    swapping table rows on add/remove — so dense_slice is always valid:
     no rid records, no rescans, iteration is a raw SoA sweep at table speed.
 
     Cost model: add_component that completes a group membership (and
@@ -17,7 +17,7 @@
     Deferred tail swap (database__pause_packing): group maintenance would move
     rows, which pause forbids, so membership changes while paused only mark the
     group dirty; database__resume_packing rebuilds dirty groups after packing.
-    While dirty, group_dense_slice returns nil.
+    While dirty, dense_slice returns nil.
 */
 package ode_ecs
 
@@ -188,7 +188,7 @@ package ode_ecs
 
     // Batch (dense) access: the owned `table`'s components of all group members, in
     // group order, as one contiguous slice — table.rows[:group_len]. Unlike
-    // view_dense_slice this needs no alignment check: the group maintains it.
+    // dense_slice this needs no alignment check: the group maintains it.
     //
     // Slices for different owned tables of one group share indexing: slice_a[i] and
     // slice_b[i] belong to the same entity (get it with get_entity(table, i)).

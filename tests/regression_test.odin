@@ -219,13 +219,13 @@ package ode_ecs__tests
 
         // membership change deferred by the group's own pause
         testing.expect(t, ecs.remove_component(&vel, eids[1]) == nil)
-        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil)
+        testing.expect(t, ecs.dense_slice(&group, &pos) == nil)
 
         // db-wide resume packs owned tables but the group stays dirty: it is
         // still independently paused, so group__rebuild re-defers
         testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, db.tail_swap_paused == false)
-        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "group must still be dirty: its own pause survived")
+        testing.expect(t, ecs.dense_slice(&group, &pos) == nil, "group must still be dirty: its own pause survived")
 
         testing.expect(t, ecs.resume_packing(&group) == nil)
         testing.expect(t, ecs.group_len(&group) == 2)

@@ -176,13 +176,13 @@ main :: proc() {
         time.stopwatch_reset(&sw) // NOTE: Stopwatch accumulates; reset before every measurement
         time.stopwatch_start(&sw)
 
-            for &comp, index in table.rows {
+            for &comp, index in ecs.dense_slice(&table) {
                 eid = ecs.get_entity(&table, index)
 
                 comp.hp += eid.ix  // random operation over component
                 comp.max_hp += eid.ix
-            }    
-        
+            }
+
         time.stopwatch_stop(&sw)
         _, _, _, smaller_table_time := time.precise_clock_from_stopwatch(sw)
 
@@ -193,13 +193,13 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in compact_table.rows {
+            for &comp, index in ecs.dense_slice(&compact_table) {
                 eid = ecs.get_entity(&compact_table, index)
 
                 comp.hp += eid.ix  // random operation over component
                 comp.max_hp += eid.ix
-            }    
-        
+            }
+
         time.stopwatch_stop(&sw)
         _, _, _, smaller_compact_table_time := time.precise_clock_from_stopwatch(sw)
 
@@ -210,13 +210,13 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in large_table.rows {
+            for &comp, index in ecs.dense_slice(&large_table) {
                 eid = ecs.get_entity(&large_table, index)
 
                 comp.hp += eid.ix  // random operation over component
                 comp.max_hp += eid.ix
-            }    
-        
+            }
+
         time.stopwatch_stop(&sw)
         _, _, _, large_table_time := time.precise_clock_from_stopwatch(sw)
 
@@ -227,7 +227,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in large_compact_table.rows {
+            for &comp, index in ecs.dense_slice(&large_compact_table) {
                 eid = ecs.get_entity(&large_compact_table, index)
 
                 comp.hp += eid.ix  // random operation over component
@@ -286,8 +286,14 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
+            // ecs.dense_slice bound once, outside the repeat loop —
+            // rebinding it fresh each rep would still beat reading tiny_table.rows
+            // directly inside the loop (see table__dense_slice's doc comment for
+            // why), but there's no reason to pay even that when the table's rows
+            // don't change across repeats.
+            tiny_dense := ecs.dense_slice(&tiny_table)
             for rep := 0; rep < REPEAT; rep += 1 {
-                for &comp, index in tiny_table.rows {
+                for &comp, index in tiny_dense {
                     eid = ecs.get_entity(&tiny_table, index)
 
                     comp.hp += eid.ix + rep  // random operation over component
@@ -306,8 +312,9 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
+            compact8_dense := ecs.dense_slice(&compact_table8)
             for rep := 0; rep < REPEAT; rep += 1 {
-                for &comp, index in compact_table8.rows {
+                for &comp, index in compact8_dense {
                     eid = ecs.get_entity(&compact_table8, index)
 
                     comp.hp += eid.ix + rep  // random operation over component
@@ -325,8 +332,9 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
+            table8_dense := ecs.dense_slice(&table8)
             for rep := 0; rep < REPEAT; rep += 1 {
-                for &comp, index in table8.rows {
+                for &comp, index in table8_dense {
                     eid = ecs.get_entity(&table8, index)
 
                     comp.hp += eid.ix + rep  // random operation over component

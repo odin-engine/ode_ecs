@@ -192,9 +192,9 @@ main :: proc() {
 
         fmt.println("Group size (Health AND units):", ecs.group_len(&group))
 
-        health_slice := ecs.group_dense_slice(&group, &healths)
-        pos_slice := ecs.group_dense_slice(&group, &units, Position)
-        vel_slice := ecs.group_dense_slice(&group, &units, Velocity)
+        health_slice := ecs.dense_slice(&group, &healths)
+        pos_slice := ecs.dense_slice(&group, &units, Position)
+        vel_slice := ecs.dense_slice(&group, &units, Velocity)
 
         fmt.println("Group slices (aligned — index i is the same entity in all three):")
         for i in 0..<ecs.group_len(&group) {

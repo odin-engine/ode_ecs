@@ -294,7 +294,7 @@ package ode_ecs
     }
 
     // Components of one column in row order as one contiguous slice — the
-    // archetype's own rows are already packed, so (unlike view_dense_slice)
+    // archetype's own rows are already packed, so (unlike dense_slice)
     // this needs no alignment check.
     @(require_results)
     arch_table__dense_slice :: proc(self: ^Arch_Table, $T: typeid) -> []T {

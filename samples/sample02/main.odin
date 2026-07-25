@@ -277,7 +277,7 @@ main :: proc() {
         // Approach 1
         time.stopwatch_start(&sw)
 
-            for &en, index in all_enemies.rows {
+            for &en, index in ecs.dense_slice(&all_enemies) {
 
                 if en.dead {
                     en.id += 1
@@ -288,7 +288,7 @@ main :: proc() {
                 }
 
             }
-        
+
         time.stopwatch_stop(&sw)
         _, _, _, nanos1 := time.precise_clock_from_stopwatch(sw)
 
@@ -296,15 +296,15 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &en, index in dead_enemies.rows {
+            for &en, index in ecs.dense_slice(&dead_enemies) {
                 en.id += 1
             }
 
-            for &en, index in frenzy_enemies.rows {
+            for &en, index in ecs.dense_slice(&frenzy_enemies) {
                 en.id += 2
             }
 
-            for &en, index in normal_enemies.rows {
+            for &en, index in ecs.dense_slice(&normal_enemies) {
                 en.id += 3
             }
 
@@ -320,7 +320,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &en, index in all_enemies_with_payload.rows {
+            for &en, index in ecs.dense_slice(&all_enemies_with_payload) {
 
                 if en.dead {
                     en.id += 1
@@ -331,7 +331,7 @@ main :: proc() {
                 }
 
             }
-        
+
         time.stopwatch_stop(&sw)
         _, _, _, nanos1_with_payload := time.precise_clock_from_stopwatch(sw)
 
@@ -339,15 +339,15 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &en, index in dead_enemies_with_payload.rows {
+            for &en, index in ecs.dense_slice(&dead_enemies_with_payload) {
                 en.id += 1
             }
 
-            for &en, index in frenzy_enemies_with_payload.rows {
+            for &en, index in ecs.dense_slice(&frenzy_enemies_with_payload) {
                 en.id += 2
             }
 
-            for &en, index in normal_enemies_with_payload.rows {
+            for &en, index in ecs.dense_slice(&normal_enemies_with_payload) {
                 en.id += 3
             }
 

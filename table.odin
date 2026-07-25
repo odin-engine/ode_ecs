@@ -755,8 +755,8 @@ package ode_ecs
     // reloads the `rows` pointer from `t` after every store — measured ~30-40%
     // slower on a 1M-entity single-component sweep. Returning the slice by
     // value from a call (inlined or not) gives the caller a fresh local with
-    // no such aliasing concern, closing the gap. Mirrors view_dense_slice /
-    // group_dense_slice / arch_table__dense_slice for the other table types.
+    // no such aliasing concern, closing the gap. Mirrors dense_slice /
+    // dense_slice / arch_table__dense_slice for the other table types.
     @(require_results)
     table__dense_slice :: #force_inline proc "contextless" (self: ^Table($T)) -> []T {
         return self.rows

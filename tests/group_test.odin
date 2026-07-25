@@ -31,8 +31,8 @@ package ode_ecs__tests
         }
         testing.expect(t, ecs.group_len(group) == expected, "group_len != number of entities having all owned components")
 
-        ps := ecs.group_dense_slice(group, pos)
-        vs := ecs.group_dense_slice(group, vel)
+        ps := ecs.dense_slice(group, pos)
+        vs := ecs.dense_slice(group, vel)
         testing.expect(t, len(ps) == ecs.group_len(group))
         testing.expect(t, len(vs) == ecs.group_len(group))
 
@@ -78,7 +78,7 @@ package ode_ecs__tests
         group__verify(t, &group, &pos, &vel)
 
         // not an owned table => nil slice
-        testing.expect(t, ecs.group_dense_slice(&group, &extra) == nil)
+        testing.expect(t, ecs.dense_slice(&group, &extra) == nil)
 
         // removing an owned component removes the entity from the group
         testing.expect(t, ecs.remove_component(&vel, eids[0]) == nil)
@@ -177,7 +177,7 @@ package ode_ecs__tests
         // terminating an owned table invalidates the group; it can still be terminated
         testing.expect(t, ecs.table_terminate(&vel) == nil)
         testing.expect(t, group_b.state == ecs.Object_State.Invalid)
-        testing.expect(t, ecs.group_dense_slice(&group_b, &pos) == nil)
+        testing.expect(t, ecs.dense_slice(&group_b, &pos) == nil)
         testing.expect(t, ecs.group_terminate(&group_b) == nil)
     }
 
@@ -207,7 +207,7 @@ package ode_ecs__tests
         // a member losing a component while paused defers group maintenance:
         // rows must not move, the group goes dirty and slices turn nil
         testing.expect(t, ecs.remove_component(&vel, eids[3]) == nil)
-        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "dirty group must not hand out slices")
+        testing.expect(t, ecs.dense_slice(&group, &pos) == nil, "dirty group must not hand out slices")
 
         // a membership gained while paused is deferred too
         testing.expect(t, ecs.destroy_entity(&db, eids[7]) == nil)
@@ -283,7 +283,7 @@ package ode_ecs__tests
         // a member losing a component while group-paused defers group
         // maintenance: rows must not move, the group goes dirty
         testing.expect(t, ecs.remove_component(&vel, eids[3]) == nil)
-        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "dirty group must not hand out slices")
+        testing.expect(t, ecs.dense_slice(&group, &pos) == nil, "dirty group must not hand out slices")
         testing.expect(t, pos.holes_count == 0, "no hole yet: eids[3] was still inside the prefix")
 
         // punch a real (non-tail) hole in pos so pack has something to do
@@ -293,7 +293,7 @@ package ode_ecs__tests
         // pack mid-pause compacts holes without rebuilding the group
         testing.expect(t, ecs.pack(&group) == nil)
         testing.expect(t, pos.holes_count == 0)
-        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "still dirty: pack does not rebuild")
+        testing.expect(t, ecs.dense_slice(&group, &pos) == nil, "still dirty: pack does not rebuild")
 
         testing.expect(t, ecs.resume_packing(&group) == nil)
         testing.expect(t, ecs.group_len(&group) == 8) // 10 - eids[3] - eids[5]
@@ -325,7 +325,7 @@ package ode_ecs__tests
 
         // A single-owned-table group trivially contains every row of that table.
         testing.expect(t, ecs.group_len(&group) == 10)
-        ps := ecs.group_dense_slice(&group, &pos)
+        ps := ecs.dense_slice(&group, &pos)
         testing.expect(t, len(ps) == 10)
         for i in 0..<10 {
             eid := ecs.get_entity(&pos, i)
@@ -341,12 +341,12 @@ package ode_ecs__tests
         testing.expect(t, db.tail_swap_paused == false, "group-level pause must not touch the database-wide flag")
 
         testing.expect(t, ecs.remove_component(&pos, eids[0]) == nil)
-        testing.expect(t, ecs.group_dense_slice(&group, &pos) == nil, "dirty group must not hand out slices while paused")
+        testing.expect(t, ecs.dense_slice(&group, &pos) == nil, "dirty group must not hand out slices while paused")
 
         testing.expect(t, ecs.resume_packing(&group) == nil)
         testing.expect(t, ecs.group_len(&group) == 8) // 10 - eids[3] - eids[0]
 
-        ps2 := ecs.group_dense_slice(&group, &pos)
+        ps2 := ecs.dense_slice(&group, &pos)
         testing.expect(t, len(ps2) == 8)
         for i in 0..<8 {
             eid := ecs.get_entity(&pos, i)

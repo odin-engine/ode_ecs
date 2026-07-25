@@ -131,16 +131,13 @@ package ode_ecs
         view_components_match   :: view__components_match           // Returns true if entity has components that would match this view (includes AND excludes), doesn't check filter
         suspend                 :: view__suspend                    // Stop updating view when entities are created/destroyed or components/tags are added/removed
         resume                  :: view__resume                     // Resume updating view after calling suspend
-        view_dense_slice        :: view__dense_slice                // Components in view-row order as one contiguous slice (nil if view is not dense-aligned)
-    
+
     //
     // Group (owned group — enforced dense alignment, see group.odin)
     //
         group_init          :: group__init                          // Take exclusive ownership of tables; members stay in an aligned prefix
         group_terminate     :: group__terminate
         group_len           :: group__len                           // Number of entities in the group
-        // Members' components of one owned table as a contiguous slice, always aligned
-        group_dense_slice   :: proc{group__dense_slice, group__dense_slice_arch}
         group_rebuild       :: group__rebuild                       // Rebuild membership from scratch (normally maintained incrementally)
 
     //
@@ -444,9 +441,18 @@ package ode_ecs
         }
 
         // Live rows in row order as one contiguous slice. Prefer this over
-        // reading a Table's `rows` field directly in a hot loop — see
-        // table__dense_slice's doc comment for why the codegen differs.
-        table_dense_slice   :: table__dense_slice
+        // reading a table's `rows` field directly in a hot loop — see
+        // table__dense_slice's doc comment (table.odin) for why the codegen
+        // differs.
+        dense_slice :: proc {
+            table__dense_slice,
+            compact_table__dense_slice,
+            tiny_table__dense_slice,
+            tag_table__dense_slice,
+            view__dense_slice,          // dense_slice(&view, &table) — nil if the view isn't dense-aligned
+            group__dense_slice,         // dense_slice(&group, &table) — nil while the group is dirty
+            group__dense_slice_arch,    // dense_slice(&group, &arch_table, T) — nil while the group is dirty
+        }
 
         // Memory in bytes
         memory_usage        :: proc {

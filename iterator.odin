@@ -31,7 +31,7 @@ package ode_ecs
         // NOTE (measured dead end): reading per-column dense state here — a mask consulted
         // when only some columns are aligned — costs the fully-dense loop ~60% (the extra
         // path defeats the optimizer) and gains the mixed loop nothing. Per-column
-        // alignment is exposed through view_dense_slice instead.
+        // alignment is exposed through dense_slice instead.
         dense: bool,
     }
 
@@ -140,7 +140,7 @@ package ode_ecs
     // for-in sugar over Table($T) columns: for v1 in ecs.iterate(&it, &t1) { ... }.
     // Equivalent to `for iterator_next(&it) { v1 := get_component(&t1, &it) }` — same
     // dense-fast-path getter, nothing new on the hot path. Table-only (see
-    // view_dense_slice's "Only Table columns participate" note); Compact_Table/
+    // dense_slice's "Only Table columns participate" note); Compact_Table/
     // Tiny_Table columns keep using the manual iterator_next + get_component form.
     iterator__iterate1 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1)) -> (v1: ^T1, cond: bool) {
         cond = iterator__next(it)
