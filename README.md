@@ -41,9 +41,7 @@ What if you need to iterate over entities with a specific combination of compone
 
 Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
 
-Remember when you had to [choose between a sparse-dense and an archetype ECS](/docs/ecs_types.md)? Not anymore — ODE_ECS supports both architectures, so you can pick the best approach for your specific use case, **or even mix them**.
-
-Instead of Tables, you can use an **archetype approach** with [Arch_Table](/docs/arch_table.md). You can even **mix both architectures** — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
+Remember when you had to [choose between a sparse-dense and an archetype ECS](/docs/ecs_types.md)? Not anymore — ODE_ECS supports both architectures. Instead of Tables, you can use an **archetype approach** with [Arch_Table](/docs/arch_table.md). You can even **mix both architectures** — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
 This is the main part of ODE_ECS.
 
