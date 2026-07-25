@@ -75,6 +75,7 @@ Many modern engine designs realize neither approach is universally superior. As 
 
 ODE_ECS supports both **sparse-dense** and **archetype** architectures:
 * **Sparse-Dense Architecture:** Use [Tables](tables.md) (`Table`, `Tag_Table`, `Compact_Table`, `Tiny_Table`) combined with [Views](view.md) and [Groups](group.md).
-* **Archetype Architecture:** Use [Archetype Tables](arch_table.md) (`Arch_Table`).
+* **Archetype Architecture:** Use [`Arch_Table`](arch_table.md).
+* **You can mix both architectures** (e.g., an entity can hold components in Arch_Tables as well as other tables).
 
 Check out the benchmark comparison of these approaches [here](https://github.com/zm69/ecs_bench).
