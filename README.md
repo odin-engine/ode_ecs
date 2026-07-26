@@ -43,7 +43,7 @@ Instead, we use [Views](#-view). Views are _pre-calculated queries_. During deve
 
 [Tag_Table](#️-tag_table) is used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`) and could be very useful with Views.
 
-ODE_ECS supports both sparse-dense and archetype [architectures](/docs/ecs_types.md). Instead of Tables, you can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
+ODE_ECS supports both sparse-dense and archetype [architectures](/docs/ecs_types.md). You can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
 ## 🧩 Database  
  
