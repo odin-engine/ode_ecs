@@ -44,8 +44,14 @@ package ode_ecs
         // You can change this if you want but remember that rows are not dynamically allocated for Tiny_Table and
         // are just a part of Tiny_Table struct.
         TINY_TABLE__ROW_CAP :: 8        // Tiny_Table can contain maximum TINY_TABLE__ROW_CAP number of components
-        TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table 
+        TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table
         TINY_TABLE__MAP_CAP :: 32       // Should be power of 2
+
+        // Maximum number of concurrently-alive Tiny_Tables in one Database — their
+        // View-subscriber bookkeeping (subscribers/subscribers_excluding/subscribers_any_of)
+        // lives in one Database-owned batch pool (tiny_table.odin's Tiny_Table_Subscriber_Slot)
+        // rather than inline in each Tiny_Table, so it needs its own cap.
+        TINY_TABLES_CAP :: #config(ECS_TINY_TABLES_CAP, 32)
 
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases

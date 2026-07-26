@@ -37,6 +37,11 @@ package ode_ecs
 
         eid_to_bits: []Uni_Bits,
 
+        // Batch-allocated View-subscriber bookkeeping for every Tiny_Table in this
+        // Database (see tiny_table.odin's Tiny_Table_Subscriber_Slot) — Tiny_Table_Base
+        // only keeps an index into this slice, not the arrays themselves.
+        tiny_table_subscriber_slots: []Tiny_Table_Subscriber_Slot,
+
         // Optional parent/child relations, at most one per database.
         // Set/unset by relations_table__init / relations_table__terminate.
         relations: ^Relations_Table,
@@ -63,6 +68,7 @@ package ode_ecs
         if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid(&self.groups) do return false
         if self.eid_to_bits == nil do return false
+        if self.tiny_table_subscriber_slots == nil do return false
 
         return true
     }
@@ -92,6 +98,7 @@ package ode_ecs
         oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
         oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
         oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
+        self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, TINY_TABLES_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
 
@@ -130,6 +137,7 @@ package ode_ecs
         oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
         oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
         oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
+        self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, TINY_TABLES_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
 
@@ -167,7 +175,12 @@ package ode_ecs
         }
         oc.dense_arr__terminate(&self.groups, self.allocator) or_return
 
-        // Shared Tables
+        // Shared Tables. Terminating a Tiny_Table here calls
+        // database__detach_tiny_table_subscribers, which writes into
+        // self.tiny_table_subscriber_slots — so that slice must still be live for
+        // this loop, unlike eid_to_bits above (freed early; ranging a nil slice
+        // during a table's own terminate is a harmless no-op, but indexing one
+        // is not).
         for table in self.tables.items {
             if table == nil do continue
             if table.state == Object_State.Normal {
@@ -175,6 +188,11 @@ package ode_ecs
             }
         }
         oc.sparse_arr__terminate(&self.tables, self.allocator) or_return
+
+        if self.tiny_table_subscriber_slots != nil {
+            delete(self.tiny_table_subscriber_slots, self.allocator) or_return
+            self.tiny_table_subscriber_slots = nil
+        }
 
         // Relations_Table is not in self.tables, terminate it explicitly.
         // relations_table__terminate sets self.relations = nil.
@@ -534,6 +552,28 @@ package ode_ecs
     @(private)
     database__detach_table :: proc(self: ^Database, table: ^Shared_Table) {
         oc.sparse_arr__remove_by_index(&self.tables, cast(int) table.id)
+    }
+
+    @(private)
+    // Hands out a slot in tiny_table_subscriber_slots for a newly-init'd Tiny_Table —
+    // same "first free slot" idiom Tiny_Table's own attach_subscriber procs use, just
+    // one level up. Slots are always zero-valued on return (fresh from make(), or
+    // zeroed by database__detach_tiny_table_subscribers on a previous release), so
+    // the caller never needs to clear it itself.
+    database__attach_tiny_table_subscribers :: proc(self: ^Database) -> (slot_id: int, err: Error) {
+        for &slot, i in self.tiny_table_subscriber_slots {
+            if !slot.in_use {
+                slot.in_use = true
+                return i, nil
+            }
+        }
+
+        return DELETED_INDEX, oc.Core_Error.Container_Is_Full
+    }
+
+    @(private)
+    database__detach_tiny_table_subscribers :: proc(self: ^Database, #any_int slot_id: int) {
+        self.tiny_table_subscriber_slots[slot_id] = {}
     }
 
     @(private)

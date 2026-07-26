@@ -290,7 +290,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.tiny_table__init(&tiny, &db) == nil)
 
         // The Invalid view from the previous life must not still be subscribed
-        testing.expect(t, tiny.subscribers[0] == nil)
+        testing.expect(t, tiny.subscribers_count == 0)
 
         // ...and must not receive rows from the re-init'd table
         e1, _ := ecs.create_entity(&db)
