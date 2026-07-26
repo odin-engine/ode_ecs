@@ -3,21 +3,21 @@
 
 ⚡A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
-### Features:
+### What ODE_ECS offers
 
-* **Simple and type-safe API.**
-* **High performance** — if you find a better-performing ECS written in Odin, please open an issue and let me know.
-* **Preallocated design** — zero hidden memory allocations during the game loop.
-* **$O(1)$ operations** — all core operations(create/destroy entity, add/remove component, etc.) are constant time.
-* **Custom allocator support.**
-* **Low-level** — means you have more control and options to tune the ECS to your needs.
-* **Maximum cache efficiency** — no additional metadata is stored alongside components.
-* **Ultra-fast iterations** — iterating over components or views is highly optimized (no skipping empty or deleted slots; data is 100% dense for optimal cache locality).
-* **Unlimited component types** (default maximum is 128, easily configured).
-* **Binary snapshots** — save/load a whole `Database` (entities, components, tags, relations) to a buffer or file; saved `entity_id`s stay valid after loading.
-* **Permissive zlib License** (even more open than MIT or BSD 3-Clause).
-* **Well-[tested](/tests/)** and micro-optimized.
-* **Comprehensive [documentation](/docs/_index.md).**
+- No hidden allocations in the game loop. Capacities are set up front, so there shouldn't be surprise allocations mid-frame.
+- A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Tag_Table](/docs/tables.md#tiny_tablet) (just tags, no data).
+- Supports both sparse-set and archetype styles. [Arch_Table](/docs/arch_table.md) gives you an archetype approach, and it can be combined with regular Tables on the same entity if that's useful for your case.
+- [Views](#-view) — precomputed queries that update automatically as entities and components change, so you don't need to re-query each frame.
+- [Groups](/docs/group.md) — an optional way to get fast, tightly packed iteration over entities that share a set of tables.
+- [Relations](/docs/relations.md) — for modeling parent/child links between entities.
+- [Command buffers](/docs/command_buffer.md) — lets you defer mutations, which can help in multithreaded code.
+- [Pause/resume packing](#️-pausing-a-single-table-or-group) — a way to mutate tables safely while iterating.
+- [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, tags, relations) to a buffer or file, with entity IDs staying valid after reload.
+- [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
+- Also supports custom allocators and keeps data fairly cache-friendly since there's no extra per-row metadata.
+- Well-[tested](/tests/) and micro-optimized.
+- [Documentation](/docs/_index.md).
 
 # How to install
 
@@ -29,7 +29,7 @@ Don't forget to pull the latest changes from time to time. We usually don't brea
 
 # A Brief Explanation
 
-ODE_ECS is a simplified, high-performance, in-memory "relational database" for entities and components.
+ODE_ECS is a high-performance in-memory "database" for entities and components.
 
 Entities are simply IDs (64-bit values). They can be linked to zero or many components, which can be added or removed _dynamically_. All data resides within the components.
 
@@ -41,31 +41,12 @@ What if you need to iterate over entities with a specific combination of compone
 
 Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
 
-Remember when you had to [choose between a sparse-dense and an archetype ECS](/docs/ecs_types.md)? Not anymore — ODE_ECS supports both architectures. Instead of Tables, you can use an **archetype approach** with [Arch_Table](/docs/arch_table.md). You can even **mix both architectures** — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
+[Tag_Table](#️-tag_table) is used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`) and could be very useful with Views.
 
-This is the main part of ODE_ECS.
+ODE_ECS supports both sparse-dense and archetype [architectures](/docs/ecs_types.md). Instead of Tables, you can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
-### Additionally:
-
-* **[Tag_Table](#️-tag_table):** Used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`). Very useful with Views.
-* **[Relation_Table](/docs/relations.md):** Handles parent-child relationships between entities.
-
-### Optionally:
-
-* **[Packing pausing](#mutating-tables-while-iterating-pause_packing--resume_packing--pack):** To defer table mutations (iterate while destroying entities/removing components).
-* **[Groups](/docs/group.md):** For speed optimization (when possible).
-* **[Command_Buffers](/docs/command_buffer.md):** Useful for multithreading and to defer table mutations.
-* **[Compact_Table](/docs/tables.md#compact_tablet) & [Tiny_Table](/docs/tables.md#tiny_tablet):** For memory optimization.
-* **[Serialization](/docs/serialization.md):** A whole `Database` can be serialized into a binary snapshot.
-* **[Overbase](/docs/overbase.md):** Share one entity ID space across multiple Databases.
-
-
-# 🧩 Basics  
-
-An **_Entity_** is simply an ID. All data associated with an entity is stored in its components.  
-
-A **_Component_** represents your data and can be defined using a `struct` or other types in Odin. An entity can have many components.  
-
+## 🧩 Database  
+ 
 An ECS **_Database_** is a database similar to a relational database instance, but for entities and components. Other ECS libraries refer to this concept as _Worlds_ or _Scenes_. However, I believe `Database` is a better term because a single game world can use multiple ECS databases, and a single game scene can also use multiple ECS databases.  
 
 When initializing a `Database`, you can specify the maximum `entities_cap` as well as the allocator:  
