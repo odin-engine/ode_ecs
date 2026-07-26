@@ -24,6 +24,7 @@
 
 #### Tested & Documented 
 - Well [tested](/tests/) and comprehensively [documented](/docs/_index.md).
+- Includes [samples](/docs/_index.md#-samples) for all main features.
 
 # How to install
 
