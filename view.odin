@@ -694,7 +694,7 @@ package ode_ecs
     //
     // The slice is invalidated by any structural change (add/remove component, create/destroy
     // entity); do not hold on to it across such changes.
-    view__dense_slice :: proc "contextless" (self: ^View, table: ^Table($T)) -> []T {
+    view__slice :: proc "contextless" (self: ^View, table: ^Table($T)) -> []T {
         if self == nil || table == nil do return nil
         if self.state != Object_State.Normal do return nil
         if int(table.id) < 0 || int(table.id) >= len(self.tid_to_cid) do return nil
@@ -764,7 +764,7 @@ package ode_ecs
 
     @(private)
     // One column's alignment rescan, aborts on first mismatch. Called lazily
-    // (iterator init/reset, view__dense_slice) when the column's state is Unknown.
+    // (iterator init/reset, view__slice) when the column's state is Unknown.
     view__dense_col_rescan :: proc "contextless" (self: ^View, #any_int cid: int) -> bool {
         #no_bounds_check if self.tables.items[cid].type != Table_Type.Table do return false
 

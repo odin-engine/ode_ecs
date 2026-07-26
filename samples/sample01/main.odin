@@ -132,7 +132,7 @@ main :: proc() {
         }
 
         iterate_over_table :: proc (table: ^ecs.Table(AI)) {
-            for &ai in ecs.dense_slice(table) {
+            for &ai in ecs.slice(table) {
                 // Doing some calculations on components
                 ai.neurons_count += 1 
             }

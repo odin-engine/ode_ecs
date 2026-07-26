@@ -92,7 +92,7 @@ main :: proc() {
 
         // iterate over entities tagged in is_alive_table
         fmt.println("Tagged entities:")
-        for eid in ecs.dense_slice(&is_alive_table) {
+        for eid in ecs.slice(&is_alive_table) {
             fmt.println("Entity tagged in `is_alive_table`:", eid)
         }
 

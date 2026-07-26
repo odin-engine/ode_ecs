@@ -658,12 +658,12 @@ package ode_ecs
     }
 
     // Live rows in row order as one contiguous slice — `rows` itself is
-    // already length-bounded to the live row count. See table__dense_slice's
+    // already length-bounded to the live row count. See table__slice's
     // doc comment (table.odin) for why returning it by value from a call,
     // rather than reading the `rows` field directly in a hot loop, matters
     // for codegen, not just convenience.
     @(require_results)
-    compact_table__dense_slice :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> []T {
+    compact_table__slice :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> []T {
         return self.rows
     }
 

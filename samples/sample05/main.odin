@@ -176,7 +176,7 @@ main :: proc() {
         time.stopwatch_reset(&sw) // NOTE: Stopwatch accumulates; reset before every measurement
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.dense_slice(&table) {
+            for &comp, index in ecs.slice(&table) {
                 eid = ecs.get_entity(&table, index)
 
                 comp.hp += eid.ix  // random operation over component
@@ -193,7 +193,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.dense_slice(&compact_table) {
+            for &comp, index in ecs.slice(&compact_table) {
                 eid = ecs.get_entity(&compact_table, index)
 
                 comp.hp += eid.ix  // random operation over component
@@ -210,7 +210,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.dense_slice(&large_table) {
+            for &comp, index in ecs.slice(&large_table) {
                 eid = ecs.get_entity(&large_table, index)
 
                 comp.hp += eid.ix  // random operation over component
@@ -227,7 +227,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.dense_slice(&large_compact_table) {
+            for &comp, index in ecs.slice(&large_compact_table) {
                 eid = ecs.get_entity(&large_compact_table, index)
 
                 comp.hp += eid.ix  // random operation over component
@@ -286,12 +286,12 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            // ecs.dense_slice bound once, outside the repeat loop —
+            // ecs.slice bound once, outside the repeat loop —
             // rebinding it fresh each rep would still beat reading tiny_table.rows
-            // directly inside the loop (see table__dense_slice's doc comment for
+            // directly inside the loop (see table__slice's doc comment for
             // why), but there's no reason to pay even that when the table's rows
             // don't change across repeats.
-            tiny_dense := ecs.dense_slice(&tiny_table)
+            tiny_dense := ecs.slice(&tiny_table)
             for rep := 0; rep < REPEAT; rep += 1 {
                 for &comp, index in tiny_dense {
                     eid = ecs.get_entity(&tiny_table, index)
@@ -312,7 +312,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            compact8_dense := ecs.dense_slice(&compact_table8)
+            compact8_dense := ecs.slice(&compact_table8)
             for rep := 0; rep < REPEAT; rep += 1 {
                 for &comp, index in compact8_dense {
                     eid = ecs.get_entity(&compact_table8, index)
@@ -332,7 +332,7 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            table8_dense := ecs.dense_slice(&table8)
+            table8_dense := ecs.slice(&table8)
             for rep := 0; rep < REPEAT; rep += 1 {
                 for &comp, index in table8_dense {
                     eid = ecs.get_entity(&table8, index)

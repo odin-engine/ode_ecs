@@ -13,15 +13,15 @@
 
     Scenarios:
         iter_table          direct sweep of table.rows (the speed ceiling)
-        iter_dense_slice    dense_slice sweep (dense/aligned fast path)
+        iter_dense_slice    slice sweep (dense/aligned fast path)
         iter_dense_it       Iterator over a dense-aligned 2-column view
         iter_mixed_it       Iterator over a misaligned 2-column view (pointer path)
         iter_mixed_1col_it  Iterator over the same view reading only the still-aligned
                             column (pointer path)
-        iter_mixed_1col_sl  same single-column read via dense_slice — possible
+        iter_mixed_1col_sl  same single-column read via slice — possible
                             because alignment is tracked per column, not per view
         iter_group_slice    both columns of the same population via an owned group
-                            (dense_slice) — enforced alignment, raw SoA sweep
+                            (slice) — enforced alignment, raw SoA sweep
         iter_arch_slice     both columns of an Arch_Table (Position+Velocity) via
                             arch_table__dense_slice — always aligned, no group needed
         iter_arch_it        same Arch_Table via Arch_Iterator + ecs.next(&it, T1, T2)
@@ -74,7 +74,7 @@
       validation is effectively free.
     - Per-column dense reads in Iterator (mask consulted when only some view
       columns are aligned): cost the fully-dense loop ~60% and gained the mixed
-      loop nothing. Per-column alignment lives in dense_slice instead.
+      loop nothing. Per-column alignment lives in slice instead.
     - Bits pre-filter on remove notifications (skip view__remove_record when
       view.bits can't be a subset of the entity's bits): churn 10.9 -> 12.0,
       churn_partial 9.4 -> 10.2 ns/op at CHURN_N=500K shuffled — its own
@@ -411,8 +411,8 @@ bench_iter_dense_slice :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-        ps := ecs.dense_slice(&both, &positions)
-        vs := ecs.dense_slice(&both, &velocities)
+        ps := ecs.slice(&both, &positions)
+        vs := ecs.slice(&both, &velocities)
         if ps == nil || vs == nil do panic("expected dense-aligned view")
         for i in 0..<len(ps) {
             s += ps[i].x + vs[i].dx
@@ -513,7 +513,7 @@ bench_iter_mixed_1col :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-        vs := ecs.dense_slice(&m_both, &m_velocities)
+        vs := ecs.slice(&m_both, &m_velocities)
         if vs == nil do panic("expected vel column dense-aligned")
         for i in 0..<len(vs) {
             s += vs[i].dx
@@ -523,7 +523,7 @@ bench_iter_mixed_1col :: proc() {
         best = min(best, elapsed_ns(&sw))
         g_sink += f64(s)
     }
-    if ecs.dense_slice(&m_both, &m_positions) != nil do panic("expected pos column misaligned")
+    if ecs.slice(&m_both, &m_positions) != nil do panic("expected pos column misaligned")
     report("iter_mixed_1col_sl", best, ops)
 }
 
@@ -566,8 +566,8 @@ bench_iter_group_slice :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-        ps := ecs.dense_slice(&g_group, &g_positions)
-        vs := ecs.dense_slice(&g_group, &g_velocities)
+        ps := ecs.slice(&g_group, &g_positions)
+        vs := ecs.slice(&g_group, &g_velocities)
         if ps == nil || vs == nil do panic("expected group slices")
         for i in 0..<len(ps) {
             s += ps[i].x + vs[i].dx

@@ -1773,21 +1773,21 @@ package ode_ecs__tests
             eids[i] = eid
         }
 
-        dense := ecs.dense_slice(&view, &positions)
+        dense := ecs.slice(&view, &positions)
         testing.expect(t, len(dense) == 4)
 
         ecs.pause_packing(&db)
         testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
 
         // the view tail-swapped its rows while the table kept a hole -> not aligned
-        dense = ecs.dense_slice(&view, &positions)
+        dense = ecs.slice(&view, &positions)
         testing.expect(t, dense == nil)
 
         testing.expect(t, ecs.resume_packing(&db) == nil)
 
         // rebuild restores alignment
         testing.expect(t, ecs.rebuild(&view) == nil)
-        dense = ecs.dense_slice(&view, &positions)
+        dense = ecs.slice(&view, &positions)
         testing.expect(t, len(dense) == 3)
         for row, i in dense {
             testing.expect(t, ecs.get_component(&positions, ecs.get_entity(&positions, i)).x == row.x)

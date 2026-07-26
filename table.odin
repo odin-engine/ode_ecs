@@ -792,17 +792,17 @@ package ode_ecs
     // Live rows in row order as one contiguous slice — this is exactly the
     // `rows` field itself (already length-bounded to the live row count, not
     // capacity), returned through a call rather than field access so a caller's
-    // `for &p in table__dense_slice(&t)` compiles as a tight register-resident
+    // `for &p in table__slice(&t)` compiles as a tight register-resident
     // sweep. `for &p in t.rows` directly is NOT equivalent codegen: since `rows`
     // is a field on a live struct, the optimizer can't prove a write through
     // the loop's element pointer doesn't alias `t` itself, and conservatively
     // reloads the `rows` pointer from `t` after every store — measured ~30-40%
     // slower on a 1M-entity single-component sweep. Returning the slice by
     // value from a call (inlined or not) gives the caller a fresh local with
-    // no such aliasing concern, closing the gap. Mirrors dense_slice /
-    // dense_slice / arch_table__dense_slice for the other table types.
+    // no such aliasing concern, closing the gap. Mirrors compact_table__slice /
+    // tiny_table__slice / arch_table__dense_slice for the other table types.
     @(require_results)
-    table__dense_slice :: #force_inline proc "contextless" (self: ^Table($T)) -> []T {
+    table__slice :: #force_inline proc "contextless" (self: ^Table($T)) -> []T {
         return self.rows
     }
 

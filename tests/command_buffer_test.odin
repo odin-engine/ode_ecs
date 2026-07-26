@@ -385,8 +385,8 @@ package ode_ecs__tests
             testing.expect(t, rerr == nil && skipped == 0)
 
             testing.expect(t, ecs.group_len(&group) == 1) // e1 in, e0 gone
-            ai_slice := ecs.dense_slice(&group, &ais)
-            pos_slice := ecs.dense_slice(&group, &positions)
+            ai_slice := ecs.slice(&group, &ais)
+            pos_slice := ecs.slice(&group, &positions)
             testing.expect(t, len(ai_slice) == 1 && len(pos_slice) == 1)
             // the recorded value survived the group's row swap into the prefix
             testing.expect(t, ai_slice[0].IQ == 77 && ai_slice[0].neurons_count == 3)

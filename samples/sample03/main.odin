@@ -212,7 +212,7 @@ main :: proc() {
         }
 
         iterate_over_ai_table :: proc (table: ^ecs.Table(AI)) {
-            for &ai, index in ecs.dense_slice(table) {
+            for &ai, index in ecs.slice(table) {
                 // Doing some calculations on components
                 ai.neurons_count += index
             }
@@ -239,9 +239,9 @@ main :: proc() {
 
         iterate_over_group :: proc(group: ^ecs.Group, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
             // Alignment is enforced by the Group, not detected — no check needed, no nil case
-            // to fall back from (unlike View's dense_slice, which returns nil when not aligned).
-            pos_slice := ecs.dense_slice(group, positions)
-            ph_slice := ecs.dense_slice(group, physics)
+            // to fall back from (unlike View's slice, which returns nil when not aligned).
+            pos_slice := ecs.slice(group, positions)
+            ph_slice := ecs.slice(group, physics)
 
             for i in 0..<len(pos_slice) {
 

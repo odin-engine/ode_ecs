@@ -757,10 +757,10 @@ package ode_ecs
     // `for x in a_tiny_table.rows` always visits all TINY_TABLE__ROW_CAP slots
     // regardless of how many are live. This slices it down to the live prefix
     // (same tail-swap-packed invariant every other table type keeps) AND
-    // returns it by value from a call — see table__dense_slice's doc comment
+    // returns it by value from a call — see table__slice's doc comment
     // for why that second part matters for codegen, not just correctness.
     @(require_results)
-    tiny_table__dense_slice :: #force_inline proc "contextless" (self: ^Tiny_Table($T)) -> []T {
+    tiny_table__slice :: #force_inline proc "contextless" (self: ^Tiny_Table($T)) -> []T {
         return self.rows[:self.len]
     }
 

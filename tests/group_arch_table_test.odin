@@ -53,7 +53,7 @@ package ode_ecs__tests
         }
         testing.expect(t, ecs.group_len(&group) == 3)
 
-        ps := ecs.dense_slice(&group, &at, Position)
+        ps := ecs.slice(&group, &at, Position)
         testing.expect(t, len(ps) == 3)
         for i in 0 ..< 3 {
             row_eid := ecs.get_entity(&at, i)
@@ -109,9 +109,9 @@ package ode_ecs__tests
             testing.expect(t, eid_from_speeds == eid_from_arch, "owned Table and Arch_Table must agree on the entity at each prefix row")
         }
 
-        spd_slice := ecs.dense_slice(&group, &speeds)
-        pos_slice := ecs.dense_slice(&group, &at, Position)
-        ai_slice := ecs.dense_slice(&group, &at, AI)
+        spd_slice := ecs.slice(&group, &speeds)
+        pos_slice := ecs.slice(&group, &at, Position)
+        ai_slice := ecs.slice(&group, &at, AI)
         testing.expect(t, len(spd_slice) == 3 && len(pos_slice) == 3 && len(ai_slice) == 3)
 
         // removing the Table-side component drops the entity from the group
@@ -180,12 +180,12 @@ package ode_ecs__tests
         // removing the middle member while the GROUP is paused must defer the
         // swap (mark dirty) instead of moving rows
         testing.expect(t, ecs.arch_table__remove_entity(&at, eids[1]) == nil)
-        testing.expect(t, ecs.dense_slice(&group, &at, Position) == nil, "dirty group must report no dense slice")
+        testing.expect(t, ecs.slice(&group, &at, Position) == nil, "dirty group must report no dense slice")
 
         testing.expect(t, ecs.resume_packing(&group) == nil)
 
         testing.expect(t, ecs.group_len(&group) == 2)
-        ps := ecs.dense_slice(&group, &at, Position)
+        ps := ecs.slice(&group, &at, Position)
         testing.expect(t, len(ps) == 2)
         for i in 0 ..< 2 {
             row_eid := ecs.get_entity(&at, i)

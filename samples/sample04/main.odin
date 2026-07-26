@@ -140,7 +140,7 @@ main :: proc() {
         // NOTE: Tiny_Table can hold only eight (defined by TINY_TABLE__ROW_CAP) components.
         // .rows in Tiny_Table is a static (fixed-size) array of TINY_TABLE__ROW_CAP elements (because Tiny_Table has no dynamic arrays and is fully in stack memory).
         // There is no metadata for it, so if you use `for &pos, index in pos_table.rows` loop it will go through all eight elements.
-        // To avoid this use `ecs.dense_slice(&pos_table)` instead, which slices `rows` down to
+        // To avoid this use `ecs.slice(&pos_table)` instead, which slices `rows` down to
         // just the live prefix (same tail-swap-packed invariant every other table type keeps).
         //
         fmt.println("Using `for &pos, index in pos_table.rows` loop (the gotcha — visits all eight slots):")
@@ -160,15 +160,15 @@ main :: proc() {
 
         fmt.println()
 
-        fmt.println("Using `for &pos, index in ecs.dense_slice(&pos_table)` loop:")
+        fmt.println("Using `for &pos, index in ecs.slice(&pos_table)` loop:")
         fmt.println("--------------------------------------------------------------")
         // This loop is better because it goes only through valid components —
         // and, unlike a manual `for i := 0; i < ecs.table_len(&pos_table); i += 1`
         // loop indexing pos_table.rows[i] directly, it also avoids a codegen
         // pitfall: reading rows as a field on a live struct inside a hot loop
         // compiles worse than reading a slice returned by value from a call.
-        // See table__dense_slice's doc comment (table.odin) for the full story.
-        for &component, index in ecs.dense_slice(&pos_table) {
+        // See table__slice's doc comment (table.odin) for the full story.
+        for &component, index in ecs.slice(&pos_table) {
             eid := ecs.get_entity(&pos_table, index)
 
             if eid == human {
@@ -321,7 +321,7 @@ main :: proc() {
         fmt.println()
         fmt.println("Iterate over tags_table:")
         fmt.println("--------------------------------------------------------------")
-        for &tag, index in ecs.dense_slice(&tags_table) {
+        for &tag, index in ecs.slice(&tags_table) {
             eid := ecs.get_entity(&tags_table, index)
 
             if eid == human {
@@ -355,7 +355,7 @@ main :: proc() {
         fmt.println()
         fmt.println("Iterate over bool_table:")
         fmt.println("--------------------------------------------------------------")
-        for &comp, index in ecs.dense_slice(&bool_table) {
+        for &comp, index in ecs.slice(&bool_table) {
             eid := ecs.get_entity(&bool_table, index)
 
             if eid == human {

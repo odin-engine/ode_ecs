@@ -81,7 +81,7 @@ main :: proc() {
     // 
 
     eid: ecs.entity_id
-    for &pos, index in ecs.dense_slice(&positions) {
+    for &pos, index in ecs.slice(&positions) {
         // Get entity with component index
         eid = ecs.get_entity(&positions, index)
 

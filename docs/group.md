@@ -42,17 +42,17 @@ units: ecs.Arch_Table // Position + AI
 ecs.arch_table__init(&units, &my_ecs, 100_000, {Position, AI})
 ecs.group_init(&group, &my_ecs, {&velocities, &units}) // Velocity AND (Position+AI)
 
-pos_slice := ecs.dense_slice(&group, &units, Position) // note the extra $T argument
-ai_slice  := ecs.dense_slice(&group, &units, AI)
+pos_slice := ecs.slice(&group, &units, Position) // note the extra $T argument
+ai_slice  := ecs.slice(&group, &units, AI)
 ```
 
 ## Iterating
 
-`dense_slice` returns one owned table's components of all group members, in group order, as a contiguous slice. Slices of different owned tables share indexing — `ps[i]` and `vs[i]` belong to the same entity:
+`slice` returns one owned table's components of all group members, in group order, as a contiguous slice. Slices of different owned tables share indexing — `ps[i]` and `vs[i]` belong to the same entity:
 
 ```odin
-ps := ecs.dense_slice(&group, &positions)
-vs := ecs.dense_slice(&group, &velocities)
+ps := ecs.slice(&group, &positions)
+vs := ecs.slice(&group, &velocities)
 
 for i in 0..<len(ps) {
     ps[i].x += vs[i].dx
@@ -69,9 +69,9 @@ for i in 0..<ecs.group_len(&group) {
 }
 ```
 
-Like `dense_slice`, the slices are invalidated by **any structural change** (add/remove component, create/destroy entity) — use them immediately, never store them. The same goes for component pointers in general: a group swap can move a member's component, so treat structural changes as invalidating held pointers (the pointer returned by `add_component` itself is always correct).
+Like `slice`, the slices are invalidated by **any structural change** (add/remove component, create/destroy entity) — use them immediately, never store them. The same goes for component pointers in general: a group swap can move a member's component, so treat structural changes as invalidating held pointers (the pointer returned by `add_component` itself is always correct).
 
-`dense_slice` returns `nil` when the table is not owned by this group, or while the group is *dirty* (see the pause section below).
+`slice` returns `nil` when the table is not owned by this group, or while the group is *dirty* (see the pause section below).
 
 ## When to use a group vs a view
 
@@ -94,7 +94,7 @@ Views and groups coexist on the same tables: group swaps notify subscribed views
 
 ## Removing while iterating (`pause_packing`)
 
-Group maintenance moves rows, which is exactly what [`pause_packing`](database.md#pausing-tail-swap-mutating-tables-while-iterating) forbids. So while the tail swap is paused, membership changes are **deferred**: the group is marked *dirty*, `dense_slice` returns `nil`, and `resume_packing` rebuilds the group right after packing the tables:
+Group maintenance moves rows, which is exactly what [`pause_packing`](database.md#pausing-tail-swap-mutating-tables-while-iterating) forbids. So while the tail swap is paused, membership changes are **deferred**: the group is marked *dirty*, `slice` returns `nil`, and `resume_packing` rebuilds the group right after packing the tables:
 
 ```odin
 ecs.pause_packing(&my_ecs)

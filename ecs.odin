@@ -476,17 +476,27 @@ package ode_ecs
 
         // Live rows in row order as one contiguous slice. Prefer this over
         // reading a table's `rows` field directly in a hot loop — see
-        // table__dense_slice's doc comment (table.odin) for why the codegen
+        // table__slice's doc comment (table.odin) for why the codegen
         // differs.
-        dense_slice :: proc {
-            table__dense_slice,
-            compact_table__dense_slice,
-            tiny_table__dense_slice,
-            tag_table__dense_slice,
-            view__dense_slice,          // dense_slice(&view, &table) — nil if the view isn't dense-aligned
-            group__dense_slice,         // dense_slice(&group, &table) — nil while the group is dirty
-            group__dense_slice_arch,    // dense_slice(&group, &arch_table, T) — nil while the group is dirty
+        slice :: proc {
+            table__slice,
+            compact_table__slice,
+            tiny_table__slice,
+            tag_table__slice,
+            view__slice,          // slice(&view, &table) — nil if the view isn't dense-aligned
+            group__slice,         // slice(&group, &table) — nil while the group is dirty
+            group__slice_arch,    // slice(&group, &arch_table, T) — nil while the group is dirty
         }
+        
+        // For backwards compatibility
+        dense_slice :: slice
+        table__dense_slice :: table__slice
+        compact_table__dense_slice :: compact_table__slice
+        tiny_table__dense_slice :: tiny_table__slice
+        tag_table__dense_slice :: tag_table__slice
+        view__dense_slice :: view__slice
+        group__dense_slice :: group__slice     
+        group__dense_slice_arch :: group__slice_arch
 
         // Memory in bytes
         memory_usage        :: proc {

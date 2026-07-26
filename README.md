@@ -118,7 +118,7 @@ Now you can add a `Position` component to the `robot` entity:
 To iterate over components in a table, you can do this:  
 
 ```odin
-    for &pos in ecs.dense_slice(&positions) {
+    for &pos in ecs.slice(&positions) {
         fmt.println(pos)
     }
 ```  
@@ -126,20 +126,20 @@ To iterate over components in a table, you can do this:
 Or this:  
 
 ```odin
-    dense := ecs.dense_slice(&positions)
+    dense := ecs.slice(&positions)
     for i := 0; i < len(dense); i += 1 {
         pos := &dense[i]
         fmt.println(pos^)
     }
 ```  
 
->**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in a live `dense_slice`. Prefer `ecs.dense_slice(&positions)` over reading the `rows` field directly (`positions.rows`) — they're the same data, but a raw field read inside a hot loop compiles worse: the optimizer can't prove a write through the loop's element pointer doesn't alias `positions` itself, so it conservatively reloads the `rows` pointer after every store. Returning the slice by value from a call sidesteps that. See `table__dense_slice`'s doc comment in `table.odin` for the full explanation.
+>**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in a live `slice`. Prefer `ecs.slice(&positions)` over reading the `rows` field directly (`positions.rows`) — they're the same data, but a raw field read inside a hot loop compiles worse: the optimizer can't prove a write through the loop's element pointer doesn't alias `positions` itself, so it conservatively reloads the `rows` pointer after every store. Returning the slice by value from a call sidesteps that. See `table__slice`'s doc comment in `table.odin` for the full explanation.
 
 You can get the `entity_id` by index during iteration over components:  
 
 ```odin
     eid: ecs.entity_id
-    for &pos, index in ecs.dense_slice(&positions) {
+    for &pos, index in ecs.slice(&positions) {
         eid = ecs.get_entity(&positions, index)
         fmt.println(eid, pos)
     }
@@ -150,7 +150,7 @@ Using an entity, you can access its other components:
 ```odin
     eid: ecs.entity_id
     ai: ^AI // AI component
-    for &pos, index in ecs.dense_slice(&positions) {
+    for &pos, index in ecs.slice(&positions) {
         eid = ecs.get_entity(&positions, index)
         ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: Table(AI)`
         fmt.println(eid, pos, ai)
@@ -226,11 +226,11 @@ Or, as a one-liner with `ecs.next` — same `it`, `get_entity`/`get_component` f
 
 The `Iterator` automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view (which is the common case: it holds whenever components are added to tables in the same order per entity, and it survives entity despawn/respawn churn). In that case components are read directly from the tables' dense arrays, which is roughly 2x faster than going through the view's pointer records. This is fully automatic and falls back transparently when the view is not aligned.
 
-For the absolute fastest iteration, `dense_slice` returns the raw component slices in view-row order when the view is aligned (and `nil` otherwise). A plain loop over these slices compiles to a raw SoA sweep (~2x faster still than the iterator):
+For the absolute fastest iteration, `slice` returns the raw component slices in view-row order when the view is aligned (and `nil` otherwise). A plain loop over these slices compiles to a raw SoA sweep (~2x faster still than the iterator):
 
 ```odin
-    pos_slice := ecs.dense_slice(&view1, &positions)
-    ai_slice  := ecs.dense_slice(&view1, &ais)
+    pos_slice := ecs.slice(&view1, &positions)
+    ai_slice  := ecs.slice(&view1, &ais)
 
     if pos_slice != nil && ai_slice != nil {
         for i in 0..<len(pos_slice) {
@@ -289,7 +289,7 @@ You can iterate over tagged entities like this:
 ```odin
     // iterate over entities tagged in is_alive
     fmt.println("Tagged entities:")
-    for eid in ecs.dense_slice(&is_alive) {
+    for eid in ecs.slice(&is_alive) {
         fmt.println("Entity tagged in `is_alive`:", eid)
     }
 ```
@@ -307,14 +307,14 @@ ODE_ECS performs tail swaps (packing) when you remove components from a table (m
 For example, avoid doing this:
 
 ```Odin
-for d in ecs.dense_slice(&my_tags_table) {
+for d in ecs.slice(&my_tags_table) {
     ecs.destroy_entity(&my_db, d)  // Mutates my_tags_table during iteration!
 }
 ```
 Correct pattern: Drain the table by repeatedly taking row `0` until it is empty:
 ```Odin
 for ecs.table_len(&my_tags_table) > 0 {
-    d := ecs.dense_slice(&my_tags_table)[0]
+    d := ecs.slice(&my_tags_table)[0]
     ecs.destroy_entity(&my_db, d)   
 }
 ```

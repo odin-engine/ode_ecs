@@ -7,7 +7,7 @@
     maintains this invariant: the entities that have ALL owned components occupy
     the contiguous prefix [0, group.len) of every owned table, at the SAME row
     index in each. Where a View *detects* alignment, a Group *enforces* it by
-    swapping table rows on add/remove — so dense_slice is always valid:
+    swapping table rows on add/remove — so slice is always valid:
     no rid records, no rescans, iteration is a raw SoA sweep at table speed.
 
     Cost model: add_component that completes a group membership (and
@@ -17,7 +17,7 @@
     Deferred tail swap (database__pause_packing): group maintenance would move
     rows, which pause forbids, so membership changes while paused only mark the
     group dirty; database__resume_packing rebuilds dirty groups after packing.
-    While dirty, dense_slice returns nil.
+    While dirty, slice returns nil.
 */
 package ode_ecs
 
@@ -178,7 +178,7 @@ package ode_ecs
     // While the group is dirty (membership changes deferred by a paused tail
     // swap) the stored len is stale — it only becomes exact again after
     // resume_packing rebuilds the group. Asserts on that window under
-    // VALIDATIONS, mirroring group__dense_slice's nil return.
+    // VALIDATIONS, mirroring group__slice's nil return.
     group__len :: #force_inline proc "contextless" (self: ^Group) -> int {
         when VALIDATIONS {
             assert_contextless(!self.dirty, "group_len while the group is dirty (paused packing) — resume_packing first")
@@ -188,7 +188,7 @@ package ode_ecs
 
     // Batch (dense) access: the owned `table`'s components of all group members, in
     // group order, as one contiguous slice — table.rows[:group_len]. Unlike
-    // dense_slice this needs no alignment check: the group maintains it.
+    // View's slice this needs no alignment check: the group maintains it.
     //
     // Slices for different owned tables of one group share indexing: slice_a[i] and
     // slice_b[i] belong to the same entity (get it with get_entity(table, i)).
@@ -196,7 +196,7 @@ package ode_ecs
     // Returns nil when `table` is not owned by this group, or membership changes
     // were deferred by a paused tail swap (group is dirty until resume).
     // The slice is invalidated by any structural change; do not hold on to it.
-    group__dense_slice :: proc "contextless" (self: ^Group, table: ^Table($T)) -> []T {
+    group__slice :: proc "contextless" (self: ^Group, table: ^Table($T)) -> []T {
         if self == nil || table == nil do return nil
         if self.state != Object_State.Normal do return nil
         if table.owner != self do return nil
@@ -207,10 +207,10 @@ package ode_ecs
         }
     }
 
-    // Same as group__dense_slice, for an owned Arch_Table's column: table.rows
+    // Same as group__slice, for an owned Arch_Table's column: table.rows
     // has no single-typed field to slice (columns are type-erased), so this
     // derives the column's pointer via arch_table__column_index instead.
-    group__dense_slice_arch :: proc(self: ^Group, table: ^Arch_Table, $T: typeid) -> []T {
+    group__slice_arch :: proc(self: ^Group, table: ^Arch_Table, $T: typeid) -> []T {
         if self == nil || table == nil do return nil
         if self.state != Object_State.Normal do return nil
         if table.owner != self do return nil

@@ -115,8 +115,8 @@ main :: proc() {
     // Iterate the group: both slices are aligned — index i in one is the same
     // entity as index i in the other. This is a plain array walk, no lookups.
     //
-        pos_slice := ecs.dense_slice(&group, &positions)
-        vel_slice := ecs.dense_slice(&group, &velocities)
+        pos_slice := ecs.slice(&group, &positions)
+        vel_slice := ecs.slice(&group, &velocities)
 
         for i in 0..<ecs.group_len(&group) {
             pos_slice[i].x += vel_slice[i].dx
@@ -147,7 +147,7 @@ main :: proc() {
     // pause_packing / resume_packing on a Group.
     //
     // While packing is paused rows must not move, so membership changes only
-    // mark the group dirty; dense_slice returns nil until the group is
+    // mark the group dirty; slice returns nil until the group is
     // rebuilt by resume_packing.
     //
         err = ecs.pause_packing(&group)
@@ -157,14 +157,14 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
         fmt.println()
-        fmt.println("While paused (group is dirty, dense slice unavailable):")
-        fmt.println("  dense_slice == nil:", ecs.dense_slice(&group, &positions) == nil)
+        fmt.println("While paused (group is dirty, slice unavailable):")
+        fmt.println("  slice == nil:", ecs.slice(&group, &positions) == nil)
 
         err = ecs.resume_packing(&group) // packs the tables and rebuilds the group
         if err != nil { report_error(err); return }
 
         fmt.println("After resume_packing, group size:", ecs.group_len(&group))
-        fmt.println("  dense_slice == nil:", ecs.dense_slice(&group, &positions) == nil)
+        fmt.println("  slice == nil:", ecs.slice(&group, &positions) == nil)
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {

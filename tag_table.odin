@@ -136,11 +136,11 @@ package ode_ecs
 
     // Tagged entities in row order as one contiguous slice — `rows` itself is
     // already the full row-slot span (see tag_table__len's doc comment on
-    // holes-while-paused). See table__dense_slice's doc comment (table.odin)
+    // holes-while-paused). See table__slice's doc comment (table.odin)
     // for why returning it by value from a call, rather than reading the
     // `rows` field directly in a hot loop, matters for codegen.
     @(require_results)
-    tag_table__dense_slice :: #force_inline proc "contextless" (self: ^Tag_Table) -> []entity_id {
+    tag_table__slice :: #force_inline proc "contextless" (self: ^Tag_Table) -> []entity_id {
         return self.rows
     }
 

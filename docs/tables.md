@@ -56,11 +56,11 @@ ecs.remove_component(&positions, robot)
 
 ### Iterating a table
 
-`positions.rows` is a plain dense slice, but reach it through `ecs.dense_slice(&positions)`
+`positions.rows` is a plain dense slice, but reach it through `ecs.slice(&positions)`
 rather than the `rows` field directly:
 
 ```odin
-for &pos, index in ecs.dense_slice(&positions) {
+for &pos, index in ecs.slice(&positions) {
     eid := ecs.get_entity(&positions, index)   // entity that owns this row
     ai  := ecs.get_component(&ais, eid)        // reach its other components
     fmt.println(eid, pos, ai)
@@ -68,12 +68,12 @@ for &pos, index in ecs.dense_slice(&positions) {
 ```
 
 > **NOTE:** `for &pos in positions.rows` (the raw field) and
-> `for &pos in ecs.dense_slice(&positions)` iterate the same data, but not with the same
+> `for &pos in ecs.slice(&positions)` iterate the same data, but not with the same
 > codegen: reading `rows` as a field on a live struct means the compiler can't prove a write
 > through `&pos` doesn't alias `positions` itself, so it conservatively reloads the `rows`
 > pointer from `positions` after every store — measured ~30-40% slower on a 1M-entity sweep.
-> `dense_slice` returns the slice by value from a call, giving the loop a fresh local with
-> no such aliasing concern. Same idea as `dense_slice`/`dense_slice`/
+> `slice` returns the slice by value from a call, giving the loop a fresh local with
+> no such aliasing concern. Same idea as `compact_table__slice`/`tiny_table__slice`/
 > `arch_table__dense_slice` for the other table types.
 
 To iterate entities that have a specific *set* of components, use a [View](view.md) instead.

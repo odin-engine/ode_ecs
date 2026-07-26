@@ -60,7 +60,7 @@ for eid, pos, ai in ecs.next(&it, &positions, &ais) {
 }
 ```
 
-The typed form only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `dense_slice` below, and same restriction `Arch_Table` columns have, see [Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view)). It's plain sugar over the loop above: cursor-advance plus `get_entity` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix the 0-arg and typed forms on that `it` in the same or a different loop.
+The typed form only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `slice` below, and same restriction `Arch_Table` columns have, see [Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view)). It's plain sugar over the loop above: cursor-advance plus `get_entity` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix the 0-arg and typed forms on that `it` in the same or a different loop.
 
 Component counts 0 through 7 are supported: `for ecs.next(&it) { ... }` (no columns, manual `get_entity`/`get_component`) up to `for eid, a, b, c, d, e, f, g in ecs.next(&it, &t1, &t2, &t3, &t4, &t5, &t6, &t7) { ... }`.
 
@@ -78,15 +78,15 @@ ecs.iterator_init(&it1, &view, 0, half)
 ecs.iterator_init(&it2, &view, half, ecs.view_len(&view))
 ```
 
-## The dense fast path and `dense_slice`
+## The dense fast path and `slice`
 
 The iterator automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view. This is the common case (it holds when components are added in the same order per entity and survives despawn/respawn churn) and reads components straight from the tables' dense arrays, roughly 2× faster. It is fully automatic with a transparent fallback.
 
-For the absolute fastest iteration, `dense_slice` hands you the raw component slices in view-row order (or `nil` when the view is not aligned):
+For the absolute fastest iteration, `slice` hands you the raw component slices in view-row order (or `nil` when the view is not aligned):
 
 ```odin
-pos_slice := ecs.dense_slice(&view, &positions)
-ai_slice  := ecs.dense_slice(&view, &ais)
+pos_slice := ecs.slice(&view, &positions)
+ai_slice  := ecs.slice(&view, &ais)
 
 if pos_slice != nil && ai_slice != nil {
     for i in 0..<len(pos_slice) {
