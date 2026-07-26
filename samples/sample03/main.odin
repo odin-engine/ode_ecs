@@ -1,12 +1,27 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    I wasn't sure whether to develop an Archetype architecture for ODE_ECS or continue using the View approach.
-    So, I created this sample to compare the speed of the View approach to a "realistic" Archetype approach.
+    Compares the speed of three ways to iterate the same entities doing the same per-row work:
+    View (sparse-dense Tables joined by a View, alignment *detected*), Group (the same Tables,
+    but *owned* — alignment enforced, no per-row check at all, see docs/group.md), and
+    Arch_Table (ODE_ECS's real archetype table — true per-column SoA storage, see
+    docs/arch_table.md).
 
-    Result: The Archetype approach is not worth it. Views are about x2 times faster on my PC.
-    Even if the Archetype approach were as fast as the View approach, the View approach has other advantages.
+    An earlier version of this sample compared View against a hand-rolled archetype prototype
+    written before Arch_Table existed, which lost by ~2x for reasons specific to that
+    prototype (an interleaved AoS row instead of per-column storage, plus a map lookup per
+    field per entity in the hot loop) rather than anything inherent to archetypes. Arch_Table
+    fixes both, so expect it to land close to (or ahead of) View here — and Group, which pays
+    a row-swap cost on every membership change in exchange for never needing an alignment
+    check during iteration, should be the fastest or close to it.
 
+    NOTE: Group physically packs its owned tables' rows into a common aligned prefix as a 
+    side effect of maintaining membership — and since it owns the same 6 tables the View 
+    includes, that packing likely also satisfies the View's own (independently-detected) 
+    dense-alignment condition, pushing iterate_over_view onto its fast path more reliably 
+    than it would hit alone. In many other cases or most cases a View would be slower 
+    than an Arch_Table.
+    
     Run this sample with speed optimizations to see results closer to real-world performance:
 
     odin run . -o:speed
@@ -23,11 +38,8 @@ package ode_ecs_sample3
     import "core:log"
     import "core:slice"
     import "core:mem"
-    import "core:math"
     import "core:math/rand"
     import "core:time"
-    import "core:testing"
-     
 
 // ODE_ECS
     import ecs "../../"
@@ -38,29 +50,34 @@ package ode_ecs_sample3
 //
     PAYLOAD_SIZE :: 5
 
-    Position :: struct { 
+    Position :: struct {
         x, y: int,
         payload: [PAYLOAD_SIZE]int,
-    } 
-    AI :: struct { 
-        neurons_count: int, 
+    }
+    AI :: struct {
+        neurons_count: int,
         payload: [PAYLOAD_SIZE]int,
     }
-    Physical :: struct { 
+    Physical :: struct {
         velocity, mass: f32,
         payload: [PAYLOAD_SIZE]int,
     }
     Component :: struct {
         payload: [PAYLOAD_SIZE]int,
     }
+    Component_2 :: struct {
+        payload: [PAYLOAD_SIZE]int,
+    }
+    Component_3 :: struct {
+        payload: [PAYLOAD_SIZE]int,
+    }
+    Component_4 :: struct {
+        payload: [PAYLOAD_SIZE]int,
+    }
 
-    Component_2 :: Component
-    Component_3 :: Component
-    Component_4 :: Component
-
-// 
+//
 // Globals
-// 
+//
     // ECS Database
     db: ecs.Database
 
@@ -69,18 +86,22 @@ package ode_ecs_sample3
     ais : ecs.Table(AI)
     physics: ecs.Table(Physical)
     comps_1: ecs.Table(Component)
-    comps_2: ecs.Table(Component)
-    comps_3: ecs.Table(Component)
-    comps_4: ecs.Table(Component)
-    
+    comps_2: ecs.Table(Component_2)
+    comps_3: ecs.Table(Component_3)
+    comps_4: ecs.Table(Component_4)
+
     // Views
-    physical: ecs.View 
+    physical: ecs.View
+
+    // Owns the same 6 tables as `physical` above — same membership, enforced alignment
+    // instead of detected alignment. See docs/group.md.
+    physical_group: ecs.Group
 
     // All possible components combinations for generating random entities
     g_combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
 
-    // Experimental
-    arch: Arch
+    // Real archetype table, for comparison against the View approach above
+    arch: ecs.Arch_Table
 
 //
 // This example includes simple error handling.
@@ -88,12 +109,12 @@ package ode_ecs_sample3
 main :: proc() {
 
     //
-    // OPTIONAL: Setup memory tracking and logger. 
+    // OPTIONAL: Setup memory tracking and logger.
     //
         mem_track: oc.Mem_Track
 
         // Track memory leaks and bad frees
-        context.allocator = oc.mem_track__init(&mem_track, context.allocator)  
+        context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
         defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
 
@@ -101,7 +122,7 @@ main :: proc() {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
+        // Replace default allocator with panic allocator to make sure that
         // no allocations happen outside of provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -116,17 +137,17 @@ main :: proc() {
         err: ecs.Error
 
     //
-    // Init 
+    // Init
     //
-       
+
         // Init database
-        defer { 
-            err = ecs.terminate(&db) 
+        defer {
+            err = ecs.terminate(&db)
             if err != nil do report_error(err)
         }
         err = ecs.init(&db, 100_000, allocator) // Maximum 100K entities
         if err != nil { report_error(err); return }
-        
+
         // Init tables
         err = ecs.table_init(&positions, &db, 100_000) // Maximum 100K position components
         if err != nil { report_error(err); return }
@@ -153,9 +174,19 @@ main :: proc() {
         err = ecs.view_init(&physical, &db, {&positions, &comps_1, &comps_2, &comps_3, &comps_4, &physics})
         if err != nil { report_error(err); return }
 
-        defer arch__terminate(&arch, allocator)
+        // Group: same 6 tables as `physical` above — same membership, so group_len will
+        // match view_len exactly. A table can be included in a View and owned by a Group
+        // at the same time (see Sample14), so this doesn't disturb `physical` at all.
+        err = ecs.group_init(&physical_group, &db, {&positions, &comps_1, &comps_2, &comps_3, &comps_4, &physics})
+        if err != nil { report_error(err); return }
 
-        arch__init(&arch, 100_000, { Position, Component, Component_2, Component_3, Component_4, Physical }, allocator)
+        // Arch_Table is terminated automatically with the database, like every other table.
+        // All 6 distinct types, matching `physical`'s/`physical_group`'s 6 owned/included
+        // tables exactly — the archetype row is 264 bytes, but iteration only ever reads the
+        // Position/Physical columns (below), and since Arch_Table stores each column as its
+        // own separate dense array (true SoA), the other 4 columns cost nothing extra to skip.
+        err = ecs.arch_table__init(&arch, &db, cap = 100_000, component_types = {Position, Component, Component_2, Component_3, Component_4, Physical})
+        if err != nil { report_error(err); return }
 
     //
     // Systems
@@ -185,44 +216,48 @@ main :: proc() {
                 // Doing some calculations on components
                 ai.neurons_count += index
             }
-        }     
-        
-        iterate_over_archetype :: proc(arch: ^Arch) {
-            pos: ^Position
-            ph: ^Physical
-            for i := 0; i < arch__len(arch); i+=1 {
+        }
 
-                pos = arch__get_component(arch, i, Position)
-                pos.x += i
-                pos.y += i
+        iterate_over_archetype :: proc(arch: ^ecs.Arch_Table) {
+            err: ecs.Error
+            it: ecs.Arch_Iterator
 
-                ph = arch__get_component(arch, i, Physical)
-                ph.velocity += cast(f32) i
-                ph.mass += cast(f32) i
+            err = ecs.arch_iterator_init(&it, arch)
+            if err != nil { report_error(err); return }
+
+            for _, pos, ph in ecs.next(&it, Position, Physical) {
+
+                // Doing some calculations on components — same workload as iterate_over_view
+
+                pos.x += it.index
+                pos.y += it.index
+
+                ph.velocity += cast(f32) it.index
+                ph.mass += cast(f32) it.index
             }
         }
 
-        iterate_over_archetype_with_iterator :: proc(arch: ^Arch) {
-            pos: ^Position
-            ph: ^Physical
+        iterate_over_group :: proc(group: ^ecs.Group, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
+            // Alignment is enforced by the Group, not detected — no check needed, no nil case
+            // to fall back from (unlike View's dense_slice, which returns nil when not aligned).
+            pos_slice := ecs.dense_slice(group, positions)
+            ph_slice := ecs.dense_slice(group, physics)
 
-            it: Arch_Iterator
-            arch_iterator__init(&it, arch)
-            for arch_iterator__next(&it) {
-                pos = arch_iterator__get_component(&it, Position)
-                pos.x += it.record_shift
-                pos.y += it.record_shift
+            for i in 0..<len(pos_slice) {
 
-                ph = arch_iterator__get_component(&it, Physical)
-                ph.velocity += cast(f32) it.record_shift
-                ph.mass += cast(f32) it.record_shift
+                // Doing some calculations on components — same workload as iterate_over_view
+
+                pos_slice[i].x += i
+                pos_slice[i].y += i
+
+                ph_slice[i].velocity += cast(f32) i
+                ph_slice[i].mass += cast(f32) i
             }
-
         }
 
     //
     // Game load, create 100_000 entities with random components
-    // 
+    //
         create_entities_with_random_components_and_data(100_000, true)
 
     tt: Time_Track
@@ -230,20 +265,20 @@ main :: proc() {
     for j:=0; j < EXECUTE_TIMES; j+=1 {
         //
         //  Game loop, frame zero, iterating over table only
-        // 
+        //
         sw: time.Stopwatch
         time.stopwatch_start(&sw)
 
-            iterate_over_ai_table(&ais) 
+            iterate_over_ai_table(&ais)
 
         time.stopwatch_stop(&sw)
 
         _, _, _, tt.table[j] = time.precise_clock_from_stopwatch(sw)
 
         //
-        //  Game loop, frame one, iterating over view 
-        // 
-        
+        //  Game loop, frame one, iterating over view
+        //
+
             step_1_view_len = ecs.view_len(&physical)
             time.stopwatch_reset(&sw)
             time.stopwatch_start(&sw)
@@ -253,19 +288,32 @@ main :: proc() {
             time.stopwatch_stop(&sw)
 
             _, _, _, tt.view[j] = time.precise_clock_from_stopwatch(sw)
-            
+
         //
-        //  Game loop, frame two, iterating over archetype  
-        // 
-        
+        //  Game loop, frame two, iterating over Arch_Table
+        //
+
             time.stopwatch_reset(&sw)
             time.stopwatch_start(&sw)
 
-                iterate_over_archetype_with_iterator(&arch)
+                iterate_over_archetype(&arch)
 
             time.stopwatch_stop(&sw)
 
             _, _, _, tt.arch[j] = time.precise_clock_from_stopwatch(sw)
+
+        //
+        //  Game loop, frame three, iterating over Group
+        //
+
+            time.stopwatch_reset(&sw)
+            time.stopwatch_start(&sw)
+
+                iterate_over_group(&physical_group, &positions, &physics)
+
+            time.stopwatch_stop(&sw)
+
+            _, _, _, tt.group[j] = time.precise_clock_from_stopwatch(sw)
     }
 
     //
@@ -274,11 +322,12 @@ main :: proc() {
         avg_table := tt__avg_table(&tt)
         avg_view := tt__avg_view(&tt)
         avg_arch := tt__avg_arch(&tt)
+        avg_group := tt__avg_group(&tt)
 
         s:= oc.add_thousand_separator(ecs.database__entities_len(&db), sep=',', allocator=allocator)
         fmt.printfln("%-30s %s", "Entities count:", s)
         delete(s, allocator)
-        
+
         fmt.printfln("%-30s %v bytes", "Position component size:", size_of(Position))
         fmt.printfln("%-30s %v bytes", "Physical component size:", size_of(Physical))
         fmt.printfln("%-30s %v bytes", "AI component size:", size_of(AI))
@@ -294,18 +343,19 @@ main :: proc() {
         fmt.printfln("%-30s %.4f ms (%v rows)", "Iterating over view:", f64(avg_view)/1_000_000.0, s)
         delete(s, allocator)
 
-        s = oc.add_thousand_separator(arch__len(&arch), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %4f ms (%v rows)", "Iterating over archetype:", f64(avg_arch)/1_000_000.0, s)
+        s = oc.add_thousand_separator(ecs.table_len(&arch), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %4f ms (%v rows)", "Iterating over Arch_Table:", f64(avg_arch)/1_000_000.0, s)
         delete(s, allocator)
 
-        d: f64
-        if avg_view < avg_arch {
-            d = f64(avg_arch) / f64(avg_view)
-            fmt.printfln("%-30s x %.2f times faster than archetype", "View is:", d)
-        } else {
-            d = f64(avg_view) / f64(avg_arch)
-            fmt.printfln("%-30s x %.2f times faster than view", "Archetype is:", d)
-        }
+        s = oc.add_thousand_separator(ecs.group_len(&physical_group), sep=',', allocator=allocator)
+        fmt.printfln("%-30s %4f ms (%v rows)", "Iterating over Group:", f64(avg_group)/1_000_000.0, s)
+        delete(s, allocator)
+
+        fmt.println("-----------------------------------------------------------")
+        fastest := min(avg_view, avg_arch, avg_group)
+        fmt.printfln("%-30s x %.2f", "View vs fastest:", f64(avg_view) / f64(fastest))
+        fmt.printfln("%-30s x %.2f", "Arch_Table vs fastest:", f64(avg_arch) / f64(fastest))
+        fmt.printfln("%-30s x %.2f", "Group vs fastest:", f64(avg_group) / f64(fastest))
 }
 
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
@@ -315,7 +365,6 @@ report_error :: proc (err: ecs.Error, loc := #caller_location) {
 create_entities_with_random_components_and_data :: proc(number_of_components_to_create: int, create_arch:= false) {
     pos: ^Position
     ph: ^Physical
-    co: ^Component
     ai: ^AI
     err: ecs.Error
 
@@ -339,45 +388,47 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
                     // pos.y = int(rand.int63()) % 1080
                     pos.x = i * j
                     pos.y = i
-                case 2:               
+                case 2:
                     ai, err = ecs.add_component(&ais, eid)
                     if err != nil { report_error(err); fmt.println(eid); return }
                     ai.neurons_count = j
                 case 3:
                     ph, err = ecs.add_component(&physics, eid)
-                    if err != nil { report_error(err); return } 
+                    if err != nil { report_error(err); return }
                     ph.mass = (f32)(j + i * j)
             }
         }
 
         if slice.contains(combo[:], 1) && slice.contains(combo[:], 3) {
 
-            co, err = ecs.add_component(&comps_1, eid)
-            if err != nil { report_error(err); return } 
+            _, err = ecs.add_component(&comps_1, eid)
+            if err != nil { report_error(err); return }
 
-            co, err = ecs.add_component(&comps_2, eid)
-            if err != nil { report_error(err); return } 
+            _, err = ecs.add_component(&comps_2, eid)
+            if err != nil { report_error(err); return }
 
-            co, err = ecs.add_component(&comps_3, eid)
-            if err != nil { report_error(err); return } 
+            _, err = ecs.add_component(&comps_3, eid)
+            if err != nil { report_error(err); return }
 
-            co, err = ecs.add_component(&comps_4, eid)
-            if err != nil { report_error(err); return } 
+            _, err = ecs.add_component(&comps_4, eid)
+            if err != nil { report_error(err); return }
 
             if create_arch {
-                ii := arch__add_components(&arch)
-                pos = arch__get_component(&arch, ii, Position)
-                pos.x = i 
+                aerr := ecs.arch_table__add_entity(&arch, eid)
+                if aerr != nil { report_error(aerr); return }
+
+                pos = ecs.get_component(&arch, eid, Position)
+                pos.x = i
                 pos.y = i
 
-                ph = arch__get_component(&arch, ii, Physical)
+                ph = ecs.get_component(&arch, eid, Physical)
                 ph.mass = (f32)(i)
-          
-                if ecs.view_len(&physical) != arch__len(&arch) {
+
+                if ecs.view_len(&physical) != ecs.table_len(&arch) {
                     fmt.println(i, combo)
                 }
-            } 
-        } // if 
+            }
+        } // if
 
     } // for
 }
@@ -393,184 +444,6 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
 }
 
 //////////////////////////////////////////////////////////////////////////////////
-// Experimental "realistic" implementation of Archetype.
-// By "realistic," I mean an implementation where component types are not known during development.
-
-    Comp_Info :: struct {
-        type_info: ^runtime.Type_Info,
-        shift: int, 
-    }
-
-    Arch :: struct {
-        rows: []byte,
-        one_record_size: int, 
-        records_size: int, 
-        cap: int,
-        id_to_info: map[typeid]Comp_Info,
-        components: []typeid,
-    }
-
-    arch__init :: proc(self: ^Arch, cap: int, components: []typeid, allocator := context.allocator) -> mem.Allocator_Error {
-
-        self.cap = cap
-        self.id_to_info = make_map_cap(map[typeid]Comp_Info, 100, allocator)
-        self.components = components
-
-        shift:int = 0
-        ci: Comp_Info
-        for comp in components {
-            if comp == nil do continue
-
-            ci.type_info = type_info_of(comp)
-            ci.shift = shift
-            shift += ci.type_info.size
-
-            self.id_to_info[comp] = ci
-        }
-
-        self.one_record_size = shift
-
-        raw := (^runtime.Raw_Slice)(&self.rows)
-
-        raw.data = mem.alloc(self.one_record_size * cap, allocator=allocator) or_return
-        raw.len = 0
-
-        return nil
-    }
-
-    arch__terminate :: proc(self: ^Arch,  allocator := context.allocator) {
-        raw := (^runtime.Raw_Slice)(&self.rows)
-        mem.free(raw.data, allocator)
-        delete_map(self.id_to_info)
-        raw.data = nil
-        raw.len = 0
-    }
-
-    arch__add_components :: proc(self: ^Arch) -> int {
-        raw := (^runtime.Raw_Slice)(&self.rows)
-        i := raw.len 
-        raw.len += 1
-        return i
-    }
-
-    arch__get_component :: proc(self: ^Arch, index: int, $T: typeid) -> ^T {
-
-        base := index * self.one_record_size
-        ci := self.id_to_info[T]
-         
-        #no_bounds_check {
-            return (^T)(&self.rows[base + ci.shift])
-        }
-    }
-
-    arch__len :: proc (self: ^Arch) -> int {
-        return len(self.rows)
-    }
-
-    // Arch_Iterator, to cache during iteration and hopefully speed things up
-    Arch_Iterator :: struct {
-        arch: ^Arch,
-        record_shift: int,
-        one_record_size: int, 
-        records_len: int, 
-    }
-
-    arch_iterator__init :: proc (self: ^Arch_Iterator, arch: ^Arch) {
-        self.arch = arch
-        self.record_shift = -arch.one_record_size
-        self.one_record_size = arch.one_record_size
-        self.records_len = len(arch.rows) * self.one_record_size
-    }   
-
-    arch_iterator__next :: proc(self: ^Arch_Iterator) -> bool {
-        self.record_shift += self.one_record_size
-        if self.record_shift >= self.records_len do return false
-
-        return true
-    }
-
-    arch_iterator__get_component :: proc(self: ^Arch_Iterator, $T: typeid) -> ^T {
-        ci := self.arch.id_to_info[T]
-         
-        #no_bounds_check {
-            return (^T)(&self.arch.rows[self.record_shift + ci.shift])
-        }
-    }
-
-
-    @(test)
-    archetype__test :: proc(t: ^testing.T) {
-        a: Arch
-        defer arch__terminate(&a)
-        arch__init(&a, 10, {Position, Physical, AI})
-
-        ci := a.id_to_info[Position]
-        testing.expect(t, ci.type_info == type_info_of(Position))
-        testing.expect(t, ci.shift == 0)
-
-        ci = a.id_to_info[Physical]
-        testing.expect(t, ci.type_info == type_info_of(Physical))
-        testing.expect(t, ci.shift == size_of(Position))
-
-        ci = a.id_to_info[AI]
-        testing.expect(t, ci.type_info == type_info_of(AI))
-        testing.expect(t, ci.shift == (size_of(Position) + size_of(Physical)))
-
-        pos: ^Position
-        ai: ^AI
-        ph: ^Physical
-
-        ii := arch__add_components(&a) 
-            ph = arch__get_component(&a, ii , Physical)
-            ph.mass = 2.0
-
-            pos = arch__get_component(&a, ii, Position)
-            pos.y = 66
-
-            ai = arch__get_component(&a, ii, AI)
-            ai.neurons_count = 55
-
-           
-        ii = arch__add_components(&a)
-            ph = arch__get_component(&a, ii , Physical)
-            ph.mass = 3.0
-
-            pos = arch__get_component(&a, ii, Position)
-            pos.y = 68
-
-            ai = arch__get_component(&a, ii, AI)
-            ai.neurons_count = 52
-
-        ii = arch__add_components(&a)
-            ph = arch__get_component(&a, ii , Physical)
-            ph.mass = 35.0
-
-            pos = arch__get_component(&a, ii, Position)
-            pos.y = 665
-
-            ai = arch__get_component(&a, ii, AI)
-            ai.neurons_count = 552
-        
-        ai = arch__get_component(&a, 1, AI)
-        testing.expect(t, ai.neurons_count == 52)
-
-        ai = arch__get_component(&a, 2, AI)
-        testing.expect(t, ai.neurons_count == 552)
-
-        ai = arch__get_component(&a, 0, AI)
-        testing.expect(t, ai.neurons_count == 55)
-
-        pos = arch__get_component(&a, 2, Position)
-        testing.expect(t, pos.y == 665)
-
-        pos = arch__get_component(&a, 0, Position)
-        testing.expect(t, pos.y == 66)
-
-        ph = arch__get_component(&a, 2, Physical)
-        testing.expect(t, math.abs(ph.mass - 35.0) < 0.1)
-    }
-
-//////////////////////////////////////////////////////////////////////////////////
 // Time tracking
 
     EXECUTE_TIMES :: 10
@@ -579,6 +452,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
         table: [EXECUTE_TIMES] int,
         view: [EXECUTE_TIMES] int,
         arch: [EXECUTE_TIMES] int,
+        group: [EXECUTE_TIMES] int,
     }
 
     tt__avg_table :: proc(self: ^Time_Track) -> int {
@@ -608,3 +482,11 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
         return sum/EXECUTE_TIMES
     }
 
+    tt__avg_group :: proc(self: ^Time_Track) -> int {
+        sum : int = 0
+        for i:=0; i < EXECUTE_TIMES; i+=1 {
+            sum += self.group[i]
+        }
+
+        return sum/EXECUTE_TIMES
+    }

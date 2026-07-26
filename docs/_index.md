@@ -27,7 +27,7 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 * [Basics](/samples/basics/main.odin) – A minimal starting point: init a database, tables and a view, create entities, iterate.
 * [Sample01](/samples/sample01/main.odin) – A basic sample with 100,000 entities that demonstrates how to use tables and views.
 * [Sample02](/samples/sample02/main.odin) – Demonstrates how to optimize your ECS (Approach 1 vs. Approach 2).
-* [Sample03](/samples/sample03/main.odin) – Demonstrates the benefits of the View approach versus the Archetype approach in ECS.
+* [Sample03](/samples/sample03/main.odin) – Compares View, Group, and `Arch_Table` iterating the same entities.
 * [Sample04](/samples/sample04/main.odin) – Demonstrates:
 
     * How to use `Tiny_Table`
