@@ -165,6 +165,7 @@ package ode_ecs
         db: ^Database,
         tables: oc.Dense_Arr(^Shared_Table), // includes tables, removing table invalidates View
         excludes: oc.Dense_Arr(^Shared_Table), // excluded tables (see view__init), removing table invalidates View
+        any_of: oc.Dense_Arr(^Shared_Table), // OR tables (see view__init) — entity must have >= 1 if non-empty, removing table invalidates View
 
         tid_to_cid: []view_column_id,
         // eid.ix -> view row id (VIEW_NO_RID when absent); u32 entries instead of
@@ -180,6 +181,7 @@ package ode_ecs
 
         bits: Uni_Bits,
         exclude_bits: Uni_Bits, // tables whose entities must NOT be in this view
+        any_of_bits: Uni_Bits, // tables of which an entity must be in at least one, when any_of is non-empty
         suspended: bool,
         // Set when a member-removal or row-move notification was skipped
         // because the view was suspended: rows can then reference destroyed
@@ -219,16 +221,19 @@ package ode_ecs
     }
 
     // `includes` — an entity must have a component in every one of these tables to be
-    // in the view; they become the view's columns.
-    // `excludes` — an entity must have a component in none of these tables; they are
-    // not columns (no component data is read from them), membership only. Cheaper and
-    // auto-maintained, unlike a `filter` proc doing the same check.
+    // in the view (AND); they become the view's columns.
+    // `excludes` — an entity must have a component in none of these tables (NOT); they
+    // are not columns (no component data is read from them), membership only. Cheaper
+    // and auto-maintained, unlike a `filter` proc doing the same check.
+    // `any_of` — if non-empty, an entity must have a component in at least one of these
+    // tables (OR). Like `excludes`, not columns, membership only.
     view__init :: proc(
         self: ^View,
         db: ^Database,
         includes: []^Shared_Table,
-        filter: proc(row: ^View_Row, user_data: rawptr = nil)->bool = nil,
         excludes: []^Shared_Table = nil,
+        any_of: []^Shared_Table = nil,
+        filter: proc(row: ^View_Row, user_data: rawptr = nil)->bool = nil,
         loc := #caller_location
     ) -> Error {
         when VALIDATIONS {
@@ -239,11 +244,13 @@ package ode_ecs
 
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
-        // A re-init'd struct (issue #8) may carry bits/suspended/excludes from its
-        // previous life; terminate does not reset them.
+        // A re-init'd struct (issue #8) may carry bits/suspended/excludes/any_of from
+        // its previous life; terminate does not reset them.
         uni_bits__clear(&self.bits)
         uni_bits__clear(&self.exclude_bits)
+        uni_bits__clear(&self.any_of_bits)
         self.excludes = {}
+        self.any_of = {}
         self.suspended = false
         self.stale = false
 
@@ -275,6 +282,26 @@ package ode_ecs
                     assert(shared_table__is_valid(table), loc = loc)
                 }
                 if slice.contains(uniq_tables, table) do return API_Error.Table_Cannot_Be_Included_And_Excluded
+            }
+        }
+
+        // Dedupe + validate any_of the same way. Overlap with excludes is allowed
+        // (not a contradiction — e.g. "exclude Dead, any_of {Enemy, Boss}" is still a
+        // meaningful, satisfiable constraint), unlike overlap with includes below,
+        // which is always redundant since AND already guarantees that table.
+        uniq_any_of: []^Shared_Table
+        sorted_any_of: []^Shared_Table
+        defer if sorted_any_of != nil do delete(sorted_any_of, db.allocator)
+        if any_of != nil && len(any_of) > 0 {
+            sorted_any_of = slice.clone(any_of, db.allocator) or_return
+            slice.sort(sorted_any_of)
+            uniq_any_of = slice.unique(sorted_any_of)
+
+            for table in uniq_any_of {
+                when VALIDATIONS {
+                    assert(shared_table__is_valid(table), loc = loc)
+                }
+                if slice.contains(uniq_tables, table) do return API_Error.Table_Cannot_Be_Included_And_Any_Of
             }
         }
 
@@ -329,6 +356,18 @@ package ode_ecs
         }
 
         //
+        // any_of (not columns — membership only, so cap/tid_to_cid/rows are untouched)
+        //
+        if len(uniq_any_of) > 0 {
+            oc.dense_arr__init(&self.any_of, len(uniq_any_of), db.allocator) or_return
+
+            for table in uniq_any_of {
+                oc.dense_arr__add(&self.any_of, cast(^Shared_Table) table)
+                uni_bits__add(&self.any_of_bits, table.id)
+            }
+        }
+
+        //
         // dense_cols
         //
         self.dense_cols = make([]View_Dense_State, self.tables_len, db.allocator) or_return
@@ -370,10 +409,11 @@ package ode_ecs
         //
         for table in uniq_tables do shared_table__attach_subscriber(table, self) or_return
         for table in self.excludes.items do shared_table__attach_exclude_subscriber(table, self) or_return
+        for table in self.any_of.items do shared_table__attach_any_of_subscriber(table, self) or_return
 
         return nil
     }
-    
+
     view__terminate :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -397,6 +437,12 @@ package ode_ecs
             if derr != nil && derr != oc.Core_Error.Not_Found do return derr
         }
 
+        for table in self.any_of.items {
+            if table == nil || table.type == Table_Type.Unknown do continue
+            derr := shared_table__detach_any_of_subscriber(table, self)
+            if derr != nil && derr != oc.Core_Error.Not_Found do return derr
+        }
+
         // rows was allocated as one records_size block; its slice len holds the
         // row count, so delete() would free with the wrong size.
         if self.rows != nil {
@@ -410,6 +456,7 @@ package ode_ecs
 
         oc.dense_arr__terminate(&self.tables, self.db.allocator) or_return
         if self.excludes.items != nil do oc.dense_arr__terminate(&self.excludes, self.db.allocator) or_return
+        if self.any_of.items != nil do oc.dense_arr__terminate(&self.any_of, self.db.allocator) or_return
 
         //
         // Detach from db
@@ -496,6 +543,7 @@ package ode_ecs
 
         total += oc.dense_arr__memory_usage(&self.tables)
         total += oc.dense_arr__memory_usage(&self.excludes)
+        total += oc.dense_arr__memory_usage(&self.any_of)
 
         if self.tid_to_cid != nil {
             total += size_of(self.tid_to_cid[0]) * len(self.tid_to_cid)
@@ -517,10 +565,17 @@ package ode_ecs
     }
 
     // Returns true if entity has components that would match this view (all included
-    // tables, no excluded table), doesn't check filter
+    // tables, no excluded table, and — if any_of is non-empty — at least one any_of
+    // table), doesn't check filter
     view__components_match :: #force_inline proc (self: ^View, eid: entity_id) -> bool {
-        return uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) &&
-               uni_bits__no_intersection(&self.exclude_bits, &self.db.eid_to_bits[eid.ix])
+        bits := &self.db.eid_to_bits[eid.ix]
+
+        // Unlike is_subset/no_intersection, intersects({}, x) is always false — an
+        // unused any_of (the common case) must be explicitly bypassed here, or every
+        // view without any_of would stop matching anything.
+        return uni_bits__is_subset(&self.bits, bits) &&
+               uni_bits__no_intersection(&self.exclude_bits, bits) &&
+               (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits))
     }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {

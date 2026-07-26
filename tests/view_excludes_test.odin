@@ -220,7 +220,7 @@ package ode_ecs__tests
             testing.expect(t, int(stuns.id) < int(healths.id))
 
             view.user_data = &observed
-            testing.expect(t, ecs.view_init(&view, &db, {&healths}, spy_filter, excludes={&stuns}) == nil)
+            testing.expect(t, ecs.view_init(&view, &db, {&healths}, filter = spy_filter, excludes={&stuns}) == nil)
             defer ecs.view_terminate(&view)
 
             e1, err1 := ecs.create_entity(&db)
@@ -326,7 +326,7 @@ package ode_ecs__tests
             testing.expect(t, ecs.table_init(&healths, &db, 10) == nil)
 
             view.user_data = &healths
-            testing.expect(t, ecs.view_init(&view, &db, {&healths}, alive_filter) == nil)
+            testing.expect(t, ecs.view_init(&view, &db, {&healths}, filter = alive_filter) == nil)
             defer ecs.view_terminate(&view)
 
             testing.expect(t, ecs.view_init(&view_no_filter, &db, {&healths}) == nil)

@@ -157,7 +157,7 @@ main :: proc() {
             return false
         }
 
-        err = ecs.view_init(&view2, &db, {&is_alive_table}, my_filter)
+        err = ecs.view_init(&view2, &db, {&is_alive_table}, filter = my_filter)
          if err != nil { report_error(err); return }
 
         ecs.rebuild(&view2)
@@ -216,7 +216,7 @@ main :: proc() {
 
         view3.user_data = &my_user_data
 
-        err = ecs.view_init(&view3, &db, {&is_alive_table}, my_filter2)
+        err = ecs.view_init(&view3, &db, {&is_alive_table}, filter = my_filter2)
          if err != nil { report_error(err); return }
 
         ecs.rebuild(&view3)
@@ -316,7 +316,7 @@ main :: proc() {
             return true
         }
 
-        err = ecs.view_init(&view4, &db, {&movement_table}, not_idle_filter)
+        err = ecs.view_init(&view4, &db, {&movement_table}, filter = not_idle_filter)
         if err != nil { report_error(err); return }
 
         view4.user_data = &user_data
@@ -427,6 +427,72 @@ main :: proc() {
         if err != nil { report_error(err); return }
         for ecs.next(&it5) {
             eid = ecs.get_entity(&it5)
+
+            switch eid {
+                case human: fmt.println("Human")
+                case bird:  fmt.println("Bird")
+                case chair: fmt.println("Chair")
+            }
+        }
+
+    ///////////////////////////////////////////////////////////////////////////////
+    // View any_of example (OR): "has Movement AND (is flying OR is heavy)".
+    // Like excludes, any_of is auto-maintained and not a filter — no rerun needed,
+    // and losing only ONE of several matching any_of tags does not evict a member.
+    //
+        is_flying_table: ecs.Tag_Table
+        is_heavy_table:  ecs.Tag_Table
+
+        err = ecs.tag_table__init(&is_flying_table, &db, 10)
+        if err != nil { report_error(err); return }
+        err = ecs.tag_table__init(&is_heavy_table, &db, 10)
+        if err != nil { report_error(err); return }
+
+        err = ecs.tag(&is_flying_table, bird)
+        if err != nil { report_error(err); return }
+        err = ecs.tag(&is_heavy_table, chair)
+        if err != nil { report_error(err); return }
+
+        view6: ecs.View
+        err = ecs.view_init(&view6, &db, {&movement_table}, any_of = {&is_flying_table, &is_heavy_table})
+        if err != nil { report_error(err); return }
+
+        // Entities/tags already existed before view6 was created — populate it once
+        // (a view created up front instead would stay live automatically, no rebuild needed)
+        err = ecs.rebuild(&view6)
+        if err != nil { report_error(err); return }
+
+        it6: ecs.Iterator
+
+        fmt.println()
+        fmt.println("Entities with Movement that are flying or heavy (bird flies, chair is heavy):")
+        err = ecs.iterator_init(&it6, &view6)
+        if err != nil { report_error(err); return }
+        for ecs.next(&it6) {
+            eid = ecs.get_entity(&it6)
+
+            switch eid {
+                case human: fmt.println("Human")
+                case bird:  fmt.println("Bird")
+                case chair: fmt.println("Chair")
+            }
+        }
+
+        // Tag human heavy too — now human and chair share the "heavy" reason to match
+        err = ecs.tag(&is_heavy_table, human)
+        if err != nil { report_error(err); return }
+
+        // Untag chair's ONLY matching any_of tag — it leaves the view; human and
+        // bird each still match through their own any_of tag
+        err = ecs.untag(&is_heavy_table, chair)
+        if err != nil { report_error(err); return }
+
+        fmt.println()
+        fmt.println("After tagging human heavy and untagging chair (auto-updated, no rebuild):")
+        err = ecs.iterator_reset(&it6)
+        if err != nil { report_error(err); return }
+        for ecs.next(&it6) {
+            eid = ecs.get_entity(&it6)
 
             switch eid {
                 case human: fmt.println("Human")

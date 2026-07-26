@@ -119,13 +119,34 @@ Any table variant can be excluded. Excluded tables are **not** columns: they con
 
 Excludes cost one extra bitset test per membership check — prefer them over an equivalent proc filter, which costs an indirect call plus manual re-evaluation.
 
+## `any_of` (OR)
+
+`view_init` also takes an optional `any_of` list — if non-empty, an entity enters the view only if it has a component in **at least one** of these tables ("has `Position` AND (`Enemy` OR `Boss`)"), alongside `includes` (AND) and `excludes` (NOT):
+
+```odin
+positions: ecs.Table(Position)
+enemy:     ecs.Tag_Table
+boss:      ecs.Tag_Table
+view:      ecs.View
+
+// All entities with a Position that are tagged Enemy or Boss (or both)
+ecs.view_init(&view, &my_ecs, {&positions}, any_of = {&enemy, &boss})
+```
+
+Like `excludes`, `any_of` tables are **not** columns — no component data is read from them, they don't affect `view_cap`, and they're auto-maintained: tagging/adding to any one of them can admit an entity, and only losing the *last* matching one evicts it (having two of the three `any_of` tables and losing one leaves the entity a member).
+
+A table can't be in both `includes` and `any_of` (redundant — AND already guarantees it; `view_init` returns `API_Error.Table_Cannot_Be_Included_And_Any_Of`). A table *can* be in both `excludes` and `any_of` — not a contradiction, just two independent constraints on the same table (`excludes` still wins if the entity has it).
+
+`any_of` costs one extra bitset test per membership check, same tier as `excludes` — well below a filter proc.
+
 ## Filters
 
-Three ways to narrow a view beyond "has all included components", fastest first:
+Four ways to narrow a view beyond "has all included components", fastest first:
 
 1. **`excludes`** (above) — for *structural* negation ("has A, not B"). Auto-maintained, one bitset test.
-2. **A `Tag_Table` in `includes`** — for predicates over *mutable data* that you can maintain explicitly. Instead of filtering on `health.hp > 0`, keep an `alive` tag and `add_tag`/`remove_tag` where `hp` changes; the view follows automatically.
-3. **A filter proc** (below) — when the predicate genuinely needs code. Costs an indirect call per candidate entity, and *you* must re-evaluate entities whose data changes.
+2. **`any_of`** (above) — for *structural* disjunction ("has A, and (B or C)"). Auto-maintained, one bitset test.
+3. **A `Tag_Table` in `includes`** — for predicates over *mutable data* that you can maintain explicitly. Instead of filtering on `health.hp > 0`, keep an `alive` tag and `add_tag`/`remove_tag` where `hp` changes; the view follows automatically.
+4. **A filter proc** (below) — when the predicate genuinely needs code. Costs an indirect call per candidate entity, and *you* must re-evaluate entities whose data changes.
 
 A filter is a proc passed to `view_init` that decides per entity whether it enters the view, on top of the component match:
 
@@ -142,7 +163,7 @@ alive_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
     return health.hp > 0
 }
 
-ecs.view_init(&alive_view, &my_ecs, {&healths, &positions}, alive_filter)
+ecs.view_init(&alive_view, &my_ecs, {&healths, &positions}, filter = alive_filter)
 ```
 
 You can pass custom state through `view.user_data` (set it **before** entities start flowing in):
@@ -158,7 +179,7 @@ my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil) -> bool {
 }
 
 view.user_data = &data
-ecs.view_init(&view, &my_ecs, {&healths}, my_filter)
+ecs.view_init(&view, &my_ecs, {&healths}, filter = my_filter)
 ```
 
 The filter runs when membership *changes* (component added/removed etc.), not when component values change. If your filter depends on mutable data (like `hp`), re-evaluate affected entities after mutating:

@@ -121,6 +121,7 @@ package ode_ecs
     //
     // View
     //
+
         view_init               :: view__init
         view_terminate          :: view__terminate
         view_len                :: view__len                        // Number of rows in view
@@ -537,6 +538,7 @@ package ode_ecs
             Table_Already_Owned_By_Group,     // a table can have at most one owner group
             Cannot_Pause_Table_Owned_By_Group, // pause/resume_packing reject a table owned by a Group; pause/resume the Group instead
             Table_Cannot_Be_Included_And_Excluded, // view_init got the same table in `includes` and `excludes`
+            Table_Cannot_Be_Included_And_Any_Of,   // view_init got the same table in `includes` and `any_of` (always redundant — AND already guarantees it)
             Snapshot_Invalid,                 // bad magic/endianness, truncated or corrupt snapshot buffer
             Snapshot_Version_Mismatch,        // snapshot was written by an incompatible library version
             Snapshot_Schema_Mismatch,         // tables/types of the target database differ from the saved ones

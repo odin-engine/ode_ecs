@@ -39,19 +39,21 @@ package ode_ecs
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
         subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
     }
 
     @(private)
     compact_table_base__is_valid :: proc(self: ^Compact_Table_Base) -> bool {
-        if self == nil do return false 
-        if !shared_table__is_valid_internal(&self.shared) do return false 
+        if self == nil do return false
+        if !shared_table__is_valid_internal(&self.shared) do return false
         if self.type_info == nil do return false
         if self.rid_to_eid == nil do return false
         if !oc_maps.rh_map32__is_valid(&self.eid_to_rid) do return false
-        if self.cap <= 0 do return false 
+        if self.cap <= 0 do return false
         if !oc.dense_arr__is_valid(&self.subscribers) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_excluding) do return false
+        if !oc.dense_arr__is_valid(&self.subscribers_any_of) do return false
 
         return true
     }
@@ -70,12 +72,14 @@ package ode_ecs
         oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_excluding, subscribers_cap, db.allocator) or_return
+        oc.dense_arr__init(&self.subscribers_any_of, subscribers_cap, db.allocator) or_return
 
         return nil
     }
 
     @(private)
     compact_table_base__terminate :: proc(self: ^Compact_Table_Base) -> Error {
+        oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
@@ -126,8 +130,19 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_excluding_views
-    compact_table_base__notify_excluding_views :: proc(self: ^Compact_Table_Base, eid: entity_id) {
+    compact_table_base__attach_any_of_subscriber :: proc(self: ^Compact_Table_Base, view: ^View) -> Error {
+        _, err := oc.dense_arr__add(&self.subscribers_any_of, view)
+        return err
+    }
+
+    @(private)
+    compact_table_base__detach_any_of_subscriber :: proc(self: ^Compact_Table_Base, view: ^View) -> Error {
+        return oc.dense_arr__remove_by_value(&self.subscribers_any_of, view)
+    }
+
+    @(private)
+    // See table_base__notify_excluding_views. #force_inline: see table_base__notify_excluding_views.
+    compact_table_base__notify_excluding_views :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
             if !view.suspended && view__components_match(view, eid) {
@@ -143,7 +158,15 @@ package ode_ecs
     }
 
     @(private)
-    compact_table_base__memory_usage :: proc (self: ^Compact_Table_Base) -> int {    
+    // See table_base__notify_any_of_views. #force_inline: see table_base__notify_excluding_views.
+    compact_table_base__notify_any_of_views :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
+        for view in self.subscribers_any_of.items {
+            if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
+        }
+    }
+
+    @(private)
+    compact_table_base__memory_usage :: proc (self: ^Compact_Table_Base) -> int {
         total := size_of(self^)
 
         if self.rid_to_eid != nil {
@@ -158,6 +181,7 @@ package ode_ecs
         total += oc.dense_arr__memory_usage(&self.subscribers)
         total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
         total += oc.dense_arr__memory_usage(&self.subscribers_excluding)
+        total += oc.dense_arr__memory_usage(&self.subscribers_any_of)
 
         return total
     }
@@ -198,6 +222,7 @@ package ode_ecs
     compact_table_raw__terminate :: proc(self: ^Compact_Table_Raw) -> Error {
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
+        for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
 
         // Clear this table's bit from all entities, see table_raw__terminate
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
@@ -264,6 +289,7 @@ package ode_ecs
 
             database__remove_component(self.db, target_eid, self.id)
             compact_table_base__notify_excluding_views(self, target_eid)
+            compact_table_base__notify_any_of_views(self, target_eid)
             return
         }
 
@@ -318,6 +344,7 @@ package ode_ecs
         database__remove_component(self.db, target_eid, self.id)
 
         compact_table_base__notify_excluding_views(self, target_eid)
+        compact_table_base__notify_any_of_views(self, target_eid)
 
         return
     }
@@ -380,6 +407,12 @@ package ode_ecs
         // Notify subscribed views. Also runs on the already-exists path on purpose: it
         // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for view in self.subscribers.items {
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+        }
+
+        // Views any_of-ing this table may have gained their (first) matching table for
+        // this entity (no-op if already a member via another any_of table).
+        for view in self.subscribers_any_of.items {
             if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 

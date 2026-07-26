@@ -170,7 +170,7 @@ package ode_ecs__tests
                 return false
             }
 
-            testing.expect(t, ecs.view_init(&view2, &db, {&is_alive_table}, my_filter) == nil)
+            testing.expect(t, ecs.view_init(&view2, &db, {&is_alive_table}, filter = my_filter) == nil)
 
             ecs.rebuild(&view2)
 
@@ -225,7 +225,7 @@ package ode_ecs__tests
 
             view3.user_data = &my_user_data   // set user_data !!!
 
-            testing.expect(t, ecs.view_init(&view3, &db, {&is_alive_table}, my_filter2) == nil)
+            testing.expect(t, ecs.view_init(&view3, &db, {&is_alive_table}, filter = my_filter2) == nil)
 
             ecs.rebuild(&view3)
 

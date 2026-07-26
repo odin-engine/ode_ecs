@@ -36,7 +36,7 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
     * An example of a bool table
 
 * [Sample05](/samples/sample05/main.odin) – Compares `Table` vs. `Compact_Table`, and `Tiny_Table` vs. `Compact_Table` vs. `Table`.
-* [Sample06](/samples/sample06/main.odin) – Demonstrates how to use `Tag_Table` and View filtering.
+* [Sample06](/samples/sample06/main.odin) – Demonstrates how to use `Tag_Table` and View filtering, `excludes` (NOT), and `any_of` (OR).
 * [Sample07](/samples/sample07/main.odin) – Demonstrates `Group`: exclusive table ownership and iterating the aligned dense prefix.
 * [Sample08](/samples/sample08/main.odin) – Demonstrates entity relations (`relations_init`, `set_parent`, `children_of`).
 * [Sample09](/samples/sample09/main.odin) – Demonstrates `Command_Buffer`: deferring structural changes while iterating, then `replay`.

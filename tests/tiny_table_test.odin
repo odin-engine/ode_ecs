@@ -857,7 +857,7 @@ package ode_ecs__tests
                 return true
             }
 
-            err = ecs.view_init(&view, &db, {&movement_table}, not_idle_filter)
+            err = ecs.view_init(&view, &db, {&movement_table}, filter = not_idle_filter)
             testing.expect(t, err == nil)
 
             view.user_data = &user_data

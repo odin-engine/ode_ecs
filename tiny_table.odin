@@ -25,6 +25,15 @@ package ode_ecs
         eid_to_ptr: oc_maps.Tt_Map(TINY_TABLE__MAP_CAP, rawptr),
         subscribers: [TINY_TABLE__VIEWS_CAP]^View,
         subscribers_excluding: [TINY_TABLE__VIEWS_CAP]^View, // views that EXCLUDE this table (see view__init excludes)
+        subscribers_any_of: [TINY_TABLE__VIEWS_CAP]^View, // views that any_of this table (see view__init any_of)
+        // Live counts for subscribers/subscribers_excluding/subscribers_any_of. Unlike
+        // Table's Dense_Arr (whose .items slice already has an O(1) length), a fixed
+        // [N]^View array has no free "is anything in here" check — scanning all
+        // TINY_TABLE__VIEWS_CAP slots costs the same whether 0 or N are set. These
+        // counts let the (common) all-empty case skip the scan entirely.
+        subscribers_count: int,
+        subscribers_excluding_count: int,
+        subscribers_any_of_count: int,
         len: int,
 
         // Deferred tail swap (db.tail_swap_paused) hole bookkeeping, see Table_Base
@@ -50,6 +59,10 @@ package ode_ecs
         // (issue #8) and would keep notifying views from a previous life.
         self.subscribers = {}
         self.subscribers_excluding = {}
+        self.subscribers_any_of = {}
+        self.subscribers_count = 0
+        self.subscribers_excluding_count = 0
+        self.subscribers_any_of_count = 0
 
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
@@ -62,6 +75,7 @@ package ode_ecs
 
         for view in self.subscribers do if view != nil do view.state = Object_State.Invalid
         for view in self.subscribers_excluding do if view != nil do view.state = Object_State.Invalid
+        for view in self.subscribers_any_of do if view != nil do view.state = Object_State.Invalid
 
         // Clear this table's bit from all entities, see table_raw__terminate
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
@@ -78,7 +92,8 @@ package ode_ecs
         for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
             if self.subscribers[i] == nil {
                 self.subscribers[i] = view
-                return nil 
+                self.subscribers_count += 1
+                return nil
             }
         }
 
@@ -90,6 +105,7 @@ package ode_ecs
         for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
             if self.subscribers[i] == view {
                 self.subscribers[i] = nil
+                self.subscribers_count -= 1
                 return nil
             }
         }
@@ -102,6 +118,7 @@ package ode_ecs
         for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
             if self.subscribers_excluding[i] == nil {
                 self.subscribers_excluding[i] = view
+                self.subscribers_excluding_count += 1
                 return nil
             }
         }
@@ -114,6 +131,7 @@ package ode_ecs
         for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
             if self.subscribers_excluding[i] == view {
                 self.subscribers_excluding[i] = nil
+                self.subscribers_excluding_count -= 1
                 return nil
             }
         }
@@ -122,8 +140,37 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_excluding_views
-    tiny_table_base__notify_excluding_views :: proc(self: ^Tiny_Table_Base, eid: entity_id) {
+    tiny_table_base__attach_any_of_subscriber :: proc(self: ^Tiny_Table_Base, view: ^View) -> Error {
+        for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
+            if self.subscribers_any_of[i] == nil {
+                self.subscribers_any_of[i] = view
+                self.subscribers_any_of_count += 1
+                return nil
+            }
+        }
+
+        return oc.Core_Error.Container_Is_Full
+    }
+
+    @(private)
+    tiny_table_base__detach_any_of_subscriber :: proc(self: ^Tiny_Table_Base, view: ^View) -> Error {
+        for i:=0; i < TINY_TABLE__VIEWS_CAP; i+=1 {
+            if self.subscribers_any_of[i] == view {
+                self.subscribers_any_of[i] = nil
+                self.subscribers_any_of_count -= 1
+                return nil
+            }
+        }
+
+        return oc.Core_Error.Not_Found
+    }
+
+    @(private)
+    // See table_base__notify_excluding_views. #force_inline + the count check: unlike
+    // Table's Dense_Arr, this fixed-array scan has no free "is anything in here" — see
+    // subscribers_excluding_count's doc comment above.
+    tiny_table_base__notify_excluding_views :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
+        if self.subscribers_excluding_count == 0 do return
         if self.db.destroying_eid_ix == eid.ix do return
         for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
             view := self.subscribers_excluding[i]
@@ -136,6 +183,17 @@ package ode_ecs
                     view__add_record(view, eid)
                 }
             }
+        }
+    }
+
+    @(private)
+    // See table_base__notify_any_of_views. #force_inline + the count check: see
+    // tiny_table_base__notify_excluding_views.
+    tiny_table_base__notify_any_of_views :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
+        if self.subscribers_any_of_count == 0 do return
+        for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+            view := self.subscribers_any_of[i]
+            if view != nil && !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
         }
     }
 
@@ -223,15 +281,18 @@ package ode_ecs
                 if target_rid < self.first_hole_rid do self.first_hole_rid = target_rid
             }
 
-            for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
-                view := self.subscribers[i]
-                if view == nil do continue
-                if !view.suspended do view__remove_record(view, target_eid)
-                else do view__missed_update_for_member(view, target_eid)
+            if self.subscribers_count > 0 {
+                for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+                    view := self.subscribers[i]
+                    if view == nil do continue
+                    if !view.suspended do view__remove_record(view, target_eid)
+                    else do view__missed_update_for_member(view, target_eid)
+                }
             }
 
             database__remove_component(self.db, target_eid, self.id)
             tiny_table_base__notify_excluding_views(self, target_eid)
+            tiny_table_base__notify_any_of_views(self, target_eid)
             return
         }
 
@@ -252,11 +313,13 @@ package ode_ecs
             oc_maps.tt_map__remove_found(&self.eid_to_ptr, target_item, target_slot)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
-            for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
-                view := self.subscribers[i]
-                if view == nil do continue
-                if !view.suspended do view__remove_record(view, target_eid)
-                else do view__missed_update_for_member(view, target_eid)
+            if self.subscribers_count > 0 {
+                for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+                    view := self.subscribers[i]
+                    if view == nil do continue
+                    if !view.suspended do view__remove_record(view, target_eid)
+                    else do view__missed_update_for_member(view, target_eid)
+                }
             }
         }
         else {
@@ -275,15 +338,17 @@ package ode_ecs
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
 
             // Notify subscribed views
-            for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
-                view := self.subscribers[i]
-                if view == nil do continue
-                if !view.suspended {
-                    view__remove_record(view, target_eid)
-                    view__update_component_rid(view, self, tail_eid, target_rid)
-                } else {
-                    view__missed_update_for_member(view, target_eid)
-                    view__missed_update_for_member(view, tail_eid)
+            if self.subscribers_count > 0 {
+                for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+                    view := self.subscribers[i]
+                    if view == nil do continue
+                    if !view.suspended {
+                        view__remove_record(view, target_eid)
+                        view__update_component_rid(view, self, tail_eid, target_rid)
+                    } else {
+                        view__missed_update_for_member(view, target_eid)
+                        view__missed_update_for_member(view, tail_eid)
+                    }
                 }
             }
         }
@@ -296,6 +361,7 @@ package ode_ecs
         database__remove_component(self.db, target_eid, self.id)
 
         tiny_table_base__notify_excluding_views(self, target_eid)
+        tiny_table_base__notify_any_of_views(self, target_eid)
 
         return
     }
@@ -348,9 +414,11 @@ package ode_ecs
                 // See table_raw__add_component: an overwrite can flip a view's
                 // filter verdict, and the add-notify below skips existing members.
                 // Tiny_Table keeps no separate with-filter list — check per view.
-                for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
-                    view := self.subscribers[i]
-                    if view != nil && !view.suspended && view.filter != nil do view__rerun_filter(view, eid)
+                if self.subscribers_count > 0 {
+                    for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+                        view := self.subscribers[i]
+                        if view != nil && !view.suspended && view.filter != nil do view__rerun_filter(view, eid)
+                    }
                 }
             }
             err = API_Error.Component_Already_Exist
@@ -358,15 +426,30 @@ package ode_ecs
 
         // Notify subscribed views. Also runs on the already-exists path on purpose: it
         // recovers a view membership that a previous add failed to register (e.g. view was at cap).
-        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
-            view := self.subscribers[i]
-            if view != nil && !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+        if self.subscribers_count > 0 {
+            for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+                view := self.subscribers[i]
+                if view != nil && !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+            }
+        }
+
+        // Views any_of-ing this table may have gained their (first) matching table for
+        // this entity (no-op if already a member via another any_of table). Guarded by
+        // the count (see subscribers_any_of_count's doc comment) so the common
+        // no-any_of case skips the fixed-array scan entirely.
+        if self.subscribers_any_of_count > 0 {
+            for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+                view := self.subscribers_any_of[i]
+                if view != nil && !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+            }
         }
 
         // Views excluding this table lose the entity (no-op if it wasn't a member)
-        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
-            view := self.subscribers_excluding[i]
-            if view != nil && !view.suspended do view__remove_record(view, eid)
+        if self.subscribers_excluding_count > 0 {
+            for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+                view := self.subscribers_excluding[i]
+                if view != nil && !view.suspended do view__remove_record(view, eid)
+            }
         }
 
         return
@@ -438,11 +521,13 @@ package ode_ecs
             oc_maps.tt_map__add(&self.eid_to_ptr, moved_eid.ix, dst)
             mem.zero(src, T_size)
 
-            for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
-                view := self.subscribers[i]
-                if view == nil do continue
-                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
-                else do view__missed_update_for_member(view, moved_eid)
+            if self.subscribers_count > 0 {
+                for i := 0; i < TINY_TABLE__VIEWS_CAP; i += 1 {
+                    view := self.subscribers[i]
+                    if view == nil do continue
+                    if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                    else do view__missed_update_for_member(view, moved_eid)
+                }
             }
 
             back -= 1
@@ -582,10 +667,12 @@ package ode_ecs
     tiny_table__rerun_views_filters :: proc(self: ^Tiny_Table($T), eid: entity_id) -> Error {
         database__is_entity_correct(self.db, eid) or_return
 
-        for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
-            view := self.subscribers[i]
-            if view != nil && !view.suspended {
-                view__rerun_filter(view, eid) or_return
+        if self.subscribers_count > 0 {
+            for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
+                view := self.subscribers[i]
+                if view != nil && !view.suspended {
+                    view__rerun_filter(view, eid) or_return
+                }
             }
         }
 

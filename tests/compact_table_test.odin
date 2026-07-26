@@ -967,7 +967,7 @@ package ode_ecs__tests
                 return true
             }
 
-            err = ecs.view_init(&view, &db, {&movement_table}, not_idle_filter)
+            err = ecs.view_init(&view, &db, {&movement_table}, filter = not_idle_filter)
             testing.expect(t, err == nil)
             testing.expect(t, movement_table.type == ecs.Table_Type.Compact_Table)
             testing.expect(t, oc.dense_arr__len(&movement_table.subscribers_with_filter) == 1)

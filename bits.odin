@@ -40,6 +40,10 @@ package ode_ecs
         return a^ & b^ == {}
     }
 
+    bits__intersects :: #force_inline proc "contextless" (a: ^Bits, b: ^Bits) -> bool {
+        return a^ & b^ != {}
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Bits_Arr
 
@@ -90,6 +94,15 @@ package ode_ecs
         return true
     }
 
+    bits_arr__intersects :: #force_inline proc (a: ^Bits_Arr($N), b: ^Bits_Arr($S)) -> bool {
+        assert(N == S)
+        for i:=0; i < N; i += 1 {
+            if (a.value[i] & b.value[i]) != {} do return true
+        }
+
+        return false
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Uni_Bits
 
@@ -136,6 +149,12 @@ package ode_ecs
         bits_arr__no_intersection,
     }
 
+    // a^ & b^ != {}
+    uni_bits__intersects :: proc {
+        bits__intersects,
+        bits_arr__intersects,
+    }
+
     @(test)
     uni_bits__test :: proc(t: ^testing.T) {
         bb : Uni_Bits 
@@ -168,6 +187,24 @@ package ode_ecs
         uni_bits__clear(&bb)
         testing.expect(t, uni_bits__exists(&bb, 2) == false)
         testing.expect(t, uni_bits__exists(&bb, 78) == false)
+    }
+
+    @(test)
+    uni_bits__intersects__test :: proc(t: ^testing.T) {
+        a, b, c: Uni_Bits
+        uni_bits__add(&a, 2)
+        uni_bits__add(&a, 3)
+        uni_bits__add(&b, 3)
+        uni_bits__add(&b, 78)
+        uni_bits__add(&c, 5)
+
+        testing.expect(t, uni_bits__intersects(&a, &b))        // share bit 3
+        testing.expect(t, uni_bits__no_intersection(&a, &b) == false)
+        testing.expect(t, uni_bits__intersects(&a, &c) == false) // no shared bits
+        testing.expect(t, uni_bits__no_intersection(&a, &c))
+
+        empty: Uni_Bits
+        testing.expect(t, uni_bits__intersects(&empty, &a) == false) // empty set intersects nothing
     }
 
 

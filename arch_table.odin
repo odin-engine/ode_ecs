@@ -62,6 +62,7 @@ package ode_ecs
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
         subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
     }
 
     // Is table valid and ready to use (initialized and everything is ok)
@@ -75,6 +76,7 @@ package ode_ecs
         if !oc.dense_arr__is_valid(&self.subscribers) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_excluding) do return false
+        if !oc.dense_arr__is_valid(&self.subscribers_any_of) do return false
 
         return true
     }
@@ -130,6 +132,7 @@ package ode_ecs
         oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_excluding, subscribers_cap, db.allocator) or_return
+        oc.dense_arr__init(&self.subscribers_any_of, subscribers_cap, db.allocator) or_return
 
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
@@ -149,6 +152,7 @@ package ode_ecs
 
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
+        for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
 
         // A group missing one of its owned tables is meaningless — invalidate it
         // (it still owns its allocations; terminate it to release them).
@@ -171,6 +175,7 @@ package ode_ecs
         delete(self.rid_to_eid, self.db.allocator) or_return
         delete(self.eid_to_rid, self.db.allocator) or_return
 
+        oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
@@ -223,6 +228,7 @@ package ode_ecs
         total += oc.dense_arr__memory_usage(&self.subscribers)
         total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
         total += oc.dense_arr__memory_usage(&self.subscribers_excluding)
+        total += oc.dense_arr__memory_usage(&self.subscribers_any_of)
 
         return total
     }
@@ -324,6 +330,9 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
             }
+            for view in self.subscribers_any_of.items {
+                if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+            }
             for view in self.subscribers_excluding.items {
                 if !view.suspended do view__remove_record(view, eid)
             }
@@ -354,6 +363,9 @@ package ode_ecs
         if self.owner != nil do group__on_add(self.owner, eid)
 
         for view in self.subscribers.items {
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+        }
+        for view in self.subscribers_any_of.items {
             if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
         for view in self.subscribers_excluding.items {
@@ -447,6 +459,7 @@ package ode_ecs
 
             database__remove_component(self.db, target_eid, self.id)
             arch_table__notify_excluding_views(self, target_eid)
+            arch_table__notify_any_of_views(self, target_eid)
             return nil
         }
 
@@ -501,6 +514,7 @@ package ode_ecs
 
         database__remove_component(self.db, target_eid, self.id)
         arch_table__notify_excluding_views(self, target_eid)
+        arch_table__notify_any_of_views(self, target_eid)
 
         return nil
     }
@@ -713,10 +727,22 @@ package ode_ecs
     }
 
     @(private)
+    arch_table__attach_any_of_subscriber :: proc(self: ^Arch_Table, view: ^View) -> Error {
+        _, err := oc.dense_arr__add(&self.subscribers_any_of, view)
+        return err
+    }
+
+    @(private)
+    arch_table__detach_any_of_subscriber :: proc(self: ^Arch_Table, view: ^View) -> Error {
+        return oc.dense_arr__remove_by_value(&self.subscribers_any_of, view)
+    }
+
+    @(private)
     // After a component was removed from this table (eid_to_bits already updated),
     // a view excluding this table may newly match the entity. Skipped while the
     // entity itself is being destroyed — later removals would just evict it again.
-    arch_table__notify_excluding_views :: proc(self: ^Arch_Table, eid: entity_id) {
+    // #force_inline: see table_base__notify_excluding_views.
+    arch_table__notify_excluding_views :: #force_inline proc(self: ^Arch_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
             if !view.suspended && view__components_match(view, eid) {
@@ -727,5 +753,13 @@ package ode_ecs
                     view__add_record(view, eid)
                 }
             }
+        }
+    }
+
+    @(private)
+    // See table_base__notify_any_of_views. #force_inline: see table_base__notify_excluding_views.
+    arch_table__notify_any_of_views :: #force_inline proc(self: ^Arch_Table, eid: entity_id) {
+        for view in self.subscribers_any_of.items {
+            if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
         }
     }
