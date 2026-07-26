@@ -65,3 +65,7 @@ Instead of creating deep class inheritance trees (`GameObject` $\rightarrow$ `Ac
 1. **No "Inheritance Hell":** In OOP, if you want a flying, explosive barrel, where does it go in your class tree? In ECS, you simply attach `Position`, `Renderable`, `Flying`, and `Explosive` components to an entity.
 2. **Cache Locality (Performance):** In memory, all `Position` components are packed tightly together in a contiguous array. When `MovementSystem` iterates over them, the CPU cache loads them all at once, making CPU cache misses rare and execution extremely fast.
 3. **Decoupled Systems:** Systems don't need to know about each other. The `RenderSystem` doesn't care about `Health` or `AI`—it just grabs every entity with a `Position` + `Renderable` and draws it.
+
+## What type of ECS to use?
+
+Read about it [here](ecs_types.md).
