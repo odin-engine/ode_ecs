@@ -695,6 +695,21 @@ package ode_ecs
         return oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED
     }
 
+    // Soft toggle: excludes the component from View matching without removing it — see
+    // database.odin's "Component enable/disable" section.
+    compact_table__disable_component :: proc(self: ^Compact_Table($T), eid: entity_id) -> Error {
+        return database__disable_component(self.db, eid, self.id)
+    }
+
+    compact_table__enable_component :: proc(self: ^Compact_Table($T), eid: entity_id) -> Error {
+        return database__enable_component(self.db, eid, self.id)
+    }
+
+    @(require_results)
+    compact_table__is_component_disabled :: proc(self: ^Compact_Table($T), eid: entity_id) -> bool {
+        return database__is_component_disabled(self.db, eid, self.id)
+    }
+
     compact_table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Compact_Table($T), #any_int row_number: int) -> entity_id {
         return compact_table_base__get_entity_by_row_number(self, row_number)
     }

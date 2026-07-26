@@ -251,6 +251,33 @@ package ode_ecs
         is_relation_of      :: database__is_relation_of             // Does `e` relate to `target` directly (as child or parent)?
 
     //
+    // Component enable/disable (soft toggle, see database.odin) — the component/row stays
+    // put, just excluded from (disable_component) or restored to (enable_component) query
+    // matching. Takes the owning table's pointer, same convention as has_component.
+    //
+        disable_component :: proc {
+            table__disable_component,
+            compact_table__disable_component,
+            tiny_table__disable_component,
+            tag_table__disable_component,
+            arch_table__disable_component,
+        }
+        enable_component :: proc {
+            table__enable_component,
+            compact_table__enable_component,
+            tiny_table__enable_component,
+            tag_table__enable_component,
+            arch_table__enable_component,
+        }
+        is_component_disabled :: proc {
+            table__is_component_disabled,
+            compact_table__is_component_disabled,
+            tiny_table__is_component_disabled,
+            tag_table__is_component_disabled,
+            arch_table__is_component_disabled,
+        }
+
+    //
     // Outdated aliases (will be removed in future)
     // 
         view_entity_match   :: view__components_match               // outdated, use view_components_match instead

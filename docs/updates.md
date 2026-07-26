@@ -1,6 +1,7 @@
 # 🐑 Updates Timeline
 
 **July 2026**
+* \*new\* Component `enable_component`/`disable_component` — a soft, bitset-based toggle that excludes a component from View matching without moving or losing its data; see [Tables](tables.md#component-enable-disable).
 * \*new\* View `any_of` — structural OR, completing the AND (`includes`) / NOT (`excludes`) / OR (`any_of`) query combinators; see [View](view.md#any_of-or).
 * \*new\* [Arch_Table](arch_table.md) feature - archetype-style (SoA) tables, with full `View`, `Group`, `Command_Buffer` and snapshot-serialization support alongside regular Tables; see [Archetype vs. Sparse-Dense ECS](ecs_types.md).
 * \*new\* Unified `next()` iteration sugar - one proc group covering both `Iterator` and `Arch_Iterator`, 0 to 7 typed components per call; replaces `iterator_next`/`iterate`.

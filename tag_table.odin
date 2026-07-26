@@ -319,6 +319,21 @@ package ode_ecs
         return oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED
     }
 
+    // Soft toggle: excludes the component from View matching without removing it — see
+    // database.odin's "Component enable/disable" section.
+    tag_table__disable_component :: proc(self: ^Tag_Table, eid: entity_id) -> Error {
+        return database__disable_component(self.db, eid, self.id)
+    }
+
+    tag_table__enable_component :: proc(self: ^Tag_Table, eid: entity_id) -> Error {
+        return database__enable_component(self.db, eid, self.id)
+    }
+
+    @(require_results)
+    tag_table__is_component_disabled :: proc(self: ^Tag_Table, eid: entity_id) -> bool {
+        return database__is_component_disabled(self.db, eid, self.id)
+    }
+
     // Compact holes left by removals made while tail swap was paused
     // (see database__pause_packing). Callable mid-pause too.
     tag_table__pack :: proc(self: ^Tag_Table) -> Error {

@@ -37,6 +37,11 @@ package ode_ecs
 
         eid_to_bits: []Uni_Bits,
 
+        // A set bit means "table T is disabled for this entity" — present in eid_to_bits
+        // (the entity has the component/row) but excluded from query matching until
+        // re-enabled via enable_component. See view__components_match.
+        eid_to_disabled_bits: []Uni_Bits,
+
         // Batch-allocated View-subscriber bookkeeping for every Tiny_Table in this
         // Database (see tiny_table.odin's Tiny_Table_Subscriber_Slot) — Tiny_Table_Base
         // only keeps an index into this slice, not the arrays themselves.
@@ -68,6 +73,7 @@ package ode_ecs
         if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid(&self.groups) do return false
         if self.eid_to_bits == nil do return false
+        if self.eid_to_disabled_bits == nil do return false
         if self.tiny_table_subscriber_slots == nil do return false
 
         return true
@@ -101,6 +107,7 @@ package ode_ecs
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, TINY_TABLES_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
+        self.eid_to_disabled_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -140,6 +147,7 @@ package ode_ecs
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, TINY_TABLES_CAP, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
+        self.eid_to_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -156,6 +164,11 @@ package ode_ecs
         if self.eid_to_bits != nil {
             delete(self.eid_to_bits, self.allocator) or_return
             self.eid_to_bits = nil
+        }
+
+        if self.eid_to_disabled_bits != nil {
+            delete(self.eid_to_disabled_bits, self.allocator) or_return
+            self.eid_to_disabled_bits = nil
         }
 
         // Views. Invalid views (their table was terminated) still own their
@@ -247,6 +260,7 @@ package ode_ecs
         }
 
         slice.zero(self.eid_to_bits)
+        slice.zero(self.eid_to_disabled_bits)
 
         // bump_gen so entity ids held across the clear are detected as expired.
         // A shared Overbase's entity ids stay valid for sibling Databases —
@@ -374,6 +388,7 @@ package ode_ecs
 
         // clean bit_sets
         uni_bits__clear(&self.eid_to_bits[eid.ix])
+        uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
 
         return nil
     }
@@ -626,6 +641,61 @@ package ode_ecs
     // #no_bounds_check: see database__add_component
     database__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__remove(&self.eid_to_bits[eid.ix], table_id)
+    }
+
+    // Component enable/disable — a soft toggle: the component/row stays exactly where it
+    // is (no data movement, no eid_to_bits change), but a disabled table's bit is excluded
+    // from query matching (view__components_match) until re-enabled. Disabling can only
+    // ever evict a view member (never admit one); enabling can only ever admit one (never
+    // evict) — mirrors table_base__notify_any_of_views/notify_excluding_views' shapes
+    // respectively, reusing the same subscribers list add_component/remove_component walk
+    // (shared_table__subscribers) instead of a new per-type list. Called only by the
+    // per-table-type disable_component/enable_component/is_component_disabled wrappers
+    // (table.odin, compact_table.odin, tiny_table.odin, tag_table.odin, arch_table.odin).
+    @(private)
+    database__disable_component :: proc(self: ^Database, eid: entity_id, id: table_id, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(int(id) < len(self.tables.items), loc = loc)
+            assert(self.tables.items[int(id)] != nil, loc = loc)
+        }
+        database__is_entity_correct(self, eid) or_return
+
+        uni_bits__add(&self.eid_to_disabled_bits[eid.ix], id)
+
+        table := self.tables.items[int(id)]
+        for view in shared_table__subscribers(table) {
+            if view == nil do continue
+            if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
+        }
+
+        return nil
+    }
+
+    @(private)
+    database__enable_component :: proc(self: ^Database, eid: entity_id, id: table_id, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(int(id) < len(self.tables.items), loc = loc)
+            assert(self.tables.items[int(id)] != nil, loc = loc)
+        }
+        database__is_entity_correct(self, eid) or_return
+
+        uni_bits__remove(&self.eid_to_disabled_bits[eid.ix], id)
+
+        table := self.tables.items[int(id)]
+        for view in shared_table__subscribers(table) {
+            if view == nil do continue
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+        }
+
+        return nil
+    }
+
+    @(private)
+    @(require_results)
+    database__is_component_disabled :: #force_inline proc "contextless" (self: ^Database, eid: entity_id, id: table_id) -> bool #no_bounds_check {
+        return uni_bits__exists(&self.eid_to_disabled_bits[eid.ix], id)
     }
 
     @(private)

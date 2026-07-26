@@ -379,6 +379,35 @@ package ode_ecs
     }
 
     @(private)
+    // The views subscribed to this table via `includes` (not `excludes`/`any_of`), same list
+    // add_component/remove_component already walk. Used by database__disable_component/
+    // enable_component, which need to notify exactly the same views without duplicating a
+    // per-type notify proc (unlike subscribers_excluding/subscribers_any_of, this reuses an
+    // existing field rather than adding a new one). For Dense_Arr-backed types the returned
+    // slice is dense (no nil holes); for Tiny_Table it's the full fixed-size slot array and
+    // may contain nil holes — callers must skip nil entries either way (Tiny_Table's own
+    // add/remove paths already do this, so it's not a new requirement).
+    shared_table__subscribers :: proc(self: ^Shared_Table) -> []^View {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false) // should not happen
+            case Table_Type.Table:
+                return (cast(^Table_Base) self).subscribers.items
+            case Table_Type.Tiny_Table:
+                slot := tiny_table_base__slot(cast(^Tiny_Table_Base) self)
+                return slot.subscribers[:]
+            case Table_Type.Compact_Table:
+                return (cast(^Compact_Table_Base) self).subscribers.items
+            case Table_Type.Tag_Table:
+                return (cast(^Tag_Table) self).subscribers.items
+            case Table_Type.Arch_Table:
+                return (cast(^Arch_Table) self).subscribers.items
+        }
+
+        return nil
+    }
+
+    @(private)
     // A view that excludes this table subscribes here (not to `subscribers` — the
     // table is not a view column, only membership notifications are needed).
     shared_table__attach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {

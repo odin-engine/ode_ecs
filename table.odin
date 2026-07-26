@@ -838,6 +838,21 @@ package ode_ecs
         return self.eid_to_rid[eid.ix] != TABLE_NO_RID
     }
 
+    // Soft toggle: excludes the component from View matching without removing it — see
+    // database.odin's "Component enable/disable" section.
+    table__disable_component :: proc(self: ^Table($T), eid: entity_id) -> Error {
+        return database__disable_component(self.db, eid, self.id)
+    }
+
+    table__enable_component :: proc(self: ^Table($T), eid: entity_id) -> Error {
+        return database__enable_component(self.db, eid, self.id)
+    }
+
+    @(require_results)
+    table__is_component_disabled :: proc(self: ^Table($T), eid: entity_id) -> bool {
+        return database__is_component_disabled(self.db, eid, self.id)
+    }
+
     table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Table($T), #any_int row_number: int) -> entity_id {
         return table_base__get_entity_by_row_number(self, row_number)
     }

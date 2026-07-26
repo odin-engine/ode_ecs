@@ -58,6 +58,21 @@ ecs.has_component(&units, robot)   // true
 
 > **NOTE:** Like the other table types, removing a row tail-swaps the last row into the vacated slot — component **pointers are only valid until the archetype is mutated**. Store `entity_id`s, not component pointers, and re-`get_component` after mutations.
 
+## Component enable/disable
+
+A soft toggle: temporarily remove a component from query matching (any [View](view.md) that includes its table) without moving or losing the stored value — the opposite of `remove_component`/`add_component`, which is a real structural change that tail-swaps rows and re-zeroes the slot.
+Same soft toggle as the sparse-dense tables (see [Tables](tables.md#component-enable-disable)).
+
+```odin
+ecs.disable_component(&units, robot) // robot drops out of any view including `units`
+ecs.is_component_disabled(&units, robot) // true
+
+pos := ecs.get_component(&units, robot, Position)
+pos.x // still there, unchanged — disabling never touches the data
+
+ecs.enable_component(&units, robot) // robot re-enters those views
+```
+
 ## Iterating with Arch_Iterator
 
 `Arch_Iterator` walks an `Arch_Table`'s own dense rows directly — there is no `View` involved, since every column is already packed in lockstep. There is a single `Arch_Iterator` type (not one struct per arity); component types are supplied at each `ecs.next` call instead of at init — this mirrors how `ecs.iterate` takes its tables at each call for the sparse-dense `Iterator`:

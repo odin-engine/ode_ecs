@@ -206,6 +206,21 @@ ecs.view_init(&view, &my_ecs, {&ais, &positions, &is_alive})
 
 See [Sample06](../samples/sample06/main.odin) for a complete Tag_Table example.
 
+## Component enable/disable
+
+A soft toggle: temporarily remove a component from query matching (any [View](view.md) that includes its table) without moving or losing the stored value — the opposite of `remove_component`/`add_component`, which is a real structural change that tail-swaps rows and re-zeroes the slot.
+
+```odin
+ecs.disable_component(&positions, robot) // robot drops out of any view including `positions`
+ecs.is_component_disabled(&positions, robot) // true
+
+pos := ecs.get_component(&positions, robot)
+pos.x // still there, unchanged — disabling never touches the data
+
+ecs.enable_component(&positions, robot) // robot re-enters those views
+```
+Disabling is purely a `View`-matching concern: it does not evict an entity from a [`Group`](group.md) that owns the table (a `Group`'s dense prefix is physical row position, not bitset-based), and it is not currently recordable in a [`Command_Buffer`](command_buffer.md) or included in [serialization](serialization.md) snapshots.
+
 ## Choosing a variant
 
 Use `Tiny_Table` if `cap <= 8`; use `Compact_Table` if you want to save memory and `cap` is less than `entities_cap / 4` (but more than 8); otherwise — or if you don't care about memory — use `Table`. Use `Tag_Table` when there is no data to store at all. [Sample02](../samples/sample02/main.odin) demonstrates memory optimization with the different variants.

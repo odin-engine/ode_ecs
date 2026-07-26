@@ -210,6 +210,21 @@ package ode_ecs
         return self.eid_to_rid[eid.ix] != ARCH_TABLE_NO_RID
     }
 
+    // Soft toggle: excludes the component from View matching without removing it — see
+    // database.odin's "Component enable/disable" section.
+    arch_table__disable_component :: proc(self: ^Arch_Table, eid: entity_id) -> Error {
+        return database__disable_component(self.db, eid, self.id)
+    }
+
+    arch_table__enable_component :: proc(self: ^Arch_Table, eid: entity_id) -> Error {
+        return database__enable_component(self.db, eid, self.id)
+    }
+
+    @(require_results)
+    arch_table__is_component_disabled :: proc(self: ^Arch_Table, eid: entity_id) -> bool {
+        return database__is_component_disabled(self.db, eid, self.id)
+    }
+
     // Memory usage in bytes
     arch_table__memory_usage :: proc(self: ^Arch_Table) -> int {
         total := size_of(self^)

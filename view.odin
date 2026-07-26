@@ -565,8 +565,8 @@ package ode_ecs
     }
 
     // Returns true if entity has components that would match this view (all included
-    // tables, no excluded table, and — if any_of is non-empty — at least one any_of
-    // table), doesn't check filter
+    // tables, no excluded table, at least one any_of table if any_of is non-empty, and none
+    // of the view's included tables currently disabled for this entity), doesn't check filter
     view__components_match :: #force_inline proc (self: ^View, eid: entity_id) -> bool {
         bits := &self.db.eid_to_bits[eid.ix]
 
@@ -575,7 +575,8 @@ package ode_ecs
         // view without any_of would stop matching anything.
         return uni_bits__is_subset(&self.bits, bits) &&
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
-               (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits))
+               (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits)) &&
+               uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix])
     }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {

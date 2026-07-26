@@ -139,14 +139,26 @@ A table can't be in both `includes` and `any_of` (redundant — AND already guar
 
 `any_of` costs one extra bitset test per membership check, same tier as `excludes` — well below a filter proc.
 
+## Component enable/disable
+
+Unlike `excludes`/`any_of` (structural properties of the view itself, fixed at `view_init`), [`disable_component`/`enable_component`](tables.md#component-enable-disable) are a *per-entity* toggle that works with any view — disabling one of a view's included tables for an entity evicts it, without removing the component:
+
+```odin
+ecs.disable_component(&positions, robot) // robot leaves any view that includes `positions`
+ecs.enable_component(&positions, robot)  // robot re-enters
+```
+
+Same cost as `excludes`/`any_of` — one bitset test against a per-entity bitset instead of a per-view one — and no data movement at all, unlike a real `remove_component`/`add_component` round-trip.
+
 ## Filters
 
-Four ways to narrow a view beyond "has all included components", fastest first:
+Five ways to narrow a view beyond "has all included components", fastest first:
 
 1. **`excludes`** (above) — for *structural* negation ("has A, not B"). Auto-maintained, one bitset test.
 2. **`any_of`** (above) — for *structural* disjunction ("has A, and (B or C)"). Auto-maintained, one bitset test.
-3. **A `Tag_Table` in `includes`** — for predicates over *mutable data* that you can maintain explicitly. Instead of filtering on `health.hp > 0`, keep an `alive` tag and `add_tag`/`remove_tag` where `hp` changes; the view follows automatically.
-4. **A filter proc** (below) — when the predicate genuinely needs code. Costs an indirect call per candidate entity, and *you* must re-evaluate entities whose data changes.
+3. **`disable_component`/`enable_component`** (above) — a per-entity toggle on a component already present, same bitset-test cost as `excludes`/`any_of`, with no data movement.
+4. **A `Tag_Table` in `includes`** — for predicates over *mutable data* that you can maintain explicitly. Instead of filtering on `health.hp > 0`, keep an `alive` tag and `add_tag`/`remove_tag` where `hp` changes; the view follows automatically.
+5. **A filter proc** (below) — when the predicate genuinely needs code. Costs an indirect call per candidate entity, and *you* must re-evaluate entities whose data changes.
 
 A filter is a proc passed to `view_init` that decides per entity whether it enters the view, on top of the component match:
 
