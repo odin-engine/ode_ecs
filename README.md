@@ -4,11 +4,16 @@
 ⚡A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 ### What ODE_ECS offers
-
-- No hidden allocations in the game loop. Capacities are set up front, so there shouldn't be surprise allocations mid-frame.
+#### High-performance
+- No hidden allocations in the game loop: Capacities are set upfront, eliminating unexpected allocations, deallocations, or memory copies mid-frame.
+- Micro-optimized and benchmarked for maximum throughput.
+- Frame-to-frame stability from both CPU and memory standpoints.
+#### Low-level & hybrid
 - A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Tag_Table](/docs/tables.md#tiny_tablet) (just tags, no data).
 - Supports both sparse-set and archetype styles. [Arch_Table](/docs/arch_table.md) gives you an archetype approach, and it can be combined with regular Tables on the same entity if that's useful for your case.
-- [Views](#-view) — precomputed queries that update automatically as entities and components change, so you don't need to re-query each frame.
+
+#### Other features
+- [Views](#-view) — precomputed queries (AND/OR/NOT + Filters) that update automatically as entities and components change, so you don't need to re-query each frame.
 - [Groups](/docs/group.md) — an optional way to get fast, tightly packed iteration over entities that share a set of tables.
 - [Relations](/docs/relations.md) — for modeling parent/child links between entities.
 - [Command buffers](/docs/command_buffer.md) — lets you defer mutations, which can help in multithreaded code.
@@ -16,8 +21,9 @@
 - [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, tags, relations) to a buffer or file, with entity IDs staying valid after reload.
 - [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
 - Also supports custom allocators and keeps data fairly cache-friendly since there's no extra per-row metadata.
-- Well-[tested](/tests/) and micro-optimized.
-- [Documentation](/docs/_index.md).
+
+#### Tested & Documented 
+- Well [tested](/tests/) and comprehensively [documented](/docs/_index.md).
 
 # How to install
 
