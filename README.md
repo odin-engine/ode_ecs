@@ -1,5 +1,5 @@
 ![alt text](/img/banner.png?raw=true)
-# 🐏 ODE_ECS (Entity-Component-System) 
+# 🐏 ODE_ECS
 
 ⚡A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
