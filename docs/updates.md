@@ -1,5 +1,8 @@
 # 🐑 Updates Timeline
 
+**August 2026**
+* Bump gen in ix_gen to 16 bits
+
 **July 2026**
 * \*new\* Component `enable_component`/`disable_component` — a soft, bitset-based toggle that excludes a component from View matching without moving or losing its data; see [Tables](tables.md#component-enable-disable).
 * \*new\* View `any_of` — structural OR, completing the AND (`includes`) / NOT (`excludes`) / OR (`any_of`) query combinators; see [View](view.md#any_of-or).
