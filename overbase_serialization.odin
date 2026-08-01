@@ -16,6 +16,10 @@
     Shares the Snap_Writer/Snap_Reader cursor helpers and SNAPSHOT_ENDIAN_CHECK
     with serialization.odin, but uses its own magic/version so the two buffer
     kinds can never be cross-loaded by mistake.
+
+    The wire format stores the raw ix_gen items array, so it depends on the
+    ix_gen bit_field packing the same way serialization.odin's does —
+    changing that packing requires bumping OVERBASE_SNAPSHOT_VERSION too.
 */
 package ode_ecs
 
@@ -33,7 +37,7 @@ package ode_ecs
     OVERBASE_SNAPSHOT_MAGIC :: u64(0x424F_5343_4545_444F) // "ODEECSOB" as little-endian bytes
 
     @(private)
-    OVERBASE_SNAPSHOT_VERSION :: u32(1)
+    OVERBASE_SNAPSHOT_VERSION :: u32(2) // bumped: ix_gen bit_field repacked to ix:48/gen:16
 
     @(private)
     Overbase_Snapshot_Header :: struct #packed {

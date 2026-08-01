@@ -40,7 +40,7 @@ These two are fully independent — they share nothing, including entity IDs (th
 
 ## Entities
 
-An entity is just an ID (`ecs.entity_id`) — a `bit_field` packing an index (`ix`, 56 bits) and a generation (`gen`, 8 bits). All entity data lives in component [tables](tables.md).
+An entity is just an ID (`ecs.entity_id`) — a `bit_field` packing an index (`ix`, 48 bits) and a generation (`gen`, 16 bits). All entity data lives in component [tables](tables.md).
 
 ```odin
 robot, err := ecs.create_entity(&my_ecs)
@@ -70,7 +70,7 @@ ecs.is_expired(&my_ecs, saved)     // true — this ID refers to a destroyed ent
 
 Procedures that take an `entity_id` validate it and return `API_Error.Entity_Id_Expired` (or `Entity_Id_Out_of_Bounds`) for stale IDs.
 
-One limit to know: the generation is 8 bits, so it wraps after 256 create/destroy cycles of the *same index*. A stale ID held across exactly that many recycles collides with the new live ID and reads as valid again (the classic ABA case of generational indexes). In practice this needs a saved ID to survive 256 reuses of one slot — don't cache entity IDs across arbitrarily long spans without re-validating them by your own means (or re-looking them up) if your entity churn is extreme.
+One limit to know: the generation is 16 bits, so it wraps after 65,536 create/destroy cycles of the *same index*. A stale ID held across exactly that many recycles collides with the new live ID and reads as valid again (the classic ABA case of generational indexes). In practice this needs a saved ID to survive 65,536 reuses of one slot — don't cache entity IDs across arbitrarily long spans without re-validating them by your own means (or re-looking them up) if your entity churn is extreme.
 
 ### Other entity procedures
 

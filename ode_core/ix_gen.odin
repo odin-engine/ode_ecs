@@ -16,11 +16,11 @@ package ode_core
 // When we reuse id (because old entity was destroyed) we increase generation. 
 // In this way if you saved old id, even though their ix will be the same their gen will be different.
 
-    GEN_MAX :: 255
+    GEN_MAX :: 65535
 
     ix_gen :: bit_field i64 {
-        ix: int | 56,       // index
-        gen: uint | 8,      // generation
+        ix: int | 48,       // index
+        gen: uint | 16,     // generation
     }
 
     Ix_Gen_Factory :: struct {
@@ -362,10 +362,10 @@ package ode_core
         testing.expect(t, ix_gen_factory__is_expired(&factory, id_2) == false)
     }
 
-    // 8-bit generation wrap driven through the public path: after GEN_MAX + 1
+    // 16-bit generation wrap driven through the public path: after GEN_MAX + 1
     // free/new cycles on the same slot the generation returns to its starting
     // value, so a stale id held across the full cycle reads as live again (the
-    // documented ABA limit of an 8-bit generation).
+    // documented ABA limit of a 16-bit generation).
     @(test)
     ix_gen_factory__gen_wraparound__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -384,7 +384,7 @@ package ode_core
 
         seen_zero_again := false
         id := first_id
-        for _ in 0..<int(GEN_MAX) { // 255 cycles: gen runs 1..255, stale everywhere
+        for _ in 0..<int(GEN_MAX) { // 65535 cycles: gen runs 1..65535, stale everywhere
             testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
             id, err = ix_gen_factory__new_id(&factory)
             testing.expect(t, err == Core_Error.None)
@@ -394,7 +394,7 @@ package ode_core
         testing.expect(t, seen_zero_again == false)
         testing.expect(t, id.gen == GEN_MAX)
 
-        // cycle 256 wraps 255 -> 0 and the original id collides back to live
+        // cycle 65536 wraps 65535 -> 0 and the original id collides back to live
         testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
         id, err = ix_gen_factory__new_id(&factory)
         testing.expect(t, err == Core_Error.None)

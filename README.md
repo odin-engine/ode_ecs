@@ -413,8 +413,8 @@ The `ix_gen` is defined like this:
 
 ```odin
     ix_gen :: bit_field i64 {
-        ix: int | 56,       // index
-        gen: uint | 8,      // generation
+        ix: int | 48,       // index
+        gen: uint | 16,     // generation
     }
 ```  
 

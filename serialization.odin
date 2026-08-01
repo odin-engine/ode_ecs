@@ -31,7 +31,7 @@
     See docs/overbase.md.
 
     The wire format depends on the Table_Type enum values and on the ix_gen
-    bit_field packing (ix:56/gen:8) — changing either requires bumping
+    bit_field packing (ix:48/gen:16) — changing either requires bumping
     SNAPSHOT_VERSION.
 */
 package ode_ecs
@@ -55,7 +55,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F) // "ODEECSDB" as little-endian bytes
 
     @(private)
-    SNAPSHOT_VERSION :: u32(3) // bumped: Snap_Table_Header grew a column_count field for Arch_Table
+    SNAPSHOT_VERSION :: u32(4) // bumped: ix_gen bit_field repacked to ix:48/gen:16
 
     // Written and compared as a raw u32: a snapshot produced on a machine with
     // different endianness reads back as a different value and is rejected.
