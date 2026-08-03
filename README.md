@@ -1,7 +1,7 @@
 ![alt text](/img/banner.png?raw=true)
 # 🐏 ODE_ECS
 
-⚡A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
+⚡ A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 ### What ODE_ECS offers
 #### High-performance
@@ -16,7 +16,7 @@
 - [Views](#-view) — precomputed queries (AND/OR/NOT + Filters) that update automatically as entities and components change, so you don't need to re-query each frame.
 - [Groups](/docs/group.md) — an optional way to get fast, tightly packed iteration over entities that share a set of tables.
 - [Relations](/docs/relations.md) — for modeling parent/child links between entities.
-- [Command buffers](/docs/command_buffer.md) — lets you defer mutations, which can help in multithreaded code.
+- [Command buffers](/docs/command_buffer.md) — let you defer mutations, which can help in multithreaded code.
 - [Pause/resume packing](#️-pausing-a-single-table-or-group) — a way to mutate tables safely while iterating.
 - [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, tags, relations) to a buffer or file, with entity IDs staying valid after reload.
 - [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
@@ -69,7 +69,7 @@ When initializing a `Database`, you can specify the maximum `entities_cap` as we
 
 Every other object (tables, views) linked to `my_ecs` will now use `my_allocator` to allocate memory.  
 
->**NOTE:** ODE_ECS never reallocates memory automatically. The reason for this is the same as avoiding garbage collectors — to prevent unexpected performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
+>**NOTE:** ODE_ECS never reallocates memory automatically. This follows the same reasoning as avoiding garbage collectors — to prevent unexpected performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
 
 You can have as many ECS databases in your game as you want:  
 
@@ -318,7 +318,7 @@ for ecs.table_len(&my_tags_table) > 0 {
     ecs.destroy_entity(&my_db, d)   
 }
 ```
-Or pause packing (tail swaping) for the duration of the iteration — see the next section.
+Or pause packing (tail swapping) for the duration of the iteration — see the next section.
 
 ### Mutating tables while iterating: pause_packing / resume_packing / pack
 
@@ -360,7 +360,7 @@ Table-level and group-level pauses compose with (OR into) the database-wide paus
 
 ### 📃 Command_Buffer: record now, apply at a sync point
 
-Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component` and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
+Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component` and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
 
 ```Odin
 cb: ecs.Command_Buffer
@@ -379,11 +379,11 @@ ecs.cmd_tag(&cb, &is_enemy, spawned)
 skipped, err := ecs.replay(&cb) // applies in order, then clears the buffer
 ```
 
-Semantics: a command whose entity id expired before it applied (destroyed by an earlier command, another buffer, or your code) is skipped and counted in `skipped` — destroys and removes are idempotent; adding a component that already exists **overwrites its value** (last write wins). Real errors (e.g. a full table) don't abort the replay — remaining commands still run and the first error is returned.
+Semantics: a command whose entity id expired before it was applied (destroyed by an earlier command, another buffer, or your code) is skipped and counted in `skipped` — destroys and removes are idempotent; adding a component that already exists **overwrites its value** (last write wins). Real errors (e.g. a full table) don't abort the replay — remaining commands still run and the first error is returned.
 
 `create_entity` is intentionally *not* deferred — it only allocates an id and is safe during iteration, so you create the entity immediately and record component commands against the real `entity_id` (no temporary-id remapping needed).
 
-Threading: recording only writes to the buffer's own memory, so use **one Command_Buffer per thread (or per system)** and record concurrently without locks; `replay` mutates the database and must run single-threaded at the sync point, one buffer after another. Replay also composes with `pause_packing` (adds append past holes, removes leave holes).
+Threading: recording only writes to the buffer's own memory, so use **one Command_Buffer per thread (or per system)** and record concurrently without locks; `replay` mutates the database and must run single-threaded at the sync point, one buffer after another. Replay also composes with `pause_packing` (add commands append past holes, remove commands leave holes).
 
 # How to Run Samples and Tests  
 
@@ -443,4 +443,4 @@ A value of `2` will set the maximum number of component types to 256, `3` will i
 * [Updates Timeline](/docs/updates.md)    
 * [FAQ](/docs/faq.md)
 ---
-‼️If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
+‼️ If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.

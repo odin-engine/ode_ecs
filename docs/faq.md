@@ -14,7 +14,7 @@ This is a data-oriented library with a "no hidden costs / preallocate everything
 
 - One Database per thread/region for fully independent workloads — the API explicitly supports many databases, and they share nothing.
 
-So the honest summary: making the core internally thread-safe would meaningfully hurt — per-element locking is a 2–10× hit on the headline iteration path and per-mutation locking serializes the very thing you parallelized for. But thread-safe usage via batched parallel iteration over immutable component data plus a single-threaded structural-mutation phase costs essentially nothing.
+So the honest summary: making the core internally thread-safe would meaningfully hurt — per-element locking is a 2–10× hit on the headline iteration path, and per-mutation locking serializes the very thing you parallelized for. But thread-safe usage via batched parallel iteration over immutable component data plus a single-threaded structural-mutation phase costs essentially nothing.
 
 See [Sample11](../samples/sample11/main.odin) for a working example of all three patterns.
 
@@ -24,13 +24,19 @@ Iterating over all entities unconditionally is a major anti-pattern in ECS.
 
 In fact, avoiding this exact practice is one of the primary reasons the ECS architecture was invented in the first place.
 
-Why It's an Anti-Pattern
-ECS is designed heavily around data-oriented design and cache locality. Iterating over every single entity defeats these benefits for three major reasons:
+**Why it's an anti-pattern**
 
-- CPU Cache Misses: In a good ECS, components are stored in contiguous memory arrays (often grouped by archetype). If a system loops through every entity, it will constantly jump around in memory to look up components, causing CPU cache misses and destroying performance.
+ECS leans heavily on data-oriented design and cache locality. Iterating over every single entity defeats these benefits for three major reasons:
 
-- The "Empty Entity" Waste: Many entities in your game might just be static environment pieces, UI elements, or particle effects. If your MovementSystem has to look at a UI button entity just to check if it has a Velocity component, you are wasting massive amounts of CPU cycles.
+- **CPU Cache Misses:** In a good ECS, components are stored in contiguous memory arrays (often grouped by archetype). If a system loops through every entity, it will constantly jump around in memory to look up components, causing CPU cache misses and destroying performance.
 
-- O(N) Complexity Scaling: As your world grows from 1,000 entities to 100,000 entities, your frame rate will plummet because every system is checking every entity, even if only 5 of them are relevant.
+- **The "Empty Entity" Waste:** Many entities in your game might just be static environment pieces, UI elements, or particle effects. If your MovementSystem has to look at a UI button entity just to check if it has a Velocity component, you are wasting massive amounts of CPU cycles.
+
+- **O(N) Complexity Scaling:** As your world grows from 1,000 entities to 100,000 entities, your frame rate will plummet because every system is checking every entity, even if only 5 of them are relevant.
 
 In ECS, systems (essentially procedures) iterate over their related components or views. For instance, the network system processes network components, while the physics system handles physics components.
+
+### 3. What is better: Fat Structs or ECS?
+
+Short answer: know both tools, use the best tool for the task.
+More explanation and samples are [here](/samples/fat_struct/fat_struct_vs_ecs.md).

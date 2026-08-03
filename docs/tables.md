@@ -128,7 +128,7 @@ ai, _ := ecs.add_component(&ais, robot)   // same proc group as Table
 ai.neurons_count = 88
 ```
 
-`add_component`, `remove_component`, `get_component`, `has_component`, `copy_component`, `move_component`, `table_len`, `table_cap`, `clear`, `pack` all work through the same proc groups. The difference is purely internal: `eid → component` lookups go through a hash map, saving `(entities_cap - map) * 8` bytes at a small lookup cost.
+`add_component`, `remove_component`, `get_component`, `has_component`, `copy_component`, `move_component`, `table_len`, `table_cap`, `clear`, `pack` all work through the same proc groups. The difference is purely internal: `eid → component` lookups go through a hash map, saving `(entities_cap - cap) * 8` bytes at a small lookup cost.
 
 ## Tiny_Table(T)
 

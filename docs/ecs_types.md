@@ -41,7 +41,7 @@ Sparse Array Lookup: Entity 3 -> Index 2 in Position, Index 1 in Velocity
 | --- | --- | --- | --- |
 | **Multi-Component Query Speed** | **Maximum L1/L2 Cache Efficiency.** Perfect linear memory access for components residing in the same table. | **Requires Random Memory Access.** Iterating over multiple components requires matching indices via sparse lookups. | **Archetype** |
 | **Single-Component Iteration** | Must iterate table by table across all matching archetypes. | Iterates a single dense array sequentially. | **Sparse-Dense** |
-| **Adding / Removing Components** | **Expensive ($O(N)$ data move).** Requires copying existing components to a new archetype table and updating pointers. | **Instant ($O(1)$ append/pop).** Just add to or remove from the target component pool. | **Sparse-Dense** |
+| **Adding / Removing Components** | **Expensive (`O(N)` data move).** Requires copying existing components to a new archetype table and updating pointers. | **Instant (`O(1)` append/pop).** Just add to or remove from the target component pool. | **Sparse-Dense** |
 | **Flag / Tag Components** | Creates new archetype tables, expanding the archetype graph and causing table fragmentation. | Zero memory cost. Just an ID in a set (or virtually free). | **Sparse-Dense** |
 | **Memory Fragmentation** | High risk if you have hundreds of rare, unique component combinations (many tiny tables). | Zero table fragmentation. Memory usage scales strictly with component count. | **Sparse-Dense** |
 
@@ -59,7 +59,7 @@ Sparse Array Lookup: Entity 3 -> Index 2 in Position, Index 1 in Velocity
 
 * **Entities frequently change state** by adding or removing components dynamically at runtime (e.g., adding `Poisoned`, `Frozen`, `Selected`, `Stunned` tags).
 * You rely on many **sparse components** (e.g., 10,000 entities exist, but only 5 have a `QuestGiver` component).
-* You want **predictable $O(1)$ performance** for structural operations without sudden memory-copy spikes.
+* You want **predictable `O(1)` performance** for structural operations without sudden memory-copy spikes.
 
 ---
 

@@ -31,7 +31,7 @@ ecs.init_from_overbase(&render_ecs, &overbase)
 
 `databases_cap` is the maximum number of Databases that can attach to this Overbase — like every other capacity in ODE_ECS, it's preallocated up front (defaults to `1`, the size needed for the common single-owner case). `init_from_overbase` fails with `oc.Core_Error.Container_Is_Full` if you try to attach more Databases than that.
 
-By default a Database attached this way uses the Overbase's own allocator for its tables/views/groups. Pass one explicitly to override it:
+By default, a Database attached this way uses the Overbase's own allocator for its tables/views/groups. Pass one explicitly to override it:
 
 ```odin
 ecs.init_from_overbase(&render_ecs, &overbase, my_allocator)
@@ -49,7 +49,7 @@ defer ecs.terminate(&world_ecs)
 
 ## Entity lifecycle is controlled by Overbase
 
-Entity creation and destruction are owned entirely by `Overbase`, even for a plain `ecs.init`-created Database (it just owns a private one under the hood). `create_entity`/`destroy_entity` (and `is_expired`/`entities_len`/`get_entity`) accept either a `^Database` or a `^Overbase`:
+Entity creation and destruction are owned entirely by `Overbase`, even for a plain `ecs.init`-created Database (it just owns a private one under the hood). `create_entity`/`destroy_entity` (and `is_expired`/`entities_len`/`get_entity`) accept either a `^Database` or an `^Overbase`:
 
 ```odin
 robot, _ := ecs.create_entity(&overbase)   // not attached to any Database's components yet

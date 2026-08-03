@@ -60,7 +60,7 @@ for eid, pos, ai in ecs.next(&it, &positions, &ais) {
 }
 ```
 
-The typed form only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `slice` below, and same restriction `Arch_Table` columns have, see [Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view)). It's plain sugar over the loop above: cursor-advance plus `get_entity` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix the 0-arg and typed forms on that `it` in the same or a different loop.
+The typed form only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `slice` below, and the same restriction `Arch_Table` columns have, see [Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view)). It's plain sugar over the loop above: cursor-advance plus `get_entity` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix the 0-arg and typed forms on that `it` in the same or a different loop.
 
 Component counts 0 through 7 are supported: `for ecs.next(&it) { ... }` (no columns, manual `get_entity`/`get_component`) up to `for eid, a, b, c, d, e, f, g in ecs.next(&it, &t1, &t2, &t3, &t4, &t5, &t6, &t7) { ... }`.
 
@@ -141,7 +141,7 @@ A table can't be in both `includes` and `any_of` (redundant — AND already guar
 
 ## Component enable/disable
 
-Unlike `excludes`/`any_of` (structural properties of the view itself, fixed at `view_init`), [`disable_component`/`enable_component`](tables.md#component-enable-disable) are a *per-entity* toggle that works with any view — disabling one of a view's included tables for an entity evicts it, without removing the component:
+Unlike `excludes`/`any_of` (structural properties of the view itself, fixed at `view_init`), [`disable_component`/`enable_component`](tables.md#component-enable-disable) is a *per-entity* toggle that works with any view — disabling one of a view's included tables for an entity evicts it, without removing the component:
 
 ```odin
 ecs.disable_component(&positions, robot) // robot leaves any view that includes `positions`

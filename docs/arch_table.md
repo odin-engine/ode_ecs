@@ -165,7 +165,7 @@ ecs.cmd_remove_component(&cb, &units, doomed)
 ecs.replay(&cb)
 ```
 
-Values passed to `cmd_arch_add_entity` must be in the same order the archetype's columns were declared in `arch_table__init`. Recording against an entity that already has a row is not an error — replay overwrites it ("last write wins"), same as `cmd_add_component` for sparse-dense tables.
+Values passed to `cmd_arch_add_entity` must be in the same order as the archetype's columns were declared in `arch_table__init`. Recording against an entity that already has a row is not an error — replay overwrites it ("last write wins"), same as `cmd_add_component` for sparse-dense tables.
 
 ## Serialization
 

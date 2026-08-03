@@ -4,7 +4,7 @@ A **`Database`** is the "world" object of ODE_ECS — it owns entities, componen
 
 All memory is preallocated when the database (and its tables/views) are initialized. Nothing reallocates during the game loop.
 
-See also: [Overbase](overbase.md) · [Tables](tables.md) · [Views](view.md) · [Relations](relations.md) · [Groups](group.md)  · [Command Buffer](command_buffer.md)
+See also: [Overbase](overbase.md) · [Tables](tables.md) · [Views](view.md) · [Relations](relations.md) · [Groups](group.md) · [Command Buffer](command_buffer.md)
 
 ## Initialization
 
@@ -59,7 +59,7 @@ ecs.destroy_entity(&my_ecs, boss, destroy_children = true) // destroys boss and 
 
 ### Stale IDs and generations
 
-When an entity is destroyed its index is recycled, but the generation is bumped. A saved `entity_id` from before the destroy will no longer match:
+When an entity is destroyed, its index is recycled, but the generation is bumped. A saved `entity_id` from before the destroy will no longer match:
 
 ```odin
 saved := robot                            // stored somewhere in game code
@@ -70,7 +70,7 @@ ecs.is_expired(&my_ecs, saved)     // true — this ID refers to a destroyed ent
 
 Procedures that take an `entity_id` validate it and return `API_Error.Entity_Id_Expired` (or `Entity_Id_Out_of_Bounds`) for stale IDs.
 
-One limit to know: the generation is 16 bits, so it wraps after 65,536 create/destroy cycles of the *same index*. A stale ID held across exactly that many recycles collides with the new live ID and reads as valid again (the classic ABA case of generational indexes). In practice this needs a saved ID to survive 65,536 reuses of one slot — don't cache entity IDs across arbitrarily long spans without re-validating them by your own means (or re-looking them up) if your entity churn is extreme.
+One limit to know: the generation is 16 bits, so it wraps after 65,536 create/destroy cycles of the *same index*. A stale ID held across exactly that many recycles collides with the new live ID and reads as valid again (the classic ABA case of generational indexes). In practice, this needs a saved ID to survive 65,536 reuses of one slot — don't cache entity IDs across arbitrarily long spans without re-validating them by your own means (or re-looking them up) if your entity churn is extreme.
 
 ### Other entity procedures
 

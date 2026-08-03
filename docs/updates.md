@@ -10,7 +10,7 @@
 * \*new\* Unified `next()` iteration sugar - one proc group covering both `Iterator` and `Arch_Iterator`, 0 to 7 typed components per call; replaces `iterator_next`/`iterate`.
 * \*new\* [Overbase](overbase.md) feature - share one entity ID space across multiple Databases.
 * \*new\* [Pause packing](/README.md#mutating-tables-while-iterating-pause_packing--resume_packing--pack) feature - deferred-tail-swap mode.
-* \*new\* [Groups](group.md) feature -  the fastest way to iterate entities that have a specific set of components.
+* \*new\* [Groups](group.md) feature - the fastest way to iterate entities that have a specific set of components.
 * \*new\* [Relations_Table](relations.md) feature - parent/child entity relations.
 * \*new\* [Command buffers](command_buffer.md) - defer the structural changes.
 * \*new\* [Saving and loading (snapshots)](serialization.md) - database serialization.
@@ -20,13 +20,13 @@
 * \*new\* View filter rerun path optimized: each re-evaluated row is now filled once instead of twice.
 * Reduced memory footprint and faster structural churn across `Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table` and `View`.
 * Improvements, polishing and bug fixes.
-* More tests. 
+* More tests.
 * Improved README and docs.
 
 **v1.2.2**
 * Added new procedures: `view__rerun_filter` and `table__rerun_views_filters`.
 * Renamed configuration variables — `ecs_validation` → `ECS_VALIDATIONS`, `ecs_tables_mult` → `ECS_TABLES_MULT`, and `ecs_views_cap` → `ECS_VIEWS_CAP` — to comply with Odin naming standards.
-* Updated sample06 
+* Updated sample06
 * More tests related to View filters
 
 **v1.2.1**
