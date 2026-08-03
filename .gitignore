@@ -1,3 +1,7 @@
+# Ignore temp
+temp/
+temp/*.*
+
 # Ignore  .md files 
 *.md
 
@@ -11,41 +15,8 @@ out/*
 tests/out/*
 !tests/out/.keep
 
-samples/basics/out/*
-!samples/basics/out/.keep
-
-samples/sample01/out/*
-!samples/sample01/out/.keep
-
-samples/sample02/out/*
-!samples/sample02/out/.keep
-
-samples/sample03/out/*
-!samples/sample03/out/.keep
-
-samples/sample04/out/*
-!samples/sample04/out/.keep
-
-samples/sample05/out/*
-!samples/sample05/out/.keep
-
-samples/sample06/out/*
-!samples/sample06/out/.keep
-
-samples/sample07/out/*
-!samples/sample07/out/.keep
-
-samples/sample08/out/*
-!samples/sample08/out/.keep
-
-samples/sample09/out/*
-!samples/sample09/out/.keep
-
-samples/sample10/out/*
-!samples/sample10/out/.keep
-
-samples/sample11/out/*
-!samples/sample11/out/.keep
+samples/**/out/*
+!samples/**/out/.keep
 
 .vscode
 ols.json
