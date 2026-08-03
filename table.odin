@@ -105,7 +105,7 @@ package ode_ecs
     }
 
     @(private)
-    table_base__cap :: proc(self: ^Table_Base) -> int {
+    table_base__cap :: #force_inline proc "contextless" (self: ^Table_Base) -> int {
         return self.cap
     }
 

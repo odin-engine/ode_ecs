@@ -75,6 +75,7 @@ package ode_ecs__tests
 
             testing.expect(t, ecs.compact_table__init(&ais, &ecs_1, 10) == nil)
             testing.expect(t, ais.id == 0)
+            testing.expect(t, ecs.table_cap(&ais) == 10)
 
             testing.expect(t, ecs.compact_table__init(&ais_table2, &ecs_1, 10) == nil)
             defer ecs.compact_table__terminate(&positions)

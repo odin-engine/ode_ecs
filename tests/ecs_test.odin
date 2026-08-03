@@ -316,9 +316,11 @@ package ode_ecs__tests
 
             defer ecs.table_terminate(&ais)
             testing.expect(t, ecs.table_init(&ais, &ecs_1, 10) == nil)
-            
+            testing.expect(t, ecs.table_cap(&ais) == 10)
+
             defer ecs.table_terminate(&positions)
             testing.expect(t, ecs.table_init(&positions, &ecs_1, 10) == nil)
+            testing.expect(t, ecs.table_cap(&positions) == 10)
 
             eid_1, eid_2: ecs.entity_id
             err: ecs.Error
