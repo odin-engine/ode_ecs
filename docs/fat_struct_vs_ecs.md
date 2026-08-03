@@ -57,7 +57,7 @@ ability_templates: ecs.Database // super kick, shield bash, basic heal (you can 
  ```
 
 It's not that complicated when using ODE_ECS, and it's easily scalable.
-A working example of this idea is [here](rpg/main.odin).
+A working example of this idea is [here](/samples/fat_struct/rpg/main.odin).
 
 Do we need a separate database for Item_Instances or ecs.Table, for example? It depends on your game. Maybe, if you really want to track the same item between inventories and places in the world.
 
@@ -67,8 +67,8 @@ Bottom line for me is:
 
 Other examples:
 
-- An example of hybrid Fat Structs architecture: [here](fat/main.odin)
-- The same example in full ECS architecture: [here](ecs/main.odin)
-- The same example in a mix of Fat Structs and ECS architecture: [here](mix/main.odin)
+- An example of hybrid Fat Structs architecture: [here](/samples/fat_struct/fat/main.odin)
+- The same example in full ECS architecture: [here](/samples/fat_struct/ecs/main.odin)
+- The same example in a mix of Fat Structs and ECS architecture: [here](/samples/fat_struct/mix/main.odin)
 
 More on Fat Structs vs. ECS in games: [here](in_games.md)

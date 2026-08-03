@@ -39,4 +39,4 @@ In ECS, systems (essentially procedures) iterate over their related components o
 ### 3. What is better: Fat Structs or ECS?
 
 Short answer: know both tools, use the best tool for the task.
-More explanation and samples are [here](/samples/fat_struct/fat_struct_vs_ecs.md).
+More explanation and samples are [here](fat_struct_vs_ecs.md).

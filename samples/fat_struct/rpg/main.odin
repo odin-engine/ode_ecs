@@ -3,7 +3,7 @@
 
     RPG inventory example using ODE_ECS 
 
-    Read more: [fat_struct_vs_ecs.md]
+    Read more: ../../../docs/fat_struct_vs_ecs.md
 
     - Three independent ecs.Databases - actors (NPCs, players), item_templates, ability_templates.
     - Description reused as-is across all three databases, each with its own Table(Description) - create_template is one helper shared by both item_templates and ability_templates.

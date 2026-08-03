@@ -18,7 +18,7 @@ Optional:
 Other:
 * [What is ECS?](what_is_ecs.md)
 * [Archetype ECS vs. Sparse-Dense ECS](ecs_types.md)
-* [Fat Structs vs. ECS discussion](/samples/fat_struct/fat_struct_vs_ecs.md)
+* [Fat Structs vs. ECS discussion](fat_struct_vs_ecs.md)
 * ❓[Frequently Asked Questions (F.A.Q)](faq.md)
 
 # 🍕 Samples

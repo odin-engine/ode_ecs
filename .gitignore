@@ -9,9 +9,6 @@ temp/*.*
 !/README.md
 !docs/*.md
 
-# Allow fat structs docs
-!samples/fat_struct/*.md
-
 out/*
 !out/.keep
 
