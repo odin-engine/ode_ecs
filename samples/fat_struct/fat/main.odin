@@ -1,13 +1,13 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    Hybrid Fat Structs architecture: fully hand-rolled, no ODE_ECS at
+    Hybrid Fat Struct architecture: fully hand-rolled, no ODE_ECS at
     all. A monolithic "fat" Entity struct (flags bit_set, position/velocity/
     health) lives in a plain [dynamic] array, and sparse/rare data
     (Inventory, AI_State) lives in separate hand-rolled pools addressed by
     manual u16 handles.
 
-    It is called "hybrid Fat Structs" not just "Fat Structs" because the 
+    It is called "hybrid Fat Struct" not just "Fat Struct" because the 
     hot path (position/velocity/health) is still a monolithic struct, but 
     the cold path (Inventory/AI_State) is split into separate pools.
 */

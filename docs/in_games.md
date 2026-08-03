@@ -1,4 +1,4 @@
-# Fat structs vs. ECS in games
+# Fat Struct vs. ECS in games
 
 Quake (and later expanded in Quake II and Quake III) famously used a fat-struct architecture.
 

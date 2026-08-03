@@ -1,7 +1,7 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    Mix of hybrid Fat Structs + ECS architectures: a middle ground between
+    Mix of hybrid Fat Struct + ECS architectures: a middle ground between
     ../fat/main.odin (fully hand-rolled) and ../ecs/main.odin (fully ODE_ECS).
     Keeps the monolithic Entity struct + Entity_Flags + plain array for the
     hot path (position/velocity/health - ../fat/main.odin's update_physics,

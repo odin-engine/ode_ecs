@@ -1,6 +1,6 @@
-### Fat Structs vs. ECS vs. Hybrid architectures
+### Fat Struct vs. ECS vs. Hybrid architectures
 
-I think it's important not to overengineer your game. Hybrid fat structs should satisfy most small games. Or you can use a "Fat Structs + ECS" hybrid.
+I think it's important not to overengineer your game. Hybrid Fat Struct pattern should satisfy most small games. Or you can use a "Fat Struct + ECS" hybrid.
 
 Building a good ECS library is not that simple and is a rabbit hole by itself. My advice: build your game, not an ECS, unless you want to explore ideas and learn, like I did. Or build your game and use an ECS library.
 
@@ -67,8 +67,8 @@ Bottom line for me is:
 
 Other examples:
 
-- An example of hybrid Fat Structs architecture: [here](/samples/fat_struct/fat/main.odin)
+- An example of hybrid Fat Struct architecture: [here](/samples/fat_struct/fat/main.odin)
 - The same example in full ECS architecture: [here](/samples/fat_struct/ecs/main.odin)
-- The same example in a mix of Fat Structs and ECS architecture: [here](/samples/fat_struct/mix/main.odin)
+- The same example in a mix of Fat Struct and ECS architecture: [here](/samples/fat_struct/mix/main.odin)
 
-More on Fat Structs vs. ECS in games: [here](in_games.md)
+More on Fat Struct vs. ECS in games: [here](in_games.md)

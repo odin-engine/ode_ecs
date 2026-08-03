@@ -36,7 +36,7 @@ ECS leans heavily on data-oriented design and cache locality. Iterating over eve
 
 In ECS, systems (essentially procedures) iterate over their related components or views. For instance, the network system processes network components, while the physics system handles physics components.
 
-### 3. What is better: Fat Structs or ECS?
+### 3. What is better pattern: Fat Struct or ECS?
 
 Short answer: know both tools, use the best tool for the task.
 More explanation and samples are [here](fat_struct_vs_ecs.md).

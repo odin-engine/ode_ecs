@@ -1,7 +1,7 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    ODE_ECS port of hybrid Fat Structs architecture from ../fat/main.odin.
+    ODE_ECS port of hybrid Fat Struct architecture from ../fat/main.odin.
     Same scenario (a static rock, a moving player with an inventory, an enemy
     with simple aggro-range AI), rebuilt with ODE_ECS instead of hand-rolling it.
 
