@@ -38,5 +38,6 @@ In ECS, systems (essentially procedures) iterate over their related components o
 
 ### 3. What is better pattern: Fat Struct or ECS?
 
-Short answer: know both tools, use the best tool for the task.
-More explanation and samples are [here](fat_struct_vs_ecs.md).
+Fat Struct is just a fat component. You can do Fat Struct + ODE_ECS to get many benefits.
+
+More explanation and samples are in [fat_struct_vs_ecs.md](fat_struct_vs_ecs.md).
