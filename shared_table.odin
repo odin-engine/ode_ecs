@@ -48,7 +48,7 @@ package ode_ecs
     shared_table__terminate :: proc(self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 table_raw__terminate(cast(^Table_Raw)self) or_return
             case Table_Type.Tiny_Table:
@@ -79,7 +79,7 @@ package ode_ecs
     shared_table__is_valid :: proc(self: ^Shared_Table) -> bool {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__is_valid(cast(^Table_Base) self)
             case Table_Type.Tiny_Table:
@@ -99,7 +99,7 @@ package ode_ecs
     shared_table__memory_usage :: proc(self: ^Shared_Table) -> int {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__memory_usage(cast(^Table_Base) self)
             case Table_Type.Tiny_Table:
@@ -119,7 +119,7 @@ package ode_ecs
     shared_table__len :: proc(self: ^Shared_Table) -> int {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__len(cast(^Table_Raw)self)
             case Table_Type.Tiny_Table:
@@ -139,7 +139,7 @@ package ode_ecs
     shared_table__cap :: proc(self: ^Shared_Table) -> int {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__cap(cast(^Table_Base)self)
             case Table_Type.Tiny_Table:
@@ -165,7 +165,7 @@ package ode_ecs
     shared_table__rid_to_eid_slice :: proc (self: ^Shared_Table) -> []entity_id {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 t := cast(^Table_Raw) self
                 // rows is []byte but its len field holds the ROW count
@@ -191,7 +191,7 @@ package ode_ecs
     shared_table__get_entity_by_row_number :: proc (self: ^Shared_Table, #any_int row_number: int) -> entity_id {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__get_entity_by_row_number(cast(^Table_Base) self, row_number)
             case Table_Type.Tiny_Table: 
@@ -224,7 +224,7 @@ package ode_ecs
     shared_table__get_component :: proc (self: ^Shared_Table, eid: entity_id) -> rawptr {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__get_component_by_entity(cast(^Table_Raw) self, eid)
             case Table_Type.Tiny_Table: 
@@ -249,7 +249,7 @@ package ode_ecs
     shared_table__add_component :: proc (self: ^Shared_Table, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__add_component(cast(^Table_Raw) self, eid, data)
             case Table_Type.Tiny_Table:
@@ -269,7 +269,7 @@ package ode_ecs
     shared_table__remove_component :: proc (self: ^Shared_Table, eid: entity_id) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__remove_component(cast(^Table_Raw) self, eid)
             case Table_Type.Tiny_Table: 
@@ -293,7 +293,7 @@ package ode_ecs
     shared_table__pack :: proc (self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__pack(cast(^Table_Raw) self)
             case Table_Type.Tiny_Table:
@@ -319,7 +319,7 @@ package ode_ecs
     shared_table__clear :: proc (self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__clear(cast(^Table_Raw) self)
             case Table_Type.Tiny_Table: 
@@ -342,7 +342,7 @@ package ode_ecs
     shared_table__attach_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error { 
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__attach_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -362,7 +362,7 @@ package ode_ecs
     shared_table__detach_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__detach_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -390,7 +390,7 @@ package ode_ecs
     shared_table__subscribers :: proc(self: ^Shared_Table) -> []^View {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return (cast(^Table_Base) self).subscribers.items
             case Table_Type.Tiny_Table:
@@ -413,7 +413,7 @@ package ode_ecs
     shared_table__attach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__attach_exclude_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -433,7 +433,7 @@ package ode_ecs
     shared_table__detach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__detach_exclude_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -455,7 +455,7 @@ package ode_ecs
     shared_table__attach_any_of_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__attach_any_of_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -475,7 +475,7 @@ package ode_ecs
     shared_table__detach_any_of_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false) // should not happen
+                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__detach_any_of_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
