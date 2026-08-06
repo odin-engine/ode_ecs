@@ -55,7 +55,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F) // "ODEECSDB" as little-endian bytes
 
     @(private)
-    SNAPSHOT_VERSION :: u32(4) // bumped: ix_gen bit_field repacked to ix:48/gen:16
+    SNAPSHOT_VERSION :: u32(5) // bumped: added the eid_to_disabled_bits section
 
     // Written and compared as a raw u32: a snapshot produced on a machine with
     // different endianness reads back as a different value and is rejected.
@@ -339,6 +339,12 @@ package ode_ecs
             size = snap__align8(size)
         }
 
+        // disable_component/enable_component state (database.odin's "Component
+        // enable/disable" section) — per-Database, unlike the entity-id section
+        // above, so this is always present regardless of Overbase ownership.
+        size += self.overbase.id_factory.cap * size_of(Uni_Bits)
+        size = snap__align8(size)
+
         for table in self.tables.items {
             if table == nil do continue
 
@@ -441,6 +447,11 @@ package ode_ecs
             snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(int))
             snap_writer__pad8(&w)
         }
+
+        // disable_component/enable_component state — always present, see
+        // database__serialized_size's matching section.
+        snap_writer__write(&w, raw_data(self.eid_to_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
+        snap_writer__pad8(&w)
 
         for table in self.tables.items {
             if table == nil do continue
@@ -754,6 +765,14 @@ package ode_ecs
             snap_reader__pad8(&r) or_return
         }
 
+        // disable_component/enable_component state — always present, and
+        // (unlike the entity-id section) always applied to this Database's own
+        // eid_to_disabled_bits regardless of Overbase ownership, so saved_cap
+        // must fit the live array unconditionally here.
+        if saved_cap > self.overbase.id_factory.cap do return API_Error.Snapshot_Capacity_Too_Small
+        _ = snap_reader__bytes(&r, saved_cap * size_of(Uni_Bits)) or_return
+        snap_reader__pad8(&r) or_return
+
         nonnil_tables := 0
         for table in self.tables.items {
             if table != nil do nonnil_tables += 1
@@ -917,6 +936,7 @@ package ode_ecs
             oc.ix_gen_factory__clear(&self.overbase.id_factory, bump_gen = false)
         }
         slice.zero(self.eid_to_bits)
+        slice.zero(self.eid_to_disabled_bits)
 
         for table in self.tables.items {
             if table == nil do continue
@@ -947,6 +967,11 @@ package ode_ecs
             _ = snap_reader__bytes(&r, freed_count * size_of(int)) or_return
             snap_reader__pad8(&r) or_return
         }
+
+        // disable_component/enable_component state. Slots >= saved_cap stay
+        // cleared (zeroed above), same convention as the id-factory section.
+        snap_reader__read(&r, raw_data(self.eid_to_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
+        snap_reader__pad8(&r) or_return
 
         for _ in 0..<int(hdr.section_count) {
             th: Snap_Table_Header

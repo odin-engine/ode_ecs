@@ -27,6 +27,10 @@ ode_core/!out/.keep
 
 benchmarks/out/*
 !benchmarks/out/.keep
+
+#fuzz/out/*
+#!fuzz/out/.keep
+fuzz
 *-autosave.kra
 *.kra~
 *.snap
