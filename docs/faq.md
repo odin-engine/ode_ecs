@@ -1,10 +1,12 @@
 # F.A.Q
 
 ### 0. Why did you build it?
+---
 
 I built it for my own MMORPG project. It is minimal, low-level, well-tested, and fast — exactly what I want an ECS to be. I wanted to avoid overengineered libraries that unpredictably tank frame-to-frame stability. 
 
 ### 1. Thread safety?
+---
 
 This is a data-oriented library with a "no hidden costs / preallocate everything" philosophy. Baking locks into every call is exactly the kind of hidden cost it avoids. The idiomatic answer is to not make the core thread-safe, and instead parallelize at a higher level where synchronization amortizes to zero:
 
@@ -19,6 +21,7 @@ So the honest summary: making the core internally thread-safe would meaningfully
 See [Sample11](../samples/sample11/main.odin) for a working example of all three patterns.
 
 ### 2. How to iterate over all entities?
+---
 
 Iterating over all entities unconditionally is a major anti-pattern in ECS.
 
@@ -37,6 +40,7 @@ ECS leans heavily on data-oriented design and cache locality. Iterating over eve
 In ECS, systems (essentially procedures) iterate over their related components or views. For instance, the network system processes network components, while the physics system handles physics components.
 
 ### 3. What is better pattern: Fat Struct or ECS?
+---
 
 Fat Struct is just a fat component. You can do Fat Struct + ODE_ECS to get many benefits.
 

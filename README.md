@@ -13,7 +13,7 @@
 - Supports both sparse-set and archetype styles. [Arch_Table](/docs/arch_table.md) gives you an archetype approach, and it can be combined with regular Tables on the same entity if that's useful for your case.
 
 #### Other features
-- [Views](#-view) — precomputed queries (AND/OR/NOT + Filters) that update automatically as entities and components change, so you don't need to re-query each frame.
+- [Views](#-view) — precomputed queries (AND/OR/NOT + proc filters) that update automatically as entities and components change, so you don't need to re-query each frame.
 - [Groups](/docs/group.md) — an optional way to get fast, tightly packed iteration over entities that share a set of tables.
 - [Relations](/docs/relations.md) — for modeling parent/child links between entities.
 - [Command buffers](/docs/command_buffer.md) — let you defer mutations, which can help in multithreaded code.
