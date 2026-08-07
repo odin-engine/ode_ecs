@@ -46,7 +46,7 @@ Inventory and AI_State can be defined something like this:
 
 Check out a working example of a pure hybrid Fat Struct without ECS here: [/samples/fat_struct/fat/main.odin](/samples/fat_struct/fat/main.odin).
 
-Now you have to build your own code to support this approach. You need code to support entity id(s), note that they are without a generation number. You need code to support inventory_handle and ai_handle and appropriate pools. Now, what would you do if you want to iterate over separate types of entities — say, only active entities, only NPCs, or only players? All of this is easily solved by ODE_ECS, and in a optimal way. You can just treat fat struct as a fat component and get all the benefits of ODE_ECS:
+Now you have to build your own code to support this approach. You need code to support entity id(s); note that they are without a generation number. You need code to support inventory_handle and ai_handle, and appropriate pools. Now, what would you do if you want to iterate over separate types of entities — say, only active entities, only NPCs, or only players? All of this is easily solved by ODE_ECS, and in an optimal way. You can just treat the fat struct as a fat component and get all the benefits of ODE_ECS:
 
 ```Odin
 
