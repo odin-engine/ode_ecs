@@ -22,7 +22,7 @@
 - [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
 - Also supports custom allocators and keeps data fairly cache-friendly since there's no extra per-row metadata.
 
-#### Tested & Documented 
+#### Tested & documented 
 - Well [tested](/tests/) and comprehensively [documented](/docs/_index.md).
 - Includes [samples](/docs/_index.md#-samples) for all main features.
 
@@ -34,11 +34,11 @@ Use `git clone` to clone this repository into your project folder, and then `imp
 ```  
 Don't forget to pull the latest changes from time to time. We usually don't break the API.
 
-# A Brief Explanation
+# A brief explanation
 
 ODE_ECS is a high-performance in-memory "database" for entities and components.
 
-Entities are simply IDs (64-bit values). They can be linked to zero or many components, which can be added or removed _dynamically_. All data resides within the components.
+Entities are simply IDs (64-bit values). They can be linked to zero or more components, which can be added or removed _dynamically_. All data resides within the components.
 
 A _Component_ is pure data (usually defined as a `struct`, though any Odin type can be used).
 
@@ -50,7 +50,9 @@ Instead, we use [Views](#-view). Views are _pre-calculated queries_. During deve
 
 [Tag_Table](#️-tag_table) is used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`) and could be very useful with Views.
 
-ODE_ECS supports both sparse-dense and archetype [architectures](/docs/ecs_types.md). You can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
+ODE_ECS supports both sparse-set and archetype [architectures](/docs/ecs_types.md). You can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
+
+>**NOTE:** If you are new to ODE_ECS, you can choose to focus just on three objects: [Database](#-database), [Table](#table), and [View](#-view). Everything else consists of optimizations or additional features that you might not need at the beginning and can add later.
 
 ## 🧩 Database  
  
@@ -69,7 +71,7 @@ When initializing a `Database`, you can specify the maximum `entities_cap` as we
 
 Every other object (tables, views) linked to `my_ecs` will now use `my_allocator` to allocate memory.  
 
->**NOTE:** ODE_ECS never reallocates memory automatically. This follows the same reasoning as avoiding garbage collectors — to prevent unexpected performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
+>**NOTE:** ODE_ECS never reallocates memory automatically. This follows the same reasoning as avoiding garbage collectors — to prevent performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
 
 You can have as many ECS databases in your game as you want:  
 
@@ -83,7 +85,7 @@ You can have as many ECS databases in your game as you want:
 
 `Database`s share **nothing** (by default) and can use different allocators.
 
-The other main types of objects in ODE_ECS are tables, views and [groups](/docs/group.md).  
+The other main types of objects in ODE_ECS are tables, views, and [groups](/docs/group.md).  
 
 ## **Table**  
 
@@ -102,14 +104,14 @@ If you have a `Position` component, you can create a table like this:
 To create an entity, you can do this:  
 
 ```odin
-    robot, _ = ecs.create_entity(&my_ecs)
+    robot, _ := ecs.create_entity(&my_ecs)
 ```  
 
 Now you can add a `Position` component to the `robot` entity:  
 
 ```odin
     // Assign one component from the table to the entity
-    position, _ = ecs.add_component(&positions, robot)
+    position, _ := ecs.add_component(&positions, robot)
 
     // Get the existing component from the table for the entity
     position = ecs.get_component(&positions, robot)
@@ -152,7 +154,7 @@ Using an entity, you can access its other components:
     ai: ^AI // AI component
     for &pos, index in ecs.slice(&positions) {
         eid = ecs.get_entity(&positions, index)
-        ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: Table(AI)`
+        ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: ecs.Table(AI)`
         fmt.println(eid, pos, ai)
     }
 ```
@@ -160,14 +162,15 @@ Tables documentation is [here](/docs/tables.md).
 
 ## 🪟 **View**  
 
-A **_View_** is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
+A *_View_* is a precomputed query (so you do not need to compute the query every frame). A View is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
+
 To initialize a view for entities with both `Position` and `AI` components, you can do this:  
 
 ```odin
     ecs1: ecs.Database
 
-    positions: Table(Position)
-    ais: Table(AI)
+    positions: ecs.Table(Position)
+    ais: ecs.Table(AI)
 
     view1: ecs.View
     
@@ -224,7 +227,7 @@ Or, as a one-liner with `ecs.next` — same `it`, `get_entity`/`get_component` f
     }
 ```
 
-The `Iterator` automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view (which is the common case: it holds whenever components are added to tables in the same order per entity, and it survives entity despawn/respawn churn). In that case components are read directly from the tables' dense arrays, which is roughly 2x faster than going through the view's pointer records. This is fully automatic and falls back transparently when the view is not aligned.
+The `Iterator` automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view (which is the common case: it holds whenever components are added to tables in the same order per entity, and it survives entity despawn/respawn churn). In that case, components are read directly from the tables' dense arrays, which is roughly 2x faster than going through the view's pointer records. This is fully automatic and falls back transparently when the view is not aligned.
 
 For the absolute fastest iteration, `slice` returns the raw component slices in view-row order when the view is aligned (and `nil` otherwise). A plain loop over these slices compiles to a raw SoA sweep (~2x faster still than the iterator):
 
@@ -241,9 +244,9 @@ For the absolute fastest iteration, `slice` returns the raw component slices in 
     }
 ```
 
-The slices are invalidated by any structural change (adding/removing components, creating/destroying entities) — use them immediately, do not store them.
+The slices are invalidated by any structural change (adding/removing components, creating/destroying entities) — use them immediately; don't store them.
 
-### View Excludes
+### View excludes
 
 Besides included tables, `ecs.view_init` takes an optional `excludes` list — the view keeps only entities that have a component in **none** of the excluded tables ("has `Position` but NOT `Stunned`"). It is auto-maintained (adding/removing the excluded component updates the view) and costs a single bitset test, so prefer it over an equivalent filter proc:
 
@@ -252,12 +255,12 @@ Besides included tables, `ecs.view_init` takes an optional `excludes` list — t
     err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
 ```
 
-### 🔎 View Filters
+### 🔎 View filters
 Read about View filters [here](/docs/view.md#filters).
 
 ## 🏷️ Tag_Table
 
-`Tag_Table` is a variation of `Table`, but it doesn’t contain any components. A `Tag_Table` only “tags” entities. You can create a `Tag_Table` like this:
+`Tag_Table` is a variation of `Table`, but it doesn't contain any components. A `Tag_Table` only "tags" entities. You can create a `Tag_Table` like this:
 
 ```odin
     is_alive : ecs.Tag_Table
@@ -267,7 +270,7 @@ Read about View filters [here](/docs/view.md#filters).
 Then you can tag or untag entities like this:
 
 ```odin
-    human, _ = ecs.create_entity(&db)
+    human, _ := ecs.create_entity(&db)
     
     ecs.tag(&is_alive, human)       // add tag
     ecs.untag(&is_alive, human)    // remove tag
@@ -306,13 +309,13 @@ ODE_ECS performs tail swaps (packing) when you remove components from a table (m
 
 For example, avoid doing this:
 
-```Odin
+```odin
 for d in ecs.slice(&my_tags_table) {
     ecs.destroy_entity(&my_db, d)  // Mutates my_tags_table during iteration!
 }
 ```
 Correct pattern: Drain the table by repeatedly taking row `0` until it is empty:
-```Odin
+```odin
 for ecs.table_len(&my_tags_table) > 0 {
     d := ecs.slice(&my_tags_table)[0]
     ecs.destroy_entity(&my_db, d)   
@@ -322,9 +325,9 @@ Or pause packing (tail swapping) for the duration of the iteration — see the n
 
 ### Mutating tables while iterating: pause_packing / resume_packing / pack
 
-`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iterations). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_not_set`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
+`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iteration). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_not_set`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
 
-```Odin
+```odin
 ecs.pause_packing(&db)
 
 for i in 0..<ecs.table_len(&monsters) {
@@ -344,7 +347,7 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 
 `pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`, `Arch_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
 
-```Odin
+```odin
 ecs.pause_packing(&monsters)          // pause just this table
 ecs.remove_component(&monsters, eid)  // leaves a hole, other tables tail-swap as normal
 ecs.resume_packing(&monsters)         // packs just this table
@@ -360,9 +363,9 @@ Table-level and group-level pauses compose with (OR into) the database-wide paus
 
 ### 📃 Command_Buffer: record now, apply at a sync point
 
-Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component` and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
+Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component`, and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
 
-```Odin
+```odin
 cb: ecs.Command_Buffer
 ecs.command_buffer_init(&cb, &db, commands_cap = 1024, payload_cap = 16 * 1024)
 defer ecs.command_buffer_terminate(&cb) // the Database does not track/terminate buffers
@@ -385,7 +388,7 @@ Semantics: a command whose entity id expired before it was applied (destroyed by
 
 Threading: recording only writes to the buffer's own memory, so use **one Command_Buffer per thread (or per system)** and record concurrently without locks; `replay` mutates the database and must run single-threaded at the sync point, one buffer after another. Replay also composes with `pause_packing` (add commands append past holes, remove commands leave holes).
 
-# How to Run Samples and Tests  
+# How to run samples and tests  
 
 To run samples, navigate to the appropriate folder (`samples/basics` or `samples/sample01`) and execute:  
 
@@ -428,7 +431,7 @@ If an entity has been destroyed via `ecs.destroy_entity()`, use `is_expired` to 
 
 This procedure compares the entity's generation (`gen`) against the database records. 
 
-### Maximum Number of Component Types  
+### Maximum number of component types  
 
 By default, the maximum number of component types is 128. However, you can have an unlimited number of component types. To increase the maximum number of component types, modify `TABLES_MULT` either in `ecs.odin` or by using the command-line define `ECS_TABLES_MULT`:  
 
@@ -443,4 +446,4 @@ A value of `2` will set the maximum number of component types to 256, `3` will i
 * [Updates Timeline](/docs/updates.md)    
 * [FAQ](/docs/faq.md)
 ---
-‼️ If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
+‼️ If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I'll try to answer, fix, or add new functionality.
