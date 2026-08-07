@@ -100,7 +100,7 @@ If you have a `Position` component, you can create a table like this:
 
     ecs.table_init(&positions, db=&my_ecs, cap=100)
 ```  
->**NOTE:** The component type cannot be zero-sized (`size_of(T) == 0`)
+>**NOTE:** The component type cannot be zero-sized (`size_of(T) == 0`).
 
 To create an entity, you can do this:  
 
