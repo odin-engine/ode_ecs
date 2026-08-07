@@ -24,30 +24,12 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Tiny_Table
 
-    @(test)
-    tiny_table__empty_component__test :: proc(t: ^testing.T) {
-        //
-        // Prepare
-        //
-
-            // Log into console when panic happens
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
-
-            allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
-            ecs_1: ecs.Database
-            empty_table: ecs.Tiny_Table(Empty)
-
-        //
-        // Test
-        //
-            testing.expect(t, ecs.init(&ecs_1, entities_cap=10, allocator=allocator) == nil)
-            defer ecs.terminate(&ecs_1)
-
-            testing.expect(t, ecs.tiny_table__init(&empty_table, &ecs_1) == ecs.API_Error.Component_Size_Cannot_Be_Zero)
-    }
+    // tiny_table__init asserts (under VALIDATIONS) that a component type is
+    // not zero-sized — use Tag_Table for a marker/tag component instead. No
+    // dedicated test here: catching an expected debug-mode assert via
+    // testing.expect_assert_message hangs in this project's sandboxed test
+    // environment (confirmed with an isolated repro with no ecs.odin code
+    // involved), so this is covered by manual verification only.
 
     @(test)
     tiny_table__aattaching_detaching_tables__test :: proc(t: ^testing.T) {

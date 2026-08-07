@@ -48,7 +48,7 @@ package ode_ecs
     shared_table__terminate :: proc(self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 table_raw__terminate(cast(^Table_Raw)self) or_return
             case Table_Type.Tiny_Table:
@@ -79,7 +79,7 @@ package ode_ecs
     shared_table__is_valid :: proc(self: ^Shared_Table) -> bool {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__is_valid(cast(^Table_Base) self)
             case Table_Type.Tiny_Table:
@@ -99,7 +99,7 @@ package ode_ecs
     shared_table__memory_usage :: proc(self: ^Shared_Table) -> int {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__memory_usage(cast(^Table_Base) self)
             case Table_Type.Tiny_Table:
@@ -119,7 +119,7 @@ package ode_ecs
     shared_table__len :: proc(self: ^Shared_Table) -> int {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__len(cast(^Table_Raw)self)
             case Table_Type.Tiny_Table:
@@ -139,7 +139,7 @@ package ode_ecs
     shared_table__cap :: proc(self: ^Shared_Table) -> int {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__cap(cast(^Table_Base)self)
             case Table_Type.Tiny_Table:
@@ -158,18 +158,18 @@ package ode_ecs
 
     @(private)
     // The table's dense rid -> eid mapping as one plain slice covering rows
-    // [0, len) — the same span shared_table__get_entity_by_row_number serves,
+    // [0, len) - the same span shared_table__get_entity_by_row_number serves,
     // holes (mid-pause removals, ix == DELETED_INDEX) included. Lets bulk
     // scans (view rebuild/refilter) pay the type dispatch once instead of
     // once per row.
     shared_table__rid_to_eid_slice :: proc (self: ^Shared_Table) -> []entity_id {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 t := cast(^Table_Raw) self
                 // rows is []byte but its len field holds the ROW count
-                // (see table_raw__len) — not a byte count
+                // (see table_raw__len) - not a byte count
                 return t.rid_to_eid[:len(t.rows)]
             case Table_Type.Tiny_Table:
                 t := cast(^Tiny_Table_Base) self
@@ -191,7 +191,7 @@ package ode_ecs
     shared_table__get_entity_by_row_number :: proc (self: ^Shared_Table, #any_int row_number: int) -> entity_id {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__get_entity_by_row_number(cast(^Table_Base) self, row_number)
             case Table_Type.Tiny_Table: 
@@ -224,7 +224,7 @@ package ode_ecs
     shared_table__get_component :: proc (self: ^Shared_Table, eid: entity_id) -> rawptr {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__get_component_by_entity(cast(^Table_Raw) self, eid)
             case Table_Type.Tiny_Table: 
@@ -243,13 +243,13 @@ package ode_ecs
 
     // Type-erased add. If `data` is not nil, it is copied into the component
     // before subscriber notifications run (and overwrites the value when the
-    // component already exists — see the per-variant raw procs). Used by
+    // component already exists - see the per-variant raw procs). Used by
     // Command_Buffer replay. Contract: caller validates eid via
     // database__is_entity_correct (Tag_Table re-validates internally, harmless).
     shared_table__add_component :: proc (self: ^Shared_Table, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__add_component(cast(^Table_Raw) self, eid, data)
             case Table_Type.Tiny_Table:
@@ -269,7 +269,7 @@ package ode_ecs
     shared_table__remove_component :: proc (self: ^Shared_Table, eid: entity_id) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__remove_component(cast(^Table_Raw) self, eid)
             case Table_Type.Tiny_Table: 
@@ -293,7 +293,7 @@ package ode_ecs
     shared_table__pack :: proc (self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__pack(cast(^Table_Raw) self)
             case Table_Type.Tiny_Table:
@@ -310,7 +310,7 @@ package ode_ecs
         return API_Error.Unexpected_Error
     }
 
-    // Is packing (tail swap) currently deferred for this table — either by a
+    // Is packing (tail swap) currently deferred for this table - either by a
     // database-wide pause or by this table's own pause_packing.
     shared_table__is_packing_paused :: #force_inline proc "contextless" (self: ^Shared_Table) -> bool {
         return self.db.tail_swap_paused || self.pause_packing
@@ -319,7 +319,7 @@ package ode_ecs
     shared_table__clear :: proc (self: ^Shared_Table) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_raw__clear(cast(^Table_Raw) self)
             case Table_Type.Tiny_Table: 
@@ -342,7 +342,7 @@ package ode_ecs
     shared_table__attach_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error { 
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__attach_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -362,7 +362,7 @@ package ode_ecs
     shared_table__detach_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__detach_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -385,12 +385,12 @@ package ode_ecs
     // per-type notify proc (unlike subscribers_excluding/subscribers_any_of, this reuses an
     // existing field rather than adding a new one). For Dense_Arr-backed types the returned
     // slice is dense (no nil holes); for Tiny_Table it's the full fixed-size slot array and
-    // may contain nil holes — callers must skip nil entries either way (Tiny_Table's own
+    // may contain nil holes - callers must skip nil entries either way (Tiny_Table's own
     // add/remove paths already do this, so it's not a new requirement).
     shared_table__subscribers :: proc(self: ^Shared_Table) -> []^View {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return (cast(^Table_Base) self).subscribers.items
             case Table_Type.Tiny_Table:
@@ -408,12 +408,12 @@ package ode_ecs
     }
 
     @(private)
-    // A view that excludes this table subscribes here (not to `subscribers` — the
+    // A view that excludes this table subscribes here (not to `subscribers` - the
     // table is not a view column, only membership notifications are needed).
     shared_table__attach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__attach_exclude_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -433,7 +433,7 @@ package ode_ecs
     shared_table__detach_exclude_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__detach_exclude_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -450,12 +450,12 @@ package ode_ecs
     }
 
     @(private)
-    // A view that any_of's this table subscribes here (not to `subscribers` — the
+    // A view that any_of's this table subscribes here (not to `subscribers` - the
     // table is not necessarily a view column, only membership notifications are needed).
     shared_table__attach_any_of_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__attach_any_of_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -475,7 +475,7 @@ package ode_ecs
     shared_table__detach_any_of_subscriber :: proc(self: ^Shared_Table, view: ^View) -> Error {
         switch self.type {
             case Table_Type.Unknown:
-                assert(false, "Shared_Table.type == Unknown — this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
             case Table_Type.Table:
                 return table_base__detach_any_of_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
@@ -486,6 +486,51 @@ package ode_ecs
                 return tag_table__detach_any_of_subscriber(cast(^Tag_Table)self, view)
             case Table_Type.Arch_Table:
                 return arch_table__detach_any_of_subscriber(cast(^Arch_Table)self, view)
+        }
+
+        return API_Error.Unexpected_Error
+    }
+
+    @(private)
+    // A Sync_Channel subscribes here to watch structural add/remove + mark-touched
+    // notifications (see sync.odin). Arch_Table is not yet supported (see sync.odin's
+    // header comment) - registering one is rejected before this is ever called, but
+    // the switch still handles it explicitly rather than falling through, matching
+    // every other dispatch in this file.
+    shared_table__attach_sync_channel :: proc(self: ^Shared_Table, ch: ^Sync_Channel) -> Error {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+            case Table_Type.Table:
+                return table_base__attach_sync_channel(cast(^Table_Base)self, ch)
+            case Table_Type.Tiny_Table:
+                return tiny_table_base__attach_sync_channel(cast(^Tiny_Table_Base)self, ch)
+            case Table_Type.Compact_Table:
+                return compact_table_base__attach_sync_channel(cast(^Compact_Table_Base)self, ch)
+            case Table_Type.Tag_Table:
+                return tag_table__attach_sync_channel(cast(^Tag_Table)self, ch)
+            case Table_Type.Arch_Table:
+                return API_Error.Sync_Table_Type_Not_Supported
+        }
+
+        return API_Error.Unexpected_Error
+    }
+
+    @(private)
+    shared_table__detach_sync_channel :: proc(self: ^Shared_Table, ch: ^Sync_Channel) -> Error {
+        switch self.type {
+            case Table_Type.Unknown:
+                assert(false, "Shared_Table.type == Unknown - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init. Common causes: the table's table_init call returned a non-nil Error that went unchecked (e.g. a zero-sized component type — table_init/compact_table__init/tiny_table__init all reject those with API_Error.Component_Size_Cannot_Be_Zero; use Tag_Table for a marker/tag component with no data instead), a table declared as a local variable whose scope ended while a View/Group still held a pointer to it, or a frame/temp allocator that freed the table's backing memory.")
+            case Table_Type.Table:
+                return table_base__detach_sync_channel(cast(^Table_Base)self, ch)
+            case Table_Type.Tiny_Table:
+                return tiny_table_base__detach_sync_channel(cast(^Tiny_Table_Base)self, ch)
+            case Table_Type.Compact_Table:
+                return compact_table_base__detach_sync_channel(cast(^Compact_Table_Base)self, ch)
+            case Table_Type.Tag_Table:
+                return tag_table__detach_sync_channel(cast(^Tag_Table)self, ch)
+            case Table_Type.Arch_Table:
+                return API_Error.Sync_Table_Type_Not_Supported
         }
 
         return API_Error.Unexpected_Error

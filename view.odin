@@ -396,13 +396,33 @@ package ode_ecs
         // State
         self.state = Object_State.Normal
 
-        // Clear 
+        // Clear
         view__clear(self) or_return
 
         //
         // Attach to db
         //
-        self.id = database__attach_view(db, self) or_return
+        // database__attach_view is capacity-limited (Container_Is_Full once
+        // views_cap is exhausted) — must not leak the allocations above on
+        // failure. Can't reuse view__terminate here — it unconditionally
+        // calls database__detach_view, which self was never actually
+        // attached to yet.
+        {
+            id, aerr := database__attach_view(db, self)
+            if aerr != nil {
+                if self.rows != nil {
+                    mem.free_with_size((^runtime.Raw_Slice)(&self.rows).data, self.records_size, db.allocator)
+                }
+                delete(self.eid_to_rid, db.allocator)
+                delete(self.tid_to_cid, db.allocator)
+                delete(self.dense_cols, db.allocator)
+                if self.excludes.items != nil do oc.dense_arr__terminate(&self.excludes, db.allocator)
+                if self.any_of.items != nil do oc.dense_arr__terminate(&self.any_of, db.allocator)
+                oc.dense_arr__terminate(&self.tables, db.allocator)
+                return aerr
+            }
+            self.id = id
+        }
 
         //
         // Subscribe to tables

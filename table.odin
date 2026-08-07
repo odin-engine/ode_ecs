@@ -20,34 +20,67 @@ package ode_ecs
     @(private)
     TABLE_NO_RID :: max(u32)
 
-    // Base for Table
-    @(private)
-    Table_Base :: struct {
-        using shared: Shared_Table,
+    // Base for Table. Duplicated (not a single struct with a conditional field)
+    // because Odin's `when` isn't accepted inside a struct's field list — only a
+    // full top-level `when {...} else {...}` around the whole type actually
+    // removes a field's footprint (confirmed against the compiler's own
+    // parse_field_list, which has no when-handling). The two branches must be
+    // kept in sync by hand; everything but the trailing sync_watchers field is
+    // identical. See SYNC_ENABLED's doc comment in ecs.odin.
+    when SYNC_ENABLED {
+        @(private)
+        Table_Base :: struct {
+            using shared: Shared_Table,
 
-        type_info: ^runtime.Type_Info,
-        rid_to_eid: []entity_id,
-        // eid.ix -> row id (TABLE_NO_RID when absent); u32 instead of a pointer
-        // halves this entities_cap-sized array. The component address is derived
-        // as &rows[rid] on lookup, so a tail swap patches a rid, not a pointer.
-        eid_to_rid: []u32,
+            type_info: ^runtime.Type_Info,
+            rid_to_eid: []entity_id,
+            // eid.ix -> row id (TABLE_NO_RID when absent); u32 instead of a pointer
+            // halves this entities_cap-sized array. The component address is derived
+            // as &rows[rid] on lookup, so a tail swap patches a rid, not a pointer.
+            eid_to_rid: []u32,
 
-        // Group that owns this table (at most one), nil when not owned.
-        // See group.odin: the owner keeps group members in the aligned prefix
-        // [0, owner.len) of rows, so add/remove paths below notify it.
-        owner: ^Group,
+            // Group that owns this table (at most one), nil when not owned.
+            // See group.odin: the owner keeps group members in the aligned prefix
+            // [0, owner.len) of rows, so add/remove paths below notify it.
+            owner: ^Group,
 
-        cap: int,
+            cap: int,
 
-        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
-        // A hole is a row with rid_to_eid[rid].ix == DELETED_INDEX inside [0, len).
-        holes_count: int,
-        first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
+            // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
+            // A hole is a row with rid_to_eid[rid].ix == DELETED_INDEX inside [0, len).
+            holes_count: int,
+            first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
-        subscribers: oc.Dense_Arr(^View),
-        subscribers_with_filter: oc.Dense_Arr(^View),
-        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
-        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+            subscribers: oc.Dense_Arr(^View),
+            subscribers_with_filter: oc.Dense_Arr(^View),
+            subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
+            subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+
+            // Sync_Channels watching this table for delta replication (see sync.odin).
+            // Same Dense_Arr + notify-loop idiom as subscribers_excluding/subscribers_any_of.
+            sync_watchers: oc.Dense_Arr(^Sync_Channel),
+        }
+    } else {
+        @(private)
+        Table_Base :: struct {
+            using shared: Shared_Table,
+
+            type_info: ^runtime.Type_Info,
+            rid_to_eid: []entity_id,
+            eid_to_rid: []u32,
+
+            owner: ^Group,
+
+            cap: int,
+
+            holes_count: int,
+            first_hole_rid: int,
+
+            subscribers: oc.Dense_Arr(^View),
+            subscribers_with_filter: oc.Dense_Arr(^View),
+            subscribers_excluding: oc.Dense_Arr(^View),
+            subscribers_any_of: oc.Dense_Arr(^View),
+        }
     }
 
     @(private)
@@ -62,12 +95,15 @@ package ode_ecs
         if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_excluding) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_any_of) do return false
+        when SYNC_ENABLED {
+            if !oc.dense_arr__is_valid(&self.sync_watchers) do return false
+        }
 
         return true
     }
 
     @(private)
-    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP) -> Error {
+    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, sync_channels_cap: int = SYNC_CHANNELS_CAP) -> Error {
         shared_table__init(&self.shared, Table_Type.Table, db)
 
         // a re-init'd struct (issue #8) may carry an owner from its previous life
@@ -87,12 +123,18 @@ package ode_ecs
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_excluding, subscribers_cap, db.allocator) or_return
         oc.dense_arr__init(&self.subscribers_any_of, subscribers_cap, db.allocator) or_return
+        when SYNC_ENABLED {
+            oc.dense_arr__init(&self.sync_watchers, sync_channels_cap, db.allocator) or_return
+        }
 
         return nil
     }
 
     @(private)
     table_base__terminate :: proc(self: ^Table_Base) -> Error {
+        when SYNC_ENABLED {
+            oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
+        }
         oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
@@ -100,7 +142,7 @@ package ode_ecs
 
         delete(self.rid_to_eid, self.db.allocator) or_return
         delete(self.eid_to_rid, self.db.allocator) or_return
-       
+
         return nil
     }
 
@@ -155,6 +197,25 @@ package ode_ecs
     }
 
     @(private)
+    table_base__attach_sync_channel :: proc(self: ^Table_Base, ch: ^Sync_Channel) -> Error {
+        when SYNC_ENABLED {
+            _, err := oc.dense_arr__add(&self.sync_watchers, ch)
+            return err
+        } else {
+            return API_Error.Sync_Feature_Disabled
+        }
+    }
+
+    @(private)
+    table_base__detach_sync_channel :: proc(self: ^Table_Base, ch: ^Sync_Channel) -> Error {
+        when SYNC_ENABLED {
+            return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
+        } else {
+            return API_Error.Sync_Feature_Disabled
+        }
+    }
+
+    @(private)
     // After a component was removed from this table (eid_to_bits already updated),
     // a view excluding this table may newly match the entity. Skipped while the
     // entity itself is being destroyed — later removals would just evict it again.
@@ -193,7 +254,47 @@ package ode_ecs
     }
 
     @(private)
-    table_base__memory_usage :: proc (self: ^Table_Base) -> int {    
+    // A component was freshly added to this table for eid — every watching
+    // Sync_Channel gets a structural "added" event AND has eid marked touched
+    // (an add with no follow-up get_component_mut would otherwise record the
+    // structural event but never transmit the component's initial values).
+    // #force_inline: see table_base__notify_excluding_views.
+    table_base__notify_sync_add :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, true)
+                sync_channel__mark_touched(ch, self.id, eid)
+            }
+        }
+    }
+
+    @(private)
+    // A component was removed from this table for eid — every watching
+    // Sync_Channel gets a structural "removed" event (which also zeroes that
+    // channel's shadow slot for eid, see sync_channel__notify_structural).
+    // #force_inline: see table_base__notify_excluding_views.
+    table_base__notify_sync_remove :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, false)
+            }
+        }
+    }
+
+    @(private)
+    // eid's component in this table may have been written through — mark it
+    // touched in every watching Sync_Channel so the next collect_delta diffs it.
+    // #force_inline: see table_base__notify_excluding_views.
+    table_base__mark_touched :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__mark_touched(ch, self.id, eid)
+            }
+        }
+    }
+
+    @(private)
+    table_base__memory_usage :: proc (self: ^Table_Base) -> int {
         total := size_of(self^)
 
         if self.rid_to_eid != nil {
@@ -211,6 +312,9 @@ package ode_ecs
         total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
         total += oc.dense_arr__memory_usage(&self.subscribers_excluding)
         total += oc.dense_arr__memory_usage(&self.subscribers_any_of)
+        when SYNC_ENABLED {
+            total += oc.dense_arr__memory_usage(&self.sync_watchers)
+        }
 
         return total
     }
@@ -288,6 +392,9 @@ package ode_ecs
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
+        }
 
         // A group missing one of its owned tables is meaningless — invalidate it
         // (it still owns its allocations; terminate it to release them).
@@ -391,6 +498,7 @@ package ode_ecs
             }
 
             database__remove_component(self.db, target_eid, self.id)
+            table_base__notify_sync_remove(self, target_eid)
             table_base__notify_excluding_views(self, target_eid)
             table_base__notify_any_of_views(self, target_eid)
             return
@@ -447,6 +555,7 @@ package ode_ecs
         // Update eid_to_bits in db
         database__remove_component(self.db, target_eid, self.id)
 
+        table_base__notify_sync_remove(self, target_eid)
         table_base__notify_excluding_views(self, target_eid)
         table_base__notify_any_of_views(self, target_eid)
 
@@ -498,6 +607,8 @@ package ode_ecs
             // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)
 
+            table_base__notify_sync_add(self, eid)
+
             raw.len += 1
 
             // Group maintenance: if the entity now has every owned component, swap
@@ -511,6 +622,7 @@ package ode_ecs
             component = table_raw__rid_to_ptr_sized(self, rid, elem_size)
             if data != nil {
                 mem.copy(component, data, elem_size)
+                table_base__mark_touched(self, eid)
                 // The overwritten value can flip a view's filter verdict either
                 // way; the plain add-notify below short-circuits on existing
                 // members, so re-run filters explicitly (Command_Buffer
@@ -676,7 +788,7 @@ package ode_ecs
         return true
     }
 
-    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, loc := #caller_location) -> Error {
+    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, sync_channels_cap: int = SYNC_CHANNELS_CAP, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
@@ -684,17 +796,28 @@ package ode_ecs
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
             assert(cap < int(max(u32)), loc = loc) // row ids must fit the u32 eid_to_rid index
+            assert(size_of(T) != 0, "component type T must not be zero-sized — use Tag_Table for a marker/tag component that carries no data", loc = loc)
         }
 
         if size_of(T) == 0 do return API_Error.Component_Size_Cannot_Be_Zero
 
         self.type_info = type_info_of(typeid_of(T))
 
-        table_base__init(&self.base, db, cap, subscribers_cap) or_return 
+        table_base__init(&self.base, db, cap, subscribers_cap, sync_channels_cap) or_return
 
         self.rows = make([]T, cap, db.allocator) or_return
-        
-        self.id = database__attach_table(db, self) or_return
+
+        // database__attach_table is capacity-limited (Container_Is_Full once
+        // tables_cap is exhausted) — unlike the allocations above, which only
+        // fail on OOM, this is a routine, expected failure mode with a small
+        // per-database tables_cap, so it must not leak what already succeeded.
+        id, aerr := database__attach_table(db, self)
+        if aerr != nil {
+            delete(self.rows, db.allocator)
+            table_base__terminate(&self.base)
+            return aerr
+        }
+        self.id = id
 
         self.state = Object_State.Normal
 
@@ -820,6 +943,31 @@ package ode_ecs
         #no_bounds_check {
             rid := self.eid_to_rid[eid.ix]
             if rid == TABLE_NO_RID do return nil
+            return &self.rows[rid]
+        }
+    }
+
+    // Same as table__get_component_by_entity, but marks eid touched in every
+    // Sync_Channel watching this table (see sync.odin) — use this instead of
+    // get_component whenever you intend to WRITE through the returned pointer,
+    // so the next collect_delta picks up the change. Purely additive: costs
+    // nothing beyond the one extra call when no channel is watching (empty
+    // Dense_Arr loop).
+    @(require_results)
+    table__get_component_mut :: proc (self: ^Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
+        err := database__is_entity_correct(self.db, eid)
+        if err != nil do return nil
+
+        #no_bounds_check {
+            rid := self.eid_to_rid[eid.ix]
+            if rid == TABLE_NO_RID do return nil
+            table_base__mark_touched(self, eid)
             return &self.rows[rid]
         }
     }

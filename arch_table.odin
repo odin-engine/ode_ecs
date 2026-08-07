@@ -93,17 +93,22 @@ package ode_ecs
 
         if len(component_types) == 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
-        for t in component_types {
-            ti := type_info_of(t)
-            if ti == nil || ti.size == 0 do return API_Error.Component_Size_Cannot_Be_Zero
-        }
-
         when VALIDATIONS {
+            for t in component_types {
+                ti := type_info_of(t)
+                assert(ti != nil && ti.size != 0, "Arch_Table: component type must not be zero-sized — use Tag_Table for a marker/tag component that carries no data", loc = loc)
+            }
+
             for i in 0..<len(component_types) {
                 for j in i + 1..<len(component_types) {
                     assert(component_types[i] != component_types[j], "Arch_Table: duplicate component type in component_types", loc = loc)
                 }
             }
+        }
+
+        for t in component_types {
+            ti := type_info_of(t)
+            if ti == nil || ti.size == 0 do return API_Error.Component_Size_Cannot_Be_Zero
         }
 
         shared_table__init(&self.shared, Table_Type.Arch_Table, db)

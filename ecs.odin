@@ -53,6 +53,34 @@ package ode_ecs
         // rather than inline in each Tiny_Table, so it needs its own cap.
         TINY_TABLES_CAP :: #config(ECS_TINY_TABLES_CAP, 32)
 
+    //
+    // Sync (delta-change replication, see sync.odin)
+    //
+
+        // Off by default: the feature must be explicitly compiled in with
+        // -define:ECS_SYNC_ENABLED=true. When off, Table_Base/Compact_Table_Base/
+        // Tag_Table/Tiny_Table_Base/Tiny_Table_Subscriber_Slot are defined without
+        // any sync-related field at all (see the `when SYNC_ENABLED {...} else {...}`
+        // struct pairs in table.odin/compact_table.odin/tag_table.odin/tiny_table.odin)
+        // and every notify/attach/detach proc's body compiles to a true no-op —
+        // byte-for-byte and instruction-for-instruction identical to a build with
+        // no sync feature at all. sync_register still exists and compiles either
+        // way; called while disabled it returns API_Error.Sync_Feature_Disabled
+        // rather than silently doing nothing or failing to compile.
+        SYNC_ENABLED :: #config(ECS_SYNC_ENABLED, false)
+
+        // Maximum number of Sync_Channel/Sync_Decoder that may watch one Table/
+        // Compact_Table/Tag_Table simultaneously (Dense_Arr-backed, like VIEWS_CAP).
+        SYNC_CHANNELS_CAP :: #config(ECS_SYNC_CHANNELS_CAP, 8)
+
+        // Same as SYNC_CHANNELS_CAP but for Tiny_Table's batch-allocated slot
+        // (mirrors TINY_TABLE__VIEWS_CAP's reasoning).
+        TINY_TABLE__SYNC_CHANNELS_CAP :: #config(ECS_TINY_TABLE__SYNC_CHANNELS_CAP, 4)
+
+        // Top-level fields per component a Sync_Channel can diff; the field-changed
+        // mask on the wire is a u32, one bit per field.
+        SYNC_MAX_FIELDS :: 32
+
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases
 // 
@@ -231,6 +259,45 @@ package ode_ecs
         cmd_set_parent      :: command_buffer__set_parent         // Record: make one entity the parent of another
         cmd_remove_parent   :: command_buffer__remove_parent      // Record: remove entity's parent link
         cmd_unparent        :: command_buffer__remove_parent
+
+    //
+    // Sync (delta-change replication over an unreliable transport, see sync.odin)
+    //
+        sync_channel_init      :: sync_channel__init
+        sync_channel_terminate :: sync_channel__terminate
+        sync_decoder_init      :: sync_decoder__init
+        sync_decoder_terminate :: sync_decoder__terminate
+
+        // Register a table with a Sync_Channel (sender) or Sync_Decoder (receiver) —
+        // resolves by both the channel/decoder's type and the table's type.
+        sync_register :: proc {
+            sync_channel__register_table,
+            sync_channel__register_compact_table,
+            sync_channel__register_tiny_table,
+            sync_channel__register_tag_table,
+            sync_channel__register_arch_table,
+            sync_decoder__register_table,
+            sync_decoder__register_compact_table,
+            sync_decoder__register_tiny_table,
+            sync_decoder__register_tag_table,
+            sync_decoder__register_arch_table,
+        }
+        sync_unregister :: sync_channel__unregister_table
+
+        collect_delta  :: sync_collect_delta   // sender: write pending changes into buf (see its doc comment for the partial-fill contract)
+        delta_max_size :: sync_delta_max_size  // sender: cheap worst-case upper bound for buf — sizing to this guarantees one collect_delta call fully flushes
+        apply_delta    :: sync_apply_delta     // receiver: parse + apply one collect_delta buffer
+        resync         :: sync_channel__resync // sender: shadow := live values, drop pending queues — call right after sending a full serialize snapshot
+
+        // Same as get_component, but marks the entity touched in every
+        // Sync_Channel watching this table — use this instead of get_component
+        // whenever you intend to WRITE through the returned pointer, so the
+        // next collect_delta picks up the change.
+        get_component_mut :: proc {
+            table__get_component_mut,
+            compact_table__get_component_mut,
+            tiny_table__get_component_mut,
+        }
 
     //
     // Relations (parent/child), require a Relations_Table on the database,
@@ -416,6 +483,7 @@ package ode_ecs
             arch_table__clear,
             relations_table__clear,
             command_buffer__clear,
+            sync_channel__clear,
         }
 
         // Compact holes left by removals made while tail swap was paused,
@@ -511,6 +579,8 @@ package ode_ecs
             arch_table__memory_usage,
             relations_table__memory_usage,
             command_buffer__memory_usage,
+            sync_channel__memory_usage,
+            sync_decoder__memory_usage,
         }
 
         // Is object valid (initialized and everything is ok)
@@ -526,6 +596,8 @@ package ode_ecs
             arch_table__is_valid,
             relations_table__is_valid,
             command_buffer__is_valid,
+            sync_channel__is_valid,
+            sync_decoder__is_valid,
         }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -590,6 +662,12 @@ package ode_ecs
             Cannot_Serialize_While_Packing_Paused, // resume_packing first so tables hold no holes
             Serialize_Buffer_Too_Small,       // size the buffer with serialized_size
             File_Error,                       // save_to_file/load_from_file could not open/read/write the file
+            Sync_Table_Type_Not_Supported,    // Arch_Table cannot be registered with a Sync_Channel/Sync_Decoder yet
+            Sync_Too_Many_Fields,             // component has more top-level fields than SYNC_MAX_FIELDS
+            Sync_Table_Already_Registered,    // table is already registered with this channel/decoder
+            Sync_Buffer_Too_Small,            // buffer can't even hold the delta header
+            Sync_Feature_Disabled,            // built with the default -define:ECS_SYNC_ENABLED=false; see SYNC_ENABLED in ecs.odin
+            Tables_Cap_Exceeds_Compile_Time_Limit, // database__init's tables_cap was greater than TABLES_CAP — table ids are bit-indexed into Uni_Bits, whose width is fixed at compile time via ECS_TABLES_MULT; raise that to raise TABLES_CAP
         }
 
         Error :: union #shared_nil {

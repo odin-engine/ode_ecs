@@ -166,6 +166,46 @@ package ode_ecs__tests
             testing.expect(t, ecs.is_valid(&db_c) == false) // failed init, never attached, safe to drop
     }
 
+    // init_from_overbase gets the same per-instance tables_cap/views_cap/
+    // tiny_tables_cap as database__init (see ecs_test.odin's
+    // per_database_caps__test for the Database-side equivalent).
+    @(test)
+    overbase_init_from_overbase_caps__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        ob: ecs.Overbase
+        defer ecs.overbase_terminate(&ob)
+        testing.expect(t, ecs.overbase_init(&ob, entities_cap = 10, databases_cap = 1, allocator = allocator) == nil)
+
+        db: ecs.Database
+        defer ecs.terminate(&db)
+        // tables_cap/views_cap must both be > 1 (pre-existing constraint,
+        // unrelated to this change) — 2 is the smallest legal value.
+        testing.expect(t, ecs.init_from_overbase(&db, &ob, tables_cap = 2, views_cap = 2, tiny_tables_cap = 1) == nil)
+
+        t1: ecs.Table(Ob_Position)
+        defer ecs.table_terminate(&t1)
+        t2: ecs.Table(Ob_Sprite)
+        defer ecs.table_terminate(&t2)
+        testing.expect(t, ecs.table_init(&t1, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&t2, &db, 10) == nil)
+
+        // tables_cap == 2 already used up by t1/t2 — a 3rd table must not fit
+        t3: ecs.Table(Ob_Position)
+        testing.expect(t, ecs.table_init(&t3, &db, 10) == oc.Core_Error.Container_Is_Full)
+    }
+
+    // init_from_overbase asserts (under VALIDATIONS) the same tables_cap <=
+    // TABLES_CAP ceiling as database__init — see ecs_test.odin's comment
+    // above per_database_caps__test for why there's no dedicated test for the
+    // graceful API_Error.Tables_Cap_Exceeds_Compile_Time_Limit return here
+    // either (the assert fires first under the default VALIDATIONS=true, and
+    // catching it hangs in this sandbox) — covered by manual verification only.
+
     // Core correctness: destroying an entity through either Database sharing
     // an Overbase removes its components from BOTH — a recycled index must
     // never resurface stale data in a Database that wasn't told the entity died.

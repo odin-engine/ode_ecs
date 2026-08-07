@@ -79,15 +79,17 @@ package ode_ecs
         return true
     }
 
-    database__init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator) -> Error {
+    database__init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
-            assert(TABLES_CAP > 1)
-            assert(VIEWS_CAP > 1)
+            assert(tables_cap > 1)
+            assert(tables_cap <= TABLES_CAP, "tables_cap cannot exceed TABLES_CAP — increase ECS_TABLES_MULT to increase TABLES_CAP")
+            assert(views_cap > 1)
         }
 
         if entities_cap <= 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
+        if tables_cap > TABLES_CAP do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
 
         // A re-init'd struct (issue #8) may still be paused from its previous
         // life; terminate does not reset the flag.
@@ -101,10 +103,10 @@ package ode_ecs
         self.owns_overbase = true
         overbase__attach_database(self.overbase, self) or_return
 
-        oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
-        oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
-        oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
-        self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, TINY_TABLES_CAP, self.allocator) or_return
+        oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
+        oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
+        self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
         self.eid_to_disabled_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
@@ -123,15 +125,18 @@ package ode_ecs
     // Overbase's own allocator is used for this Database's tables/views/groups
     // and eid_to_bits. database__terminate will not terminate a shared Overbase
     // — the caller owns its lifetime (see overbase_terminate).
-    database__init_from_overbase :: proc(self: ^Database, overbase: ^Overbase, allocator: Maybe(runtime.Allocator) = nil) -> Error {
+    database__init_from_overbase :: proc(self: ^Database, overbase: ^Overbase, allocator: Maybe(runtime.Allocator) = nil, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
             assert(overbase != nil)
             assert(overbase__is_valid(overbase))
-            assert(TABLES_CAP > 1)
-            assert(VIEWS_CAP > 1)
+            assert(tables_cap > 1)
+            assert(tables_cap <= TABLES_CAP, "tables_cap cannot exceed TABLES_CAP — increase ECS_TABLES_MULT to increase TABLES_CAP")
+            assert(views_cap > 1)
         }
+
+        if tables_cap > TABLES_CAP do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
 
         self.tail_swap_paused = false
         self.destroying_eid_ix = DELETED_INDEX
@@ -141,10 +146,10 @@ package ode_ecs
         self.owns_overbase = false
         overbase__attach_database(self.overbase, self) or_return
 
-        oc.sparse_arr__init(&self.tables, TABLES_CAP, self.allocator) or_return
-        oc.sparse_arr__init(&self.views, VIEWS_CAP, self.allocator) or_return
-        oc.dense_arr__init(&self.groups, TABLES_CAP, self.allocator) or_return
-        self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, TINY_TABLES_CAP, self.allocator) or_return
+        oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
+        oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
+        self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
         self.eid_to_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
