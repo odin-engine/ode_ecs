@@ -425,11 +425,37 @@ package ode_ecs
         }
 
         //
-        // Subscribe to tables
-        //
-        for table in uniq_tables do shared_table__attach_subscriber(table, self) or_return
-        for table in self.excludes.items do shared_table__attach_exclude_subscriber(table, self) or_return
-        for table in self.any_of.items do shared_table__attach_any_of_subscriber(table, self) or_return
+        // Subscribe to tables. Each attach is capacity-limited by that
+        // table's own subscribers_cap (Container_Is_Full) — unlike the
+        // attach_view failure above, self IS validly attached and Normal by
+        // this point, so view__terminate can be reused directly: its
+        // subscriber-detach loops already tolerate Not_Found for any table
+        // this loop didn't reach yet, so it safely unwinds however far the
+        // loop got (self.tables/excludes/any_of already hold every table,
+        // subscribed or not — that's what makes the detach loop's Not_Found
+        // tolerance correct here) plus every other allocation view__terminate
+        // frees, leaving no partially-subscribed, leaked View behind.
+        for table in uniq_tables {
+            serr := shared_table__attach_subscriber(table, self)
+            if serr != nil {
+                view__terminate(self)
+                return serr
+            }
+        }
+        for table in self.excludes.items {
+            serr := shared_table__attach_exclude_subscriber(table, self)
+            if serr != nil {
+                view__terminate(self)
+                return serr
+            }
+        }
+        for table in self.any_of.items {
+            serr := shared_table__attach_any_of_subscriber(table, self)
+            if serr != nil {
+                view__terminate(self)
+                return serr
+            }
+        }
 
         return nil
     }

@@ -170,6 +170,49 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_init(&v3, &db, {&t1}) == oc.Core_Error.Container_Is_Full)
     }
 
+    // view_init's table-subscription loop (after it's already attached to the
+    // database) is capacity-limited by each included table's own
+    // subscribers_cap, not by the database's views_cap — a distinct failure
+    // point from per_database_caps__test's v3 case above. A failure here must
+    // leave the failed View fully torn down (Not_Initialized, no leaked
+    // allocations, not left dangling in the database's views), not a
+    // half-subscribed live-looking object.
+    @(test)
+    view_init_subscriber_cap_rollback__test :: proc(t: ^testing.T) {
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+
+        t1: ecs.Table(Position)
+        defer ecs.table_terminate(&t1)
+        testing.expect(t, ecs.table_init(&t1, &db, 10, subscribers_cap = 1) == nil)
+
+        v1: ecs.View
+        defer ecs.view_terminate(&v1)
+        testing.expect(t, ecs.view_init(&v1, &db, {&t1}) == nil) // uses t1's only subscriber slot
+
+        views_before := oc.sparse_arr__len(&db.views)
+
+        // v2 attaches to the database fine (views_cap has room), but t1's
+        // subscribers_cap == 1 is already used by v1 — the subscribe loop
+        // must fail, and v2 must come back fully torn down.
+        v2: ecs.View
+        testing.expect(t, ecs.view_init(&v2, &db, {&t1}) == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, ecs.is_valid(&v2) == false)
+        testing.expect(t, v2.state == ecs.Object_State.Not_Initialized)
+        testing.expect(t, oc.sparse_arr__len(&db.views) == views_before, "failed view must not remain attached to the database")
+
+        // t1 must still work normally afterward — v1's subscription untouched
+        eid, eerr := ecs.create_entity(&db)
+        testing.expect(t, eerr == nil)
+        _, aerr := ecs.add_component(&t1, eid)
+        testing.expect(t, aerr == nil)
+        testing.expect(t, ecs.view_len(&v1) == 1)
+    }
+
     // database__init asserts (under VALIDATIONS) that tables_cap does not
     // exceed the compile-time TABLES_CAP ceiling — table ids are bit-indexed
     // into Uni_Bits, whose width is fixed via ECS_TABLES_MULT. No dedicated

@@ -178,17 +178,8 @@ package ode_ecs
 
     @(private)
     overbase__attach_database :: proc(self: ^Overbase, db: ^Database) -> Error {
-        // Unwrap: dense_arr__add returns oc.Error (itself a union), and oc.Error
-        // is also listed as a variant of ode_ecs.Error — returning it as-is would
-        // nest it instead of flattening, so it would no longer compare equal to
-        // e.g. oc.Core_Error.Container_Is_Full at the call site.
         _, cerr := oc.dense_arr__add(&self.databases, db)
-        switch e in cerr {
-            case oc.Core_Error:
-                return e
-            case runtime.Allocator_Error:
-                return e
-        }
+        if cerr != oc.Core_Error.None do return cerr
         self.primary_database = oc.dense_arr__len(&self.databases) == 1 ? db : nil
         return nil
     }
