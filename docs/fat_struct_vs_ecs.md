@@ -46,7 +46,7 @@ Inventory and AI_State can be defined something like this:
 
 Check out a working example of a pure hybrid Fat Struct without ECS here: [/samples/fat_struct/fat/main.odin](/samples/fat_struct/fat/main.odin).
 
-Now you have to build your own code to support this approach. You need code to support entity id(s), note that they are without a generation number. You need code to support inventory_handle and ai_handle and appropriate pools. Now, what would you do if you want to iterate over separate types of entities — say, only active entities, only NPCs, or only players? All of this is easily solved by ODE_ECS, and in a more optimal way. You can just treat fat struct as a fat component and get all the benefits of ODE_ECS:
+Now you have to build your own code to support this approach. You need code to support entity id(s), note that they are without a generation number. You need code to support inventory_handle and ai_handle and appropriate pools. Now, what would you do if you want to iterate over separate types of entities — say, only active entities, only NPCs, or only players? All of this is easily solved by ODE_ECS, and in a optimal way. You can just treat fat struct as a fat component and get all the benefits of ODE_ECS:
 
 ```Odin
 
@@ -68,13 +68,15 @@ And you can easily iterate your Fat Structs like this:
 
 Using Fat Struct + ODE_ECS, you can get benefits like:
 
-- automatic [entity id tracking and entity generations](/README.md#entity)
-- you can easily attach Inventory and AI_State to Entity without worrying about handles and pools or cleanup
-- you can easily create pre-calculated queries ([Views](/README.md#-view)) over Entities (or Entities + Inventory + AI_State or combinations) to make your code faster
-- if you decide to, you can easily add more components to Entities, for example, Equipped_Gear or Abilities, etc. And you can do it DYNAMICALLY with O(1) speed in ODE_ECS with minimal code.
-- You can create parent-child relationships between your entities
-- You can do binary snapshots of your entities + components into a buffer or file
-- Multithreading support and others
+- automatic tracking of [entity IDs and generations](/README.md#entity).
+- easily attaching `Inventory` and `AI_State` to an entity without worrying about handles, pools, or cleanup.
+- deleting entities is automatically handled via tail-swap, so you never end up with holes in your entities array (i.e., you never iterate over holes). This can be disabled with [pause_packing](/README.md#mutating-tables-while-iterating-pause_packing--resume_packing--pack) if you wish.
+- easily creating pre-calculated queries ([Views](/README.md#-view)) over entities (or entities + `Inventory` + `AI_State`, or other combinations) to make your code faster.
+- if you decide to, easily adding more components to entities — for example, `Equipped_Gear` or `Abilities` — dynamically, with O(1) speed in ODE_ECS and minimal code.
+- creating parent-child relationships between your entities.
+- taking binary snapshots of your entities + components and writing them to a buffer or file.
+- multithreading support.
+- and more.
 
 And all of this will probably work faster than your custom code.
 

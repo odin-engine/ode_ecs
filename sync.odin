@@ -1,7 +1,8 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    WARNING: This feature is in experimental stage and is not yet considered stable. The API may change in future releases.
+    WARNING: This feature is in experimental stage and is not yet considered stable. 
+             The API may change in future releases.
 
     Off by default — build with -define:ECS_SYNC_ENABLED=true to compile it in
     (see SYNC_ENABLED's doc comment in ecs.odin). Without the flag, every
