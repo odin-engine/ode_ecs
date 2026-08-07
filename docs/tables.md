@@ -13,6 +13,8 @@ ODE_ECS has four table variants. They share the same core operations but trade m
 
 All variants preallocate everything at init and never reallocate. `cap` cannot exceed the database's `entities_cap`.
 
+For `Table(T)`, `Compact_Table(T)`, and `Tiny_Table(T)`, `T` must not be a zero-sized type (`size_of(T) == 0`) — `add_component` asserts on this (`API_Error.Component_Size_Cannot_Be_Zero` when validations are compiled out). Use `Tag_Table` for a marker/tag component that carries no data.
+
 Tables do **not** need to be terminated manually — terminating the database terminates them. (Manual `table_terminate` etc. is available if you need to tear one down early; note it invalidates any views that include the table.)
 
 ## Table(T)

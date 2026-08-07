@@ -25,6 +25,8 @@ ecs.arch_table__init(&units, &my_ecs, cap = 500, component_types = {Position, AI
 
 There is no per-component `add_component`/`remove_component` for an archetype — an entity either has the whole row (every declared column) or none of it. This mirrors `Tag_Table`'s all-or-nothing `add_tag`/`remove_tag` more than `Table`'s per-component API.
 
+None of the declared `component_types` may be zero-sized — `arch_table__init`/`create_entity`/`arch_table__add_entity` assert on this (`API_Error.Component_Size_Cannot_Be_Zero` when validations are compiled out). Use `Tag_Table` for a marker/tag component that carries no data.
+
 ## Creating, adding, removing
 
 ```odin
