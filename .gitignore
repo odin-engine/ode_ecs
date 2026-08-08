@@ -18,7 +18,6 @@ tests/out/*
 samples/**/out/*
 !samples/**/out/.keep
 
-.vscode
 ols.json
 *.code-workspace
 
