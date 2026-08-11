@@ -121,7 +121,11 @@ package ode_ecs__tests
 
     // database__init/init_from_overbase's tables_cap/views_cap/tiny_tables_cap
     // let each Database instance size its own bookkeeping independently of the
-    // compile-time TABLES_CAP/VIEWS_CAP/TINY_TABLES_CAP ceilings.
+    // compile-time TABLES_CAP/VIEWS_CAP/TINY_TABLES_CAP ceilings. tables_cap/
+    // views_cap are only an INITIAL size — db.tables/db.views grow on demand
+    // (doubling via sparse_arr__resize) instead of failing once exceeded.
+    // tiny_tables_cap has no such growth (a genuinely fixed-size pool), so it
+    // still fails at Container_Is_Full.
     @(test)
     per_database_caps__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -148,13 +152,18 @@ package ode_ecs__tests
         defer ecs.tiny_table__terminate(&tt1)
         testing.expect(t, ecs.tiny_table__init(&tt1, &db) == nil) // 3rd (and last) table_id, and tiny_tables_cap's only slot
 
-        // tables_cap == 3 already used up by t1/t2/tt1 — a 4th table_id must not fit
+        // tables_cap == 3 already used up by t1/t2/tt1 — a 4th table_id grows
+        // db.tables (doubling) instead of failing.
         t3: ecs.Table(Position)
-        testing.expect(t, ecs.table_init(&t3, &db, 10) == oc.Core_Error.Container_Is_Full)
+        defer ecs.table_terminate(&t3)
+        testing.expect(t, ecs.table_init(&t3, &db, 10) == nil)
+        testing.expect(t, db.tables.cap > 3, "tables array should have grown past its initial cap")
 
         // tiny_tables_cap == 1 already used up by tt1's subscriber slot — a 2nd
         // Tiny_Table must not fit (fails at that check, before ever touching
-        // table ids, so this holds independently of tables_cap headroom)
+        // table ids). Tiny_Table's pooled subscriber-slot allocation is a
+        // separate, genuinely fixed-size mechanism untouched by db.tables/
+        // views/groups growth, so this still correctly fails.
         tt2: ecs.Tiny_Table(AI)
         testing.expect(t, ecs.tiny_table__init(&tt2, &db) == oc.Core_Error.Container_Is_Full)
 
@@ -165,15 +174,129 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_init(&v1, &db, {&t1}) == nil)
         testing.expect(t, ecs.view_init(&v2, &db, {&t1}) == nil)
 
-        // views_cap == 2 already used up by v1/v2 — a 3rd view must not fit
+        // views_cap == 2 already used up by v1/v2 — a 3rd view grows db.views
+        // (doubling) instead of failing.
         v3: ecs.View
-        testing.expect(t, ecs.view_init(&v3, &db, {&t1}) == oc.Core_Error.Container_Is_Full)
+        defer ecs.view_terminate(&v3)
+        testing.expect(t, ecs.view_init(&v3, &db, {&t1}) == nil)
+        testing.expect(t, db.views.cap > 2, "views array should have grown past its initial cap")
+    }
+
+    // db.tables/db.views/db.groups each grow (double via resize) independently
+    // once their own initial cap is exceeded — filling one must not grow the
+    // others.
+    @(test)
+    database__arrays_grow_independently__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        defer ecs.terminate(&db)
+        testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator, tables_cap = 2, views_cap = 2, tiny_tables_cap = 1) == nil)
+
+        tables_cap_before := db.tables.cap
+        views_cap_before := db.views.cap
+        groups_cap_before := db.groups.cap
+        testing.expect(t, tables_cap_before == 2)
+        testing.expect(t, views_cap_before == 2)
+        testing.expect(t, groups_cap_before == 2) // groups is seeded from tables_cap too
+
+        // Overflow ONLY tables: 3 tables into a cap-2 array.
+        t1: ecs.Table(Position)
+        defer ecs.table_terminate(&t1)
+        t2: ecs.Table(AI)
+        defer ecs.table_terminate(&t2)
+        t3: ecs.Table(Position)
+        defer ecs.table_terminate(&t3)
+        testing.expect(t, ecs.table_init(&t1, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&t2, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&t3, &db, 10) == nil)
+
+        testing.expect(t, db.tables.cap > tables_cap_before, "tables should have grown")
+        testing.expect(t, db.views.cap == views_cap_before, "views must not grow just because tables did")
+        testing.expect(t, db.groups.cap == groups_cap_before, "groups must not grow just because tables did")
+
+        // Overflow ONLY views: 3 views into a cap-2 array.
+        v1: ecs.View
+        defer ecs.view_terminate(&v1)
+        v2: ecs.View
+        defer ecs.view_terminate(&v2)
+        v3: ecs.View
+        defer ecs.view_terminate(&v3)
+        testing.expect(t, ecs.view_init(&v1, &db, {&t1}) == nil)
+        testing.expect(t, ecs.view_init(&v2, &db, {&t1}) == nil)
+        testing.expect(t, ecs.view_init(&v3, &db, {&t1}) == nil)
+
+        testing.expect(t, db.views.cap > views_cap_before, "views should have grown")
+        testing.expect(t, db.groups.cap == groups_cap_before, "groups must still not have grown")
+
+        // Overflow ONLY groups: 3 groups (each needs its own, not-already-owned
+        // table) into a cap-2 array.
+        t4: ecs.Table(AI)
+        defer ecs.table_terminate(&t4)
+        t5: ecs.Table(Position)
+        defer ecs.table_terminate(&t5)
+        testing.expect(t, ecs.table_init(&t4, &db, 10) == nil)
+        testing.expect(t, ecs.table_init(&t5, &db, 10) == nil)
+
+        g1: ecs.Group
+        defer ecs.group_terminate(&g1)
+        g2: ecs.Group
+        defer ecs.group_terminate(&g2)
+        g3: ecs.Group
+        defer ecs.group_terminate(&g3)
+        testing.expect(t, ecs.group_init(&g1, &db, {&t2}) == nil)
+        testing.expect(t, ecs.group_init(&g2, &db, {&t4}) == nil)
+        testing.expect(t, ecs.group_init(&g3, &db, {&t5}) == nil)
+
+        testing.expect(t, db.groups.cap > groups_cap_before, "groups should have grown")
+    }
+
+    // Table ids are Uni_Bits bit indices — a compile-time-fixed bit_set sized
+    // exactly BIT_SET_VALUES_CAP * TABLES_MULT (NOT TABLES_CAP, which is just
+    // db.tables' independently-configurable initial/default size) — so
+    // db.tables growth must clamp at that true ceiling instead of growing
+    // past it. This test forces genuine exhaustion at the real ceiling
+    // (unlike per_database_caps__test's small initial tables_cap, which now
+    // just grows).
+    @(test)
+    database__tables_growth_clamps_at_id_ceiling__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        defer ecs.terminate(&db)
+        // Small initial tables_cap so growth kicks in almost immediately, but
+        // the true table-id ceiling below is unaffected by this param.
+        testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator, tables_cap = 2, views_cap = 2, tiny_tables_cap = 1) == nil)
+
+        table_id_cap :: ecs.BIT_SET_VALUES_CAP * ecs.TABLES_MULT
+        tags: [table_id_cap]ecs.Tag_Table
+        defer for &tag in tags do ecs.tag_table__terminate(&tag)
+        for i in 0..<table_id_cap {
+            testing.expect(t, ecs.tag_table__init(&tags[i], &db, 10) == nil)
+        }
+        testing.expect(t, db.tables.cap == table_id_cap, "tables must have grown exactly up to, and no further than, the true table-id ceiling")
+
+        // The true ceiling is genuinely exhausted now — one more table_id
+        // must fail, exactly as it does today at any hard cap.
+        one_too_many: ecs.Tag_Table
+        testing.expect(t, ecs.tag_table__init(&one_too_many, &db, 10) == oc.Core_Error.Container_Is_Full)
     }
 
     // view_init's table-subscription loop (after it's already attached to the
-    // database) is capacity-limited by each included table's own
-    // subscribers_cap, not by the database's views_cap — a distinct failure
-    // point from per_database_caps__test's v3 case above. A failure here must
+    // database) is capacity-limited by each included table's own subscriber
+    // capacity. For Table/Compact_Table/Arch_Table/Tag_Table that list now
+    // grows on demand (dense_arr__add_growing), so it can't be exhausted under
+    // normal conditions anymore — Tiny_Table still has a hard, fixed
+    // TINY_TABLE__VIEWS_CAP ceiling (a pooled fixed array, not a growable
+    // Dense_Arr), so it's used here to force the failure. A failure here must
     // leave the failed View fully torn down (Not_Initialized, no leaked
     // allocations, not left dangling in the database's views), not a
     // half-subscribed live-looking object.
@@ -186,31 +309,34 @@ package ode_ecs__tests
         defer ecs.terminate(&db)
         testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
 
-        t1: ecs.Table(Position)
-        defer ecs.table_terminate(&t1)
-        testing.expect(t, ecs.table_init(&t1, &db, 10, subscribers_cap = 1) == nil)
+        t1: ecs.Tiny_Table(Position)
+        defer ecs.tiny_table__terminate(&t1)
+        testing.expect(t, ecs.tiny_table__init(&t1, &db) == nil)
 
-        v1: ecs.View
-        defer ecs.view_terminate(&v1)
-        testing.expect(t, ecs.view_init(&v1, &db, {&t1}) == nil) // uses t1's only subscriber slot
+        // fill all of t1's fixed subscriber slots
+        views: [ecs.TINY_TABLE__VIEWS_CAP]ecs.View
+        defer for &v in views do ecs.view_terminate(&v)
+        for &v in views {
+            testing.expect(t, ecs.view_init(&v, &db, {&t1}) == nil)
+        }
 
         views_before := oc.sparse_arr__len(&db.views)
 
-        // v2 attaches to the database fine (views_cap has room), but t1's
-        // subscribers_cap == 1 is already used by v1 — the subscribe loop
-        // must fail, and v2 must come back fully torn down.
-        v2: ecs.View
-        testing.expect(t, ecs.view_init(&v2, &db, {&t1}) == oc.Core_Error.Container_Is_Full)
-        testing.expect(t, ecs.is_valid(&v2) == false)
-        testing.expect(t, v2.state == ecs.Object_State.Not_Initialized)
+        // one more view attaches to the database fine (views_cap has room), but
+        // t1's TINY_TABLE__VIEWS_CAP subscriber slots are already full — the
+        // subscribe loop must fail, and the view must come back fully torn down.
+        v_extra: ecs.View
+        testing.expect(t, ecs.view_init(&v_extra, &db, {&t1}) == oc.Core_Error.Container_Is_Full)
+        testing.expect(t, ecs.is_valid(&v_extra) == false)
+        testing.expect(t, v_extra.state == ecs.Object_State.Not_Initialized)
         testing.expect(t, oc.sparse_arr__len(&db.views) == views_before, "failed view must not remain attached to the database")
 
-        // t1 must still work normally afterward — v1's subscription untouched
+        // t1 must still work normally afterward — the existing subscriptions untouched
         eid, eerr := ecs.create_entity(&db)
         testing.expect(t, eerr == nil)
         _, aerr := ecs.add_component(&t1, eid)
         testing.expect(t, aerr == nil)
-        testing.expect(t, ecs.view_len(&v1) == 1)
+        testing.expect(t, ecs.view_len(&views[0]) == 1)
     }
 
     // database__init asserts (under VALIDATIONS) that tables_cap does not

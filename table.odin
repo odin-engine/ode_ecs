@@ -74,7 +74,7 @@ package ode_ecs
     }
 
     @(private)
-    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, sync_channels_cap: int = SYNC_CHANNELS_CAP) -> Error {
+    table_base__init :: proc(self: ^Table_Base, db: ^Database, cap: int, subscribers_cap: int = SUBSCRIBERS_CAP, sync_channels_cap: int = SYNC_CHANNELS_CAP) -> Error {
         shared_table__init(&self.shared, Table_Type.Table, db)
 
         // a re-init'd struct (issue #8) may carry an owner from its previous life
@@ -120,13 +120,13 @@ package ode_ecs
     table_base__attach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
         if self.subscribers.items == nil do oc.dense_arr__init(&self.subscribers, self.subscribers_cap, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers, view, self.db.allocator)
         if err != nil do return err
 
         if view.filter != nil {
             if self.subscribers_with_filter.items == nil do oc.dense_arr__init(&self.subscribers_with_filter, self.subscribers_cap, self.db.allocator) or_return
 
-            _, err = oc.dense_arr__add(&self.subscribers_with_filter, view)
+            _, err = oc.dense_arr__add_growing(&self.subscribers_with_filter, view, self.db.allocator)
             if err != nil do return err
         }
 
@@ -147,7 +147,7 @@ package ode_ecs
     table_base__attach_exclude_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
         if self.subscribers_excluding.items == nil do oc.dense_arr__init(&self.subscribers_excluding, self.subscribers_cap, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers_excluding, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers_excluding, view, self.db.allocator)
         return err
     }
 
@@ -160,7 +160,7 @@ package ode_ecs
     table_base__attach_any_of_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
         if self.subscribers_any_of.items == nil do oc.dense_arr__init(&self.subscribers_any_of, self.subscribers_cap, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers_any_of, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers_any_of, view, self.db.allocator)
         return err
     }
 
@@ -748,7 +748,7 @@ package ode_ecs
         return true
     }
 
-    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, subscribers_cap: int = VIEWS_CAP, sync_channels_cap: int = SYNC_CHANNELS_CAP, loc := #caller_location) -> Error {
+    table__init :: proc(self: ^Table($T), db: ^Database, cap: int, subscribers_cap: int = SUBSCRIBERS_CAP, sync_channels_cap: int = SYNC_CHANNELS_CAP, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)

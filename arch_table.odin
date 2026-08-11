@@ -85,7 +85,7 @@ package ode_ecs
         return true
     }
 
-    arch_table__init :: proc(self: ^Arch_Table, db: ^Database, cap: int, component_types: []typeid, subscribers_cap: int = VIEWS_CAP, loc := #caller_location) -> Error {
+    arch_table__init :: proc(self: ^Arch_Table, db: ^Database, cap: int, component_types: []typeid, subscribers_cap: int = SUBSCRIBERS_CAP, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
@@ -721,13 +721,13 @@ package ode_ecs
     arch_table__attach_subscriber :: proc(self: ^Arch_Table, view: ^View) -> Error {
         if self.subscribers.items == nil do oc.dense_arr__init(&self.subscribers, self.subscribers_cap, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers, view, self.db.allocator)
         if err != nil do return err
 
         if view.filter != nil {
             if self.subscribers_with_filter.items == nil do oc.dense_arr__init(&self.subscribers_with_filter, self.subscribers_cap, self.db.allocator) or_return
 
-            _, err = oc.dense_arr__add(&self.subscribers_with_filter, view)
+            _, err = oc.dense_arr__add_growing(&self.subscribers_with_filter, view, self.db.allocator)
             if err != nil do return err
         }
 
@@ -748,7 +748,7 @@ package ode_ecs
     arch_table__attach_exclude_subscriber :: proc(self: ^Arch_Table, view: ^View) -> Error {
         if self.subscribers_excluding.items == nil do oc.dense_arr__init(&self.subscribers_excluding, self.subscribers_cap, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers_excluding, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers_excluding, view, self.db.allocator)
         return err
     }
 
@@ -761,7 +761,7 @@ package ode_ecs
     arch_table__attach_any_of_subscriber :: proc(self: ^Arch_Table, view: ^View) -> Error {
         if self.subscribers_any_of.items == nil do oc.dense_arr__init(&self.subscribers_any_of, self.subscribers_cap, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers_any_of, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers_any_of, view, self.db.allocator)
         return err
     }
 

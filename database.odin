@@ -84,12 +84,12 @@ package ode_ecs
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
             assert(tables_cap > 1)
-            assert(tables_cap <= TABLES_CAP, "tables_cap cannot exceed TABLES_CAP — increase ECS_TABLES_MULT to increase TABLES_CAP")
+            assert(tables_cap <= BIT_SET_VALUES_CAP * TABLES_MULT, "tables_cap cannot exceed BIT_SET_VALUES_CAP * TABLES_MULT (table ids are Uni_Bits bit indices) — increase ECS_TABLES_MULT to raise this ceiling")
             assert(views_cap > 1)
         }
 
         if entities_cap <= 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
-        if tables_cap > TABLES_CAP do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
+        if tables_cap > BIT_SET_VALUES_CAP * TABLES_MULT do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
 
         // A re-init'd struct (issue #8) may still be paused from its previous
         // life; terminate does not reset the flag.
@@ -132,11 +132,11 @@ package ode_ecs
             assert(overbase != nil)
             assert(overbase__is_valid(overbase))
             assert(tables_cap > 1)
-            assert(tables_cap <= TABLES_CAP, "tables_cap cannot exceed TABLES_CAP — increase ECS_TABLES_MULT to increase TABLES_CAP")
+            assert(tables_cap <= BIT_SET_VALUES_CAP * TABLES_MULT, "tables_cap cannot exceed BIT_SET_VALUES_CAP * TABLES_MULT (table ids are Uni_Bits bit indices) — increase ECS_TABLES_MULT to raise this ceiling")
             assert(views_cap > 1)
         }
 
-        if tables_cap > TABLES_CAP do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
+        if tables_cap > BIT_SET_VALUES_CAP * TABLES_MULT do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
 
         self.tail_swap_paused = false
         self.destroying_eid_ix = DELETED_INDEX
@@ -562,11 +562,22 @@ package ode_ecs
 
     // Returns index of table in self.tables
     @(private)
-    database__attach_table :: proc(self: ^Database, table: ^Shared_Table) -> (table_id, Error) {
-        id, err := oc.sparse_arr__add(&self.tables, table)
-        if err != oc.Core_Error.None do return DELETED_INDEX, err
+    database__attach_table :: proc(self: ^Database, table: ^Shared_Table) -> (id: table_id, err: Error) {
+        raw_id: int
+        raw_id, err = oc.sparse_arr__add(&self.tables, table)
+        // Table ids double as Uni_Bits bit indices, a compile-time-fixed bit_set
+        // sized exactly BIT_SET_VALUES_CAP * TABLES_MULT — growth must never
+        // cross that ceiling. NOT TABLES_CAP, which is just this array's
+        // independently-configurable initial/default size.
+        table_id_cap := BIT_SET_VALUES_CAP * TABLES_MULT
+        if err == oc.Core_Error.Container_Is_Full && self.tables.cap < table_id_cap {
+            new_cap := min(self.tables.cap * 2, table_id_cap)
+            oc.sparse_arr__resize(&self.tables, new_cap, self.allocator) or_return
+            raw_id, err = oc.sparse_arr__add(&self.tables, table)
+        }
+        if err != nil do return DELETED_INDEX, err
 
-        return cast(table_id) id, nil
+        return cast(table_id) raw_id, nil
     }
 
     @(private)
@@ -598,7 +609,7 @@ package ode_ecs
 
     @(private)
     database__attach_group :: proc(self: ^Database, group: ^Group) -> Error {
-        _, err := oc.dense_arr__add(&self.groups, group)
+        _, err := oc.dense_arr__add_growing(&self.groups, group, self.allocator)
         return err
     }
 
@@ -610,8 +621,8 @@ package ode_ecs
 
     @(private)
     database__attach_view :: proc(self: ^Database, view: ^View) -> (view_id, Error) {
-        id, err := oc.sparse_arr__add(&self.views, view)
-        if err != oc.Core_Error.None do return DELETED_INDEX, err
+        id, err := oc.sparse_arr__add_growing(&self.views, view, self.allocator)
+        if err != nil do return DELETED_INDEX, err
 
         return cast(view_id) id, nil
     }

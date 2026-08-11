@@ -194,9 +194,12 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_init(&t1, &db, 10) == nil)
         testing.expect(t, ecs.table_init(&t2, &db, 10) == nil)
 
-        // tables_cap == 2 already used up by t1/t2 — a 3rd table must not fit
+        // tables_cap == 2 already used up by t1/t2 — a 3rd table grows
+        // db.tables (doubling) instead of failing.
         t3: ecs.Table(Ob_Position)
-        testing.expect(t, ecs.table_init(&t3, &db, 10) == oc.Core_Error.Container_Is_Full)
+        defer ecs.table_terminate(&t3)
+        testing.expect(t, ecs.table_init(&t3, &db, 10) == nil)
+        testing.expect(t, db.tables.cap > 2, "tables array should have grown past its initial cap")
     }
 
     // init_from_overbase asserts (under VALIDATIONS) the same tables_cap <=

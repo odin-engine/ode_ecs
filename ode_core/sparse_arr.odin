@@ -43,7 +43,9 @@ package ode_core
     sparse_arr__terminate :: proc(self: ^Sparse_Arr($T), allocator: runtime.Allocator) -> runtime.Allocator_Error {
         self.cap = 0
         self.has_nil_item = false
-        return delete(self.items, allocator)
+        err := delete(self.items, allocator)
+        self.items = nil
+        return err
     }
  
     sparse_arr__remove_by_index :: proc(self: ^Sparse_Arr($T), #any_int index: int, loc := #caller_location) #no_bounds_check {
@@ -108,6 +110,40 @@ package ode_core
         }
 
         return id, nil
+    }
+
+    // Adds value, doubling the backing allocation first if full instead of
+    // returning Container_Is_Full. Requires self already allocated (cap > 0).
+    sparse_arr__add_growing :: proc(self: ^Sparse_Arr($T), value: ^T, allocator: runtime.Allocator) -> (ix: int, err: Error) {
+        when VALIDATIONS do assert(self.cap > 0)
+
+        ix, err = sparse_arr__add(self, value)
+        if err == Core_Error.Container_Is_Full {
+            sparse_arr__resize(self, self.cap * 2, allocator) or_return
+            ix, err = sparse_arr__add(self, value)
+        }
+        return
+    }
+
+    // Resizes the backing allocation to new_cap, preserving existing items (and any
+    // nil holes) in place. Rejects shrinking below the current live span instead of
+    // dropping items — Sparse_Arr is unmovable, so it never compacts to make room.
+    sparse_arr__resize :: proc(self: ^Sparse_Arr($T), new_cap: int, allocator: runtime.Allocator) -> Error {
+        live_len := sparse_arr__len(self)
+        if new_cap < live_len do return Core_Error.Cannot_Shrink_Below_Length
+        if new_cap == self.cap do return nil
+
+        new_items := make([]^T, new_cap, allocator) or_return
+        if live_len > 0 do copy(new_items, self.items[:live_len])
+        ((^runtime.Raw_Slice)(&new_items)).len = live_len
+
+        old_items := self.items
+        self.items = new_items
+        self.cap = new_cap
+
+        if old_items != nil do delete(old_items, allocator) or_return
+
+        return nil
     }
 
     sparse_arr__len :: #force_inline proc(self: ^Sparse_Arr($T)) -> int {
@@ -313,4 +349,110 @@ package ode_core
         testing.expect(t, aerr2 == Core_Error.None)
         testing.expect(t, ix2 == 2)
         testing.expect(t, sa.has_nil_item == false)
+    }
+
+    @(test)
+    sparse_arr__resize__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        a, b: int = 1, 2
+
+        // resize-up from a zero-value array behaves like init
+        sa: Sparse_Arr(int)
+        defer sparse_arr__terminate(&sa, allocator)
+        err := sparse_arr__resize(&sa, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 2)
+        testing.expect(t, sparse_arr__len(&sa) == 0)
+
+        // resize-up preserves items AND holes in place
+        _, aerr := sparse_arr__add(&sa, &a)
+        testing.expect(t, aerr == Core_Error.None)
+        _, aerr = sparse_arr__add(&sa, &b)
+        testing.expect(t, aerr == Core_Error.None)
+        sparse_arr__remove_by_index(&sa, 0) // leaves a hole at index 0, b stays at index 1
+        testing.expect(t, sa.has_nil_item == true)
+
+        err = sparse_arr__resize(&sa, 4, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 4)
+        testing.expect(t, sparse_arr__len(&sa) == 2)
+        testing.expect(t, sa.items[0] == nil)
+        testing.expect(t, sa.items[1] == &b)
+        testing.expect(t, sa.has_nil_item == true)
+
+        // resize-down to exactly the live span is allowed
+        err = sparse_arr__resize(&sa, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 2)
+        testing.expect(t, sparse_arr__len(&sa) == 2)
+        testing.expect(t, sa.items[0] == nil)
+        testing.expect(t, sa.items[1] == &b)
+        testing.expect(t, sa.has_nil_item == true)
+
+        // resize-down below the live span is rejected, array untouched
+        err = sparse_arr__resize(&sa, 1, allocator)
+        testing.expect(t, err == Core_Error.Cannot_Shrink_Below_Length)
+        testing.expect(t, sa.cap == 2)
+        testing.expect(t, sparse_arr__len(&sa) == 2)
+
+        // resize to the same cap is a no-op
+        err = sparse_arr__resize(&sa, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 2)
+    }
+
+    @(test)
+    sparse_arr__add_growing__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        a, b, c, d, e, f: int = 1, 2, 3, 4, 5, 6
+
+        sa: Sparse_Arr(int)
+        defer sparse_arr__terminate(&sa, allocator)
+        alloc_err := sparse_arr__init(&sa, 2, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+
+        // fills the initial cap without growing
+        _, err := sparse_arr__add_growing(&sa, &a, allocator)
+        testing.expect(t, err == nil)
+        _, err = sparse_arr__add_growing(&sa, &b, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 2)
+
+        // a hole must be filled first, without growing, even though the live
+        // span looks full
+        sparse_arr__remove_by_index(&sa, 0)
+        testing.expect(t, sa.has_nil_item == true)
+        ix, herr := sparse_arr__add_growing(&sa, &c, allocator)
+        testing.expect(t, herr == nil)
+        testing.expect(t, ix == 0)
+        testing.expect(t, sa.cap == 2)
+
+        // now genuinely full -- overflow doubles cap 2 -> 4 and succeeds
+        _, err = sparse_arr__add_growing(&sa, &d, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 4)
+        testing.expect(t, sparse_arr__len(&sa) == 3)
+
+        // fill the remaining free slot (no growth needed yet)
+        _, err = sparse_arr__add_growing(&sa, &e, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 4)
+        testing.expect(t, sparse_arr__len(&sa) == 4)
+
+        // now full again -- overflow doubles cap 4 -> 8
+        _, err = sparse_arr__add_growing(&sa, &f, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, sa.cap == 8)
+        testing.expect(t, sparse_arr__len(&sa) == 5)
+        testing.expect(t, sa.items[4] == &f)
     }

@@ -55,7 +55,27 @@ package ode_core
         return err
     }
 
-    // `dense_arr__remove_by_index` removes the element at the specified `index`. 
+    // Resizes the backing allocation to new_cap, preserving existing items. Rejects
+    // shrinking below the current live length instead of dropping items.
+    dense_arr__resize :: proc(self: ^Dense_Arr($T), new_cap: int, allocator: runtime.Allocator) -> Error {
+        live_len := dense_arr__len(self)
+        if new_cap < live_len do return Core_Error.Cannot_Shrink_Below_Length
+        if new_cap == self.cap do return nil
+
+        new_items := make([]T, new_cap, allocator) or_return
+        if live_len > 0 do copy(new_items, self.items[:live_len])
+        ((^runtime.Raw_Slice)(&new_items)).len = live_len
+
+        old_items := self.items
+        self.items = new_items
+        self.cap = new_cap
+
+        if old_items != nil do delete(old_items, allocator) or_return
+
+        return nil
+    }
+
+    // `dense_arr__remove_by_index` removes the element at the specified `index`.
     // 
     // Note: Similar to unordered_remove() for dynamic arrays but this is not a dynamic array.
     dense_arr__remove_by_index :: proc(self: ^Dense_Arr($T), #any_int index: int, loc := #caller_location) #no_bounds_check {
@@ -93,6 +113,19 @@ package ode_core
         raw.len += 1
 
         return index, Core_Error.None
+    }
+
+    // Adds value, doubling the backing allocation first if full instead of
+    // returning Container_Is_Full. Requires self already allocated (cap > 0).
+    dense_arr__add_growing :: proc(self: ^Dense_Arr($T), value: T, allocator: runtime.Allocator) -> (ix: int, err: Error) {
+        when VALIDATIONS do assert(self.cap > 0)
+
+        ix, err = dense_arr__add(self, value)
+        if err == Core_Error.Container_Is_Full {
+            dense_arr__resize(self, self.cap * 2, allocator) or_return
+            ix, err = dense_arr__add(self, value)
+        }
+        return
     }
 
     dense_arr__len :: #force_inline proc(self: ^Dense_Arr($T)) -> int {
@@ -248,4 +281,94 @@ package ode_core
         alloc_err = dense_arr__terminate(&da, allocator)
         testing.expect(t, alloc_err == runtime.Allocator_Error.None)
         testing.expect(t, dense_arr__is_valid_or_empty(&da))
+    }
+
+    @(test)
+    dense_arr__resize__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        // resize-up from a zero-value array behaves like init
+        arr: Dense_Arr(int)
+        defer dense_arr__terminate(&arr, allocator)
+        err := dense_arr__resize(&arr, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 2)
+        testing.expect(t, dense_arr__len(&arr) == 0)
+
+        // resize-up preserves existing items
+        _, aerr := dense_arr__add(&arr, 11)
+        testing.expect(t, aerr == Core_Error.None)
+        _, aerr = dense_arr__add(&arr, 22)
+        testing.expect(t, aerr == Core_Error.None)
+
+        err = dense_arr__resize(&arr, 4, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 4)
+        testing.expect(t, dense_arr__len(&arr) == 2)
+        testing.expect(t, arr.items[0] == 11)
+        testing.expect(t, arr.items[1] == 22)
+
+        // resize-down to exactly the live length is allowed
+        err = dense_arr__resize(&arr, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 2)
+        testing.expect(t, dense_arr__len(&arr) == 2)
+        testing.expect(t, arr.items[0] == 11)
+        testing.expect(t, arr.items[1] == 22)
+
+        // resize-down below the live length is rejected, array untouched
+        err = dense_arr__resize(&arr, 1, allocator)
+        testing.expect(t, err == Core_Error.Cannot_Shrink_Below_Length)
+        testing.expect(t, arr.cap == 2)
+        testing.expect(t, dense_arr__len(&arr) == 2)
+
+        // resize to the same cap is a no-op
+        err = dense_arr__resize(&arr, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 2)
+        testing.expect(t, dense_arr__len(&arr) == 2)
+    }
+
+    @(test)
+    dense_arr__add_growing__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        arr: Dense_Arr(int)
+        defer dense_arr__terminate(&arr, allocator)
+        alloc_err := dense_arr__init(&arr, 2, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+
+        // fills the initial cap without growing
+        _, err := dense_arr__add_growing(&arr, 1, allocator)
+        testing.expect(t, err == nil)
+        _, err = dense_arr__add_growing(&arr, 2, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 2)
+
+        // third add overflows -- doubles to 4 and succeeds, keeping prior items
+        _, err = dense_arr__add_growing(&arr, 3, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 4)
+        testing.expect(t, dense_arr__len(&arr) == 3)
+        testing.expect(t, arr.items[0] == 1)
+        testing.expect(t, arr.items[1] == 2)
+        testing.expect(t, arr.items[2] == 3)
+
+        // fill to the new cap, then overflow again -- doubles 4 -> 8
+        _, err = dense_arr__add_growing(&arr, 4, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 4)
+        _, err = dense_arr__add_growing(&arr, 5, allocator)
+        testing.expect(t, err == nil)
+        testing.expect(t, arr.cap == 8)
+        testing.expect(t, dense_arr__len(&arr) == 5)
+        testing.expect(t, arr.items[4] == 5)
     }

@@ -30,6 +30,7 @@ package ode_core
         Already_Exists,
         Capacity_Is_Not_Power_Of_2,
         Key_Exists,
+        Cannot_Shrink_Below_Length,
     }
 
     Error :: union #shared_nil {

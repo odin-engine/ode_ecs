@@ -28,11 +28,15 @@ package ode_ecs
     // You can have unlimited number of types of components (as long as you have memory). 
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
     
-    // Maximum number of tables (component types)
-    TABLES_CAP :: BIT_SET_VALUES_CAP * TABLES_MULT
+    // Initial capacity of tables (component types). Doubles in size when cap 
+    // is reached (outside of the frame loop so it is ok).
+    TABLES_CAP ::  #config(ECS_TABLES_CAP, 16)
 
-    // Maximum number of views
-    VIEWS_CAP :: #config(ECS_VIEWS_CAP, TABLES_CAP)
+    // Initial capacity of views
+    VIEWS_CAP :: #config(ECS_VIEWS_CAP, 16)
+
+    // Initial capacity of subscribers
+    SUBSCRIBERS_CAP :: #config(ECS_SUBSCRIBERS_CAP, 8)
 
     // -1 by default, just to see if index is not used or incorrect
     DELETED_INDEX :: oc.DELETED_INDEX
@@ -58,10 +62,7 @@ package ode_ecs
     //
 
         // Off by default: the feature must be explicitly compiled in with
-        // -define:ECS_SYNC_ENABLED=true. When off, sync_register returns
-        // API_Error.Sync_Feature_Disabled and sync_watchers (Table_Base/
-        // Compact_Table_Base/Tag_Table) simply never gets lazily allocated;
-        // Tiny_Table still compiles its sync fields out entirely (tiny_table.odin).
+        // -define:ECS_SYNC_ENABLED=true. 
         SYNC_ENABLED :: #config(ECS_SYNC_ENABLED, false)
 
         // Maximum number of Sync_Channel/Sync_Decoder that may watch one Table/

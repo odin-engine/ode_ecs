@@ -457,9 +457,9 @@ package ode_ecs
 
     @(private)
     tag_table__attach_subscriber :: proc(self: ^Tag_Table, view: ^View) -> Error {
-        if self.subscribers.items == nil do oc.dense_arr__init(&self.subscribers, VIEWS_CAP, self.db.allocator) or_return
+        if self.subscribers.items == nil do oc.dense_arr__init(&self.subscribers, SUBSCRIBERS_CAP, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers, view, self.db.allocator)
         return err
     }
 
@@ -471,9 +471,9 @@ package ode_ecs
 
     @(private)
     tag_table__attach_exclude_subscriber :: proc(self: ^Tag_Table, view: ^View) -> Error {
-        if self.subscribers_excluding.items == nil do oc.dense_arr__init(&self.subscribers_excluding, VIEWS_CAP, self.db.allocator) or_return
+        if self.subscribers_excluding.items == nil do oc.dense_arr__init(&self.subscribers_excluding, SUBSCRIBERS_CAP, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers_excluding, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers_excluding, view, self.db.allocator)
         return err
     }
 
@@ -484,9 +484,9 @@ package ode_ecs
 
     @(private)
     tag_table__attach_any_of_subscriber :: proc(self: ^Tag_Table, view: ^View) -> Error {
-        if self.subscribers_any_of.items == nil do oc.dense_arr__init(&self.subscribers_any_of, VIEWS_CAP, self.db.allocator) or_return
+        if self.subscribers_any_of.items == nil do oc.dense_arr__init(&self.subscribers_any_of, SUBSCRIBERS_CAP, self.db.allocator) or_return
 
-        _, err := oc.dense_arr__add(&self.subscribers_any_of, view)
+        _, err := oc.dense_arr__add_growing(&self.subscribers_any_of, view, self.db.allocator)
         return err
     }
 

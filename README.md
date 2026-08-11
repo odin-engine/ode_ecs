@@ -163,6 +163,8 @@ Using an entity, you can access its other components:
 ```
 Tables documentation is [here](/docs/tables.md).
 
+>**NOTE:** Creating databases, tables, views, etc., should happen outside the game's frame loop.
+
 ## 🪟 **View**  
 
 A *_View_* is a precomputed query (so you do not need to compute the query every frame). A View is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
