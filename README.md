@@ -4,10 +4,13 @@
 ⚡ A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 ### What ODE_ECS offers
+
 #### High-performance
 - No hidden allocations in the game loop: Capacities are set upfront, eliminating unexpected allocations, deallocations, or memory copies mid-frame.
 - Micro-optimized and benchmarked for maximum throughput.
 - Frame-to-frame stability from both CPU and memory standpoints.
+- Data is cache-friendly since there's no extra per-row metadata.
+
 #### Low-level & hybrid
 - A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Tag_Table](/docs/tables.md#tag_table) (just tags, no data).
 - Supports both sparse-set and archetype styles. [Arch_Table](/docs/arch_table.md) gives you an archetype approach, and it can be combined with regular Tables on the same entity if that's useful for your case.
@@ -20,7 +23,6 @@
 - [Pause/resume packing](#️-pausing-a-single-table-or-group) — a way to mutate tables safely while iterating.
 - [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, tags, relations) to a buffer or file, with entity IDs staying valid after reload.
 - [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
-- Also supports custom allocators and keeps data fairly cache-friendly since there's no extra per-row metadata.
 
 #### Tested & documented 
 - Well [tested](/tests/) and comprehensively [documented](/docs/_index.md).
