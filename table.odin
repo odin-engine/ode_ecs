@@ -51,6 +51,11 @@ package ode_ecs
             holes_count: int,
             first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
+            // Sizes subscribers/subscribers_excluding/subscribers_any_of when they're
+            // lazily allocated on first attach (see table_base__attach_subscriber etc.).
+            // subscribers_with_filter stays eager and is sized at init time instead.
+            subscribers_cap: int,
+
             subscribers: oc.Dense_Arr(^View),
             subscribers_with_filter: oc.Dense_Arr(^View),
             subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
@@ -76,6 +81,8 @@ package ode_ecs
             holes_count: int,
             first_hole_rid: int,
 
+            subscribers_cap: int,
+
             subscribers: oc.Dense_Arr(^View),
             subscribers_with_filter: oc.Dense_Arr(^View),
             subscribers_excluding: oc.Dense_Arr(^View),
@@ -91,10 +98,10 @@ package ode_ecs
         if self.rid_to_eid == nil do return false
         if self.eid_to_rid == nil do return false
         if self.cap <= 0 do return false
-        if !oc.dense_arr__is_valid(&self.subscribers) do return false
+        if !oc.dense_arr__is_valid_or_empty(&self.subscribers) do return false
         if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
-        if !oc.dense_arr__is_valid(&self.subscribers_excluding) do return false
-        if !oc.dense_arr__is_valid(&self.subscribers_any_of) do return false
+        if !oc.dense_arr__is_valid_or_empty(&self.subscribers_excluding) do return false
+        if !oc.dense_arr__is_valid_or_empty(&self.subscribers_any_of) do return false
         when SYNC_ENABLED {
             if !oc.dense_arr__is_valid(&self.sync_watchers) do return false
         }
@@ -119,10 +126,11 @@ package ode_ecs
         // db.overbase.id_factory.cap is database entities cap
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
-        oc.dense_arr__init(&self.subscribers, subscribers_cap, db.allocator) or_return
+        self.subscribers_cap = subscribers_cap
+        // subscribers/subscribers_excluding/subscribers_any_of are allocated lazily,
+        // on first attach (see table_base__attach_subscriber etc.) — most tables never
+        // gain an excluding/any_of subscriber, so this keeps them at zero cost.
         oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
-        oc.dense_arr__init(&self.subscribers_excluding, subscribers_cap, db.allocator) or_return
-        oc.dense_arr__init(&self.subscribers_any_of, subscribers_cap, db.allocator) or_return
         when SYNC_ENABLED {
             oc.dense_arr__init(&self.sync_watchers, sync_channels_cap, db.allocator) or_return
         }
@@ -135,10 +143,10 @@ package ode_ecs
         when SYNC_ENABLED {
             oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
         }
-        oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
-        oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
+        if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
+        if self.subscribers_excluding.items != nil do oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
-        oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
+        if self.subscribers.items != nil do oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
         delete(self.rid_to_eid, self.db.allocator) or_return
         delete(self.eid_to_rid, self.db.allocator) or_return
@@ -153,6 +161,8 @@ package ode_ecs
 
     @(private)
     table_base__attach_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        if self.subscribers.items == nil do oc.dense_arr__init(&self.subscribers, self.subscribers_cap, self.db.allocator) or_return
+
         _, err := oc.dense_arr__add(&self.subscribers, view)
         if err != nil do return err
 
@@ -176,6 +186,8 @@ package ode_ecs
 
     @(private)
     table_base__attach_exclude_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        if self.subscribers_excluding.items == nil do oc.dense_arr__init(&self.subscribers_excluding, self.subscribers_cap, self.db.allocator) or_return
+
         _, err := oc.dense_arr__add(&self.subscribers_excluding, view)
         return err
     }
@@ -187,6 +199,8 @@ package ode_ecs
 
     @(private)
     table_base__attach_any_of_subscriber :: proc(self: ^Table_Base, view: ^View) -> Error {
+        if self.subscribers_any_of.items == nil do oc.dense_arr__init(&self.subscribers_any_of, self.subscribers_cap, self.db.allocator) or_return
+
         _, err := oc.dense_arr__add(&self.subscribers_any_of, view)
         return err
     }

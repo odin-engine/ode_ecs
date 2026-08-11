@@ -26,11 +26,21 @@ package ode_core
     }
 
     dense_arr__is_valid :: proc(self: ^Dense_Arr($T)) -> bool {
-        if self == nil do return false 
-        if self.cap <= 0 do return false 
-        if self.items == nil do return false 
+        if self == nil do return false
+        if self.cap <= 0 do return false
+        if self.items == nil do return false
 
-        return true 
+        return true
+    }
+
+    // True if the Dense_Arr is either fully allocated-and-usable, or legitimately
+    // not-yet-allocated (a lazy field that may never get its first `add`). Relies
+    // on dense_arr__terminate leaving items == nil, so cap == 0 <=> items == nil
+    // holds in every reachable state.
+    dense_arr__is_valid_or_empty :: proc(self: ^Dense_Arr($T)) -> bool {
+        if self == nil do return false
+        if self.cap == 0 do return self.items == nil
+        return self.items != nil
     }
 
     dense_arr__init :: proc(self: ^Dense_Arr($T), cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
@@ -43,8 +53,9 @@ package ode_core
 
     dense_arr__terminate :: proc(self: ^Dense_Arr($T), allocator: runtime.Allocator) -> runtime.Allocator_Error {
         self.cap = 0
-        ((^runtime.Raw_Slice)(&self.items)).len = 0
-        return delete(self.items, allocator)
+        err := delete(self.items, allocator)
+        self.items = nil
+        return err
     }
 
     // `dense_arr__remove_by_index` removes the element at the specified `index`. 
@@ -214,4 +225,30 @@ package ode_core
         alloc_err = dense_arr__terminate(&da, allocator)
         testing.expect(t, alloc_err == runtime.Allocator_Error.None)
         testing.expect(t, dense_arr__is_valid(&da) == false)
+    }
+
+    @(test)
+    dense_arr__is_valid_or_empty__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        // never allocated -- legitimately empty, should read as valid
+        zero_value: Dense_Arr(int)
+        testing.expect(t, dense_arr__is_valid_or_empty(&zero_value))
+
+        nil_da: ^Dense_Arr(int)
+        testing.expect(t, dense_arr__is_valid_or_empty(nil_da) == false)
+
+        da: Dense_Arr(int)
+        alloc_err := dense_arr__init(&da, 2, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, dense_arr__is_valid_or_empty(&da))
+
+        // terminated -- items collapses back to nil, should read as valid (empty) again
+        alloc_err = dense_arr__terminate(&da, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, dense_arr__is_valid_or_empty(&da))
     }
