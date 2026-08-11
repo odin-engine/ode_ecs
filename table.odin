@@ -51,9 +51,8 @@ package ode_ecs
             holes_count: int,
             first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
-            // Sizes subscribers/subscribers_excluding/subscribers_any_of when they're
-            // lazily allocated on first attach (see table_base__attach_subscriber etc.).
-            // subscribers_with_filter stays eager and is sized at init time instead.
+            // Sizes subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
+            // when they're lazily allocated on first attach (see table_base__attach_subscriber etc.).
             subscribers_cap: int,
 
             subscribers: oc.Dense_Arr(^View),
@@ -99,7 +98,7 @@ package ode_ecs
         if self.eid_to_rid == nil do return false
         if self.cap <= 0 do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers) do return false
-        if !oc.dense_arr__is_valid(&self.subscribers_with_filter) do return false
+        if !oc.dense_arr__is_valid_or_empty(&self.subscribers_with_filter) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_excluding) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_any_of) do return false
         when SYNC_ENABLED {
@@ -127,10 +126,10 @@ package ode_ecs
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
-        // subscribers/subscribers_excluding/subscribers_any_of are allocated lazily,
-        // on first attach (see table_base__attach_subscriber etc.) — most tables never
-        // gain an excluding/any_of subscriber, so this keeps them at zero cost.
-        oc.dense_arr__init(&self.subscribers_with_filter, subscribers_cap, db.allocator) or_return
+        // subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
+        // are allocated lazily, on first attach (see table_base__attach_subscriber etc.)
+        // — most tables never gain a filtered/excluding/any_of subscriber, so this
+        // keeps them at zero cost.
         when SYNC_ENABLED {
             oc.dense_arr__init(&self.sync_watchers, sync_channels_cap, db.allocator) or_return
         }
@@ -145,7 +144,7 @@ package ode_ecs
         }
         if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         if self.subscribers_excluding.items != nil do oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
-        oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
+        if self.subscribers_with_filter.items != nil do oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
         if self.subscribers.items != nil do oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
 
         delete(self.rid_to_eid, self.db.allocator) or_return
@@ -167,6 +166,8 @@ package ode_ecs
         if err != nil do return err
 
         if view.filter != nil {
+            if self.subscribers_with_filter.items == nil do oc.dense_arr__init(&self.subscribers_with_filter, self.subscribers_cap, self.db.allocator) or_return
+
             _, err = oc.dense_arr__add(&self.subscribers_with_filter, view)
             if err != nil do return err
         }
