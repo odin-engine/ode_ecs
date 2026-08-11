@@ -19,19 +19,21 @@ package ode_ecs
     // increase.
     VALIDATIONS :: #config(ECS_VALIDATIONS, true)
    
-    BIT_SET_VALUES_CAP :: 128 // don't change this unless Odin changes how many bits can be stored in a bit_set
+    BIT_SET_VALUES_CAP :: 128   // don't change this unless Odin changes how 
+                                // many bits can be stored in a bit_set
 
-    // Like in other ECSs we use bit_set to store info about what components an entity has.
-    // By default one bit_set can store info about 128 types of components, 
-    // if you increase TABLES_MULT number to 2,
-    // ODE ECS will store info about 256 types of components, if 3 then 384, 4 = 512, etc. 
-    // You can have unlimited number of types of components (as long as you have memory). 
+    // Like in other ECSs we use bit_set to store info about what components
+    // an entity has. By default one bit_set can store info about 128 types of
+    // components, if you increase TABLES_MULT number to 2, ODE ECS will store
+    // info about up to 256 types of components, if 3 then 384, 4 = 512, etc. 
+    // You can have unlimited number of types of components (as long as you 
+    // have memory). 
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
     
     // Initial capacity of tables (component types). Doubles in size when cap 
-    // is reached (outside of the frame loop so it is ok). 
-    // Max cap is BIT_SET_VALUES_CAP * TABLES_MULT (table ids are Uni_Bits bit indices) 
-    // — increase ECS_TABLES_MULT to raise this ceiling.
+    // is reached (outside of the frame loop so it is ok). TABLES_CAP should be 
+    // less than or equal to BIT_SET_VALUES_CAP * TABLES_MULT. Increase 
+    // ECS_TABLES_MULT to raise this ceiling.
     TABLES_CAP ::  #config(ECS_TABLES_CAP, 16)
 
     // Initial capacity of views
