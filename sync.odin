@@ -5,11 +5,8 @@
              The API may change in future releases.
 
     Off by default — build with -define:ECS_SYNC_ENABLED=true to compile it in
-    (see SYNC_ENABLED's doc comment in ecs.odin). Without the flag, every
-    sync_register call in this file returns API_Error.Sync_Feature_Disabled,
-    and Table_Base/Compact_Table_Base/Tag_Table/Tiny_Table_Base carry no
-    sync-related field at all — a disabled build costs nothing. This file's
-    own @(test) procs below require the flag to mean anything; run them with
+    (see SYNC_ENABLED's doc comment in ecs.odin). This file's own @(test) procs
+    below require the flag to mean anything; run them with
     `odin test . -define:ECS_SYNC_ENABLED=true` (mirrors -define:maps_testing=true
     for the maps package).
 

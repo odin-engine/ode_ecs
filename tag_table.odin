@@ -18,48 +18,28 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Tag_Table
 
-    // Duplicated per SYNC_ENABLED — see Table_Base's doc comment in table.odin
-    // for why (Odin's `when` can't conditionally include a struct field, only
-    // a whole top-level declaration).
-    when SYNC_ENABLED {
-        Tag_Table :: struct {
-            using shared: Shared_Table,
+    Tag_Table :: struct {
+        using shared: Shared_Table,
 
-            rows: []entity_id,                          // rid_to_eid
-            eid_to_rid: oc_maps.Rh_Map32,               // eid.ix -> row id in rows (8-byte items, see Compact_Table)
+        rows: []entity_id,                          // rid_to_eid
+        eid_to_rid: oc_maps.Rh_Map32,               // eid.ix -> row id in rows (8-byte items, see Compact_Table)
 
-            cap: int,
+        cap: int,
 
-            // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
-            // A hole is a row with rows[rid].ix == DELETED_INDEX inside [0, len).
-            holes_count: int,
-            first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
+        // A hole is a row with rows[rid].ix == DELETED_INDEX inside [0, len).
+        holes_count: int,
+        first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
-            subscribers: oc.Dense_Arr(^View),
-            subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
-            subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+        subscribers: oc.Dense_Arr(^View),
+        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
 
-            // Sync_Channels watching this table for delta replication (see sync.odin).
-            // Structural-only (add_tag/remove_tag presence) — a Tag_Table carries no
-            // component data, so there's no field-level diffing/get_component_mut here.
-            sync_watchers: oc.Dense_Arr(^Sync_Channel),
-        }
-    } else {
-        Tag_Table :: struct {
-            using shared: Shared_Table,
-
-            rows: []entity_id,
-            eid_to_rid: oc_maps.Rh_Map32,
-
-            cap: int,
-
-            holes_count: int,
-            first_hole_rid: int,
-
-            subscribers: oc.Dense_Arr(^View),
-            subscribers_excluding: oc.Dense_Arr(^View),
-            subscribers_any_of: oc.Dense_Arr(^View),
-        }
+        // Sizes sync_watchers, lazily allocated on first sync_register regardless of
+        // SYNC_ENABLED. Structural-only (add_tag/remove_tag presence) — a Tag_Table
+        // carries no component data, so there's no field-level diffing here.
+        sync_channels_cap: int,
+        sync_watchers: oc.Dense_Arr(^Sync_Channel),
     }
 
     // It table valid and ready to use (initialized and everything is ok)
@@ -72,9 +52,7 @@ package ode_ecs
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_excluding) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_any_of) do return false
-        when SYNC_ENABLED {
-            if !oc.dense_arr__is_valid(&self.sync_watchers) do return false
-        }
+        if !oc.dense_arr__is_valid_or_empty(&self.sync_watchers) do return false
 
         return true
     }
@@ -91,14 +69,8 @@ package ode_ecs
 
         shared_table__init(&self.shared, Table_Type.Tag_Table, db)
         self.cap = cap
-
-        // subscribers/subscribers_excluding/subscribers_any_of are allocated lazily,
-        // on first attach (see tag_table__attach_subscriber etc.), sized to VIEWS_CAP
-        // at that point — most tables never gain an excluding/any_of subscriber, so
-        // this keeps them at zero cost.
-        when SYNC_ENABLED {
-            oc.dense_arr__init(&self.sync_watchers, sync_channels_cap, db.allocator) or_return
-        }
+        self.sync_channels_cap = sync_channels_cap
+        // subscriber lists and sync_watchers are allocated lazily, on first attach.
 
         self.rows = make([]entity_id, self.cap, db.allocator) or_return
         // load factor 0.5 and make it power of two
@@ -112,9 +84,7 @@ package ode_ecs
         if aerr != nil {
             delete(self.rows, db.allocator)
             oc_maps.rh_map32__terminate(&self.eid_to_rid, db.allocator)
-            when SYNC_ENABLED {
-                oc.dense_arr__terminate(&self.sync_watchers, db.allocator)
-            }
+            if self.sync_watchers.items != nil do oc.dense_arr__terminate(&self.sync_watchers, db.allocator)
             if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, db.allocator)
             if self.subscribers_excluding.items != nil do oc.dense_arr__terminate(&self.subscribers_excluding, db.allocator)
             if self.subscribers.items != nil do oc.dense_arr__terminate(&self.subscribers, db.allocator)
@@ -139,16 +109,12 @@ package ode_ecs
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
-        }
+        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
 
         // Clear this table's bit from all entities, see table_raw__terminate
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
 
-        when SYNC_ENABLED {
-            oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
-        }
+        if self.sync_watchers.items != nil do oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
         if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         if self.subscribers_excluding.items != nil do oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         if self.subscribers.items != nil do oc.dense_arr__terminate(&self.subscribers, self.db.allocator) or_return
@@ -174,9 +140,7 @@ package ode_ecs
         }
 
         total += oc_maps.rh_map32__memory_usage(&self.eid_to_rid)
-        when SYNC_ENABLED {
-            total += oc.dense_arr__memory_usage(&self.sync_watchers)
-        }
+        total += oc.dense_arr__memory_usage(&self.sync_watchers)
 
         return total
     }
@@ -533,41 +497,34 @@ package ode_ecs
 
     @(private)
     tag_table__attach_sync_channel :: proc(self: ^Tag_Table, ch: ^Sync_Channel) -> Error {
-        when SYNC_ENABLED {
-            _, err := oc.dense_arr__add(&self.sync_watchers, ch)
-            return err
-        } else {
-            return API_Error.Sync_Feature_Disabled
-        }
+        when !SYNC_ENABLED do return API_Error.Sync_Feature_Disabled
+
+        if self.sync_watchers.items == nil do oc.dense_arr__init(&self.sync_watchers, self.sync_channels_cap, self.db.allocator) or_return
+        _, err := oc.dense_arr__add(&self.sync_watchers, ch)
+        return err
     }
 
     @(private)
     tag_table__detach_sync_channel :: proc(self: ^Tag_Table, ch: ^Sync_Channel) -> Error {
-        when SYNC_ENABLED {
-            return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
-        } else {
-            return API_Error.Sync_Feature_Disabled
-        }
+        when !SYNC_ENABLED do return API_Error.Sync_Feature_Disabled
+
+        return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
     }
 
     @(private)
     // See table_base__notify_sync_add (tag_table__add_tag has no mark_touched
     // call — a tag carries no field data to diff).
     tag_table__notify_sync_add :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, true)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__notify_structural(ch, self.id, eid, true)
         }
     }
 
     @(private)
     // See table_base__notify_sync_remove.
     tag_table__notify_sync_remove :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, false)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__notify_structural(ch, self.id, eid, false)
         }
     }
 

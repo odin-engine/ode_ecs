@@ -33,10 +33,7 @@ package ode_core
         return true
     }
 
-    // True if the Dense_Arr is either fully allocated-and-usable, or legitimately
-    // not-yet-allocated (a lazy field that may never get its first `add`). Relies
-    // on dense_arr__terminate leaving items == nil, so cap == 0 <=> items == nil
-    // holds in every reachable state.
+    // True if valid OR legitimately not-yet-allocated (a lazy field with no first `add` yet).
     dense_arr__is_valid_or_empty :: proc(self: ^Dense_Arr($T)) -> bool {
         if self == nil do return false
         if self.cap == 0 do return self.items == nil

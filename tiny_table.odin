@@ -26,10 +26,10 @@ package ode_ecs
 // itself (216 bytes of subscriber arrays -> 8 bytes for the slot id),
 // which is the whole point of Tiny_Table: cheap to declare in bulk.
 
-    // Duplicated per SYNC_ENABLED — see Table_Base's doc comment in table.odin
-    // for why (Odin's `when` can't conditionally include a struct field, only
-    // a whole top-level declaration). Doubly relevant here: shrinking this
-    // struct is the entire point of Tiny_Table.
+    // Duplicated per SYNC_ENABLED because Odin's `when` can't gate a single struct
+    // field, only a whole top-level declaration. Unlike Table_Base/Compact_Table_Base/
+    // Tag_Table (whose sync_watchers is now a lazily-allocated Dense_Arr instead),
+    // this fixed-size per-slot array has no lazy-allocation equivalent.
     when SYNC_ENABLED {
         @(private)
         Tiny_Table_Subscriber_Slot :: struct {

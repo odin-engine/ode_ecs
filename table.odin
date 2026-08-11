@@ -20,73 +20,40 @@ package ode_ecs
     @(private)
     TABLE_NO_RID :: max(u32)
 
-    // Base for Table. Duplicated (not a single struct with a conditional field)
-    // because Odin's `when` isn't accepted inside a struct's field list — only a
-    // full top-level `when {...} else {...}` around the whole type actually
-    // removes a field's footprint (confirmed against the compiler's own
-    // parse_field_list, which has no when-handling). The two branches must be
-    // kept in sync by hand; everything but the trailing sync_watchers field is
-    // identical. See SYNC_ENABLED's doc comment in ecs.odin.
-    when SYNC_ENABLED {
-        @(private)
-        Table_Base :: struct {
-            using shared: Shared_Table,
+    @(private)
+    Table_Base :: struct {
+        using shared: Shared_Table,
 
-            type_info: ^runtime.Type_Info,
-            rid_to_eid: []entity_id,
-            // eid.ix -> row id (TABLE_NO_RID when absent); u32 instead of a pointer
-            // halves this entities_cap-sized array. The component address is derived
-            // as &rows[rid] on lookup, so a tail swap patches a rid, not a pointer.
-            eid_to_rid: []u32,
+        type_info: ^runtime.Type_Info,
+        rid_to_eid: []entity_id,
+        // eid.ix -> row id (TABLE_NO_RID when absent); u32 instead of a pointer
+        // halves this entities_cap-sized array. The component address is derived
+        // as &rows[rid] on lookup, so a tail swap patches a rid, not a pointer.
+        eid_to_rid: []u32,
 
-            // Group that owns this table (at most one), nil when not owned.
-            // See group.odin: the owner keeps group members in the aligned prefix
-            // [0, owner.len) of rows, so add/remove paths below notify it.
-            owner: ^Group,
+        // Group that owns this table (at most one), nil when not owned.
+        // See group.odin: the owner keeps group members in the aligned prefix
+        // [0, owner.len) of rows, so add/remove paths below notify it.
+        owner: ^Group,
 
-            cap: int,
+        cap: int,
 
-            // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
-            // A hole is a row with rid_to_eid[rid].ix == DELETED_INDEX inside [0, len).
-            holes_count: int,
-            first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
+        // A hole is a row with rid_to_eid[rid].ix == DELETED_INDEX inside [0, len).
+        holes_count: int,
+        first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
-            // Sizes subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-            // when they're lazily allocated on first attach (see table_base__attach_subscriber etc.).
-            subscribers_cap: int,
+        // Sizes the subscriber lists below, lazily allocated on first attach.
+        subscribers_cap: int,
 
-            subscribers: oc.Dense_Arr(^View),
-            subscribers_with_filter: oc.Dense_Arr(^View),
-            subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
-            subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+        subscribers: oc.Dense_Arr(^View),
+        subscribers_with_filter: oc.Dense_Arr(^View),
+        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
 
-            // Sync_Channels watching this table for delta replication (see sync.odin).
-            // Same Dense_Arr + notify-loop idiom as subscribers_excluding/subscribers_any_of.
-            sync_watchers: oc.Dense_Arr(^Sync_Channel),
-        }
-    } else {
-        @(private)
-        Table_Base :: struct {
-            using shared: Shared_Table,
-
-            type_info: ^runtime.Type_Info,
-            rid_to_eid: []entity_id,
-            eid_to_rid: []u32,
-
-            owner: ^Group,
-
-            cap: int,
-
-            holes_count: int,
-            first_hole_rid: int,
-
-            subscribers_cap: int,
-
-            subscribers: oc.Dense_Arr(^View),
-            subscribers_with_filter: oc.Dense_Arr(^View),
-            subscribers_excluding: oc.Dense_Arr(^View),
-            subscribers_any_of: oc.Dense_Arr(^View),
-        }
+        // Sizes sync_watchers, lazily allocated on first sync_register regardless of SYNC_ENABLED.
+        sync_channels_cap: int,
+        sync_watchers: oc.Dense_Arr(^Sync_Channel),
     }
 
     @(private)
@@ -101,9 +68,7 @@ package ode_ecs
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_with_filter) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_excluding) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_any_of) do return false
-        when SYNC_ENABLED {
-            if !oc.dense_arr__is_valid(&self.sync_watchers) do return false
-        }
+        if !oc.dense_arr__is_valid_or_empty(&self.sync_watchers) do return false
 
         return true
     }
@@ -126,22 +91,15 @@ package ode_ecs
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
-        // subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-        // are allocated lazily, on first attach (see table_base__attach_subscriber etc.)
-        // — most tables never gain a filtered/excluding/any_of subscriber, so this
-        // keeps them at zero cost.
-        when SYNC_ENABLED {
-            oc.dense_arr__init(&self.sync_watchers, sync_channels_cap, db.allocator) or_return
-        }
+        self.sync_channels_cap = sync_channels_cap
+        // subscriber lists and sync_watchers are allocated lazily, on first attach.
 
         return nil
     }
 
     @(private)
     table_base__terminate :: proc(self: ^Table_Base) -> Error {
-        when SYNC_ENABLED {
-            oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
-        }
+        if self.sync_watchers.items != nil do oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
         if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         if self.subscribers_excluding.items != nil do oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         if self.subscribers_with_filter.items != nil do oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
@@ -213,21 +171,18 @@ package ode_ecs
 
     @(private)
     table_base__attach_sync_channel :: proc(self: ^Table_Base, ch: ^Sync_Channel) -> Error {
-        when SYNC_ENABLED {
-            _, err := oc.dense_arr__add(&self.sync_watchers, ch)
-            return err
-        } else {
-            return API_Error.Sync_Feature_Disabled
-        }
+        when !SYNC_ENABLED do return API_Error.Sync_Feature_Disabled
+
+        if self.sync_watchers.items == nil do oc.dense_arr__init(&self.sync_watchers, self.sync_channels_cap, self.db.allocator) or_return
+        _, err := oc.dense_arr__add(&self.sync_watchers, ch)
+        return err
     }
 
     @(private)
     table_base__detach_sync_channel :: proc(self: ^Table_Base, ch: ^Sync_Channel) -> Error {
-        when SYNC_ENABLED {
-            return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
-        } else {
-            return API_Error.Sync_Feature_Disabled
-        }
+        when !SYNC_ENABLED do return API_Error.Sync_Feature_Disabled
+
+        return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
     }
 
     @(private)
@@ -275,11 +230,9 @@ package ode_ecs
     // structural event but never transmit the component's initial values).
     // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_sync_add :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, true)
-                sync_channel__mark_touched(ch, self.id, eid)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__notify_structural(ch, self.id, eid, true)
+            sync_channel__mark_touched(ch, self.id, eid)
         }
     }
 
@@ -289,10 +242,8 @@ package ode_ecs
     // channel's shadow slot for eid, see sync_channel__notify_structural).
     // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_sync_remove :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, false)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__notify_structural(ch, self.id, eid, false)
         }
     }
 
@@ -301,10 +252,8 @@ package ode_ecs
     // touched in every watching Sync_Channel so the next collect_delta diffs it.
     // #force_inline: see table_base__notify_excluding_views.
     table_base__mark_touched :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__mark_touched(ch, self.id, eid)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__mark_touched(ch, self.id, eid)
         }
     }
 
@@ -327,9 +276,7 @@ package ode_ecs
         total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
         total += oc.dense_arr__memory_usage(&self.subscribers_excluding)
         total += oc.dense_arr__memory_usage(&self.subscribers_any_of)
-        when SYNC_ENABLED {
-            total += oc.dense_arr__memory_usage(&self.sync_watchers)
-        }
+        total += oc.dense_arr__memory_usage(&self.sync_watchers)
 
         return total
     }
@@ -407,9 +354,7 @@ package ode_ecs
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
-        }
+        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
 
         // A group missing one of its owned tables is meaningless — invalidate it
         // (it still owns its allocations; terminate it to release them).

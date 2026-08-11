@@ -58,15 +58,10 @@ package ode_ecs
     //
 
         // Off by default: the feature must be explicitly compiled in with
-        // -define:ECS_SYNC_ENABLED=true. When off, Table_Base/Compact_Table_Base/
-        // Tag_Table/Tiny_Table_Base/Tiny_Table_Subscriber_Slot are defined without
-        // any sync-related field at all (see the `when SYNC_ENABLED {...} else {...}`
-        // struct pairs in table.odin/compact_table.odin/tag_table.odin/tiny_table.odin)
-        // and every notify/attach/detach proc's body compiles to a true no-op —
-        // byte-for-byte and instruction-for-instruction identical to a build with
-        // no sync feature at all. sync_register still exists and compiles either
-        // way; called while disabled it returns API_Error.Sync_Feature_Disabled
-        // rather than silently doing nothing or failing to compile.
+        // -define:ECS_SYNC_ENABLED=true. When off, sync_register returns
+        // API_Error.Sync_Feature_Disabled and sync_watchers (Table_Base/
+        // Compact_Table_Base/Tag_Table) simply never gets lazily allocated;
+        // Tiny_Table still compiles its sync fields out entirely (tiny_table.odin).
         SYNC_ENABLED :: #config(ECS_SYNC_ENABLED, false)
 
         // Maximum number of Sync_Channel/Sync_Decoder that may watch one Table/

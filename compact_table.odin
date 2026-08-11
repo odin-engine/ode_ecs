@@ -18,61 +18,34 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Compact_Table_Base
 
-    // Base for Compact_Table. Duplicated per SYNC_ENABLED — see Table_Base's
-    // doc comment in table.odin for why (Odin's `when` can't conditionally
-    // include a struct field, only a whole top-level declaration).
-    when SYNC_ENABLED {
-        @(private)
-        Compact_Table_Base :: struct {
-            using shared: Shared_Table,
+    @(private)
+    Compact_Table_Base :: struct {
+        using shared: Shared_Table,
 
-            type_info: ^runtime.Type_Info,
-            rid_to_eid: []entity_id,
-            // eid.ix -> row id; 8-byte map items instead of 16 (see Rh_Map32). The
-            // component address is derived as &rows[rid] on lookup, so a tail swap
-            // patches a rid value here instead of a pointer.
-            eid_to_rid: oc_maps.Rh_Map32,
+        type_info: ^runtime.Type_Info,
+        rid_to_eid: []entity_id,
+        // eid.ix -> row id; 8-byte map items instead of 16 (see Rh_Map32). The
+        // component address is derived as &rows[rid] on lookup, so a tail swap
+        // patches a rid value here instead of a pointer.
+        eid_to_rid: oc_maps.Rh_Map32,
 
-            cap: int,
+        cap: int,
 
-            // Deferred tail swap (db.tail_swap_paused) hole bookkeeping, see Table_Base
-            holes_count: int,
-            first_hole_rid: int,
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping, see Table_Base
+        holes_count: int,
+        first_hole_rid: int,
 
-            // Sizes subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-            // when they're lazily allocated on first attach (see
-            // compact_table_base__attach_subscriber etc.).
-            subscribers_cap: int,
+        // Sizes the subscriber lists below, lazily allocated on first attach.
+        subscribers_cap: int,
 
-            subscribers: oc.Dense_Arr(^View),
-            subscribers_with_filter: oc.Dense_Arr(^View),
-            subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
-            subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+        subscribers: oc.Dense_Arr(^View),
+        subscribers_with_filter: oc.Dense_Arr(^View),
+        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
 
-            // Sync_Channels watching this table for delta replication (see sync.odin).
-            sync_watchers: oc.Dense_Arr(^Sync_Channel),
-        }
-    } else {
-        @(private)
-        Compact_Table_Base :: struct {
-            using shared: Shared_Table,
-
-            type_info: ^runtime.Type_Info,
-            rid_to_eid: []entity_id,
-            eid_to_rid: oc_maps.Rh_Map32,
-
-            cap: int,
-
-            holes_count: int,
-            first_hole_rid: int,
-
-            subscribers_cap: int,
-
-            subscribers: oc.Dense_Arr(^View),
-            subscribers_with_filter: oc.Dense_Arr(^View),
-            subscribers_excluding: oc.Dense_Arr(^View),
-            subscribers_any_of: oc.Dense_Arr(^View),
-        }
+        // Sizes sync_watchers, lazily allocated on first sync_register regardless of SYNC_ENABLED.
+        sync_channels_cap: int,
+        sync_watchers: oc.Dense_Arr(^Sync_Channel),
     }
 
     @(private)
@@ -87,9 +60,7 @@ package ode_ecs
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_with_filter) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_excluding) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.subscribers_any_of) do return false
-        when SYNC_ENABLED {
-            if !oc.dense_arr__is_valid(&self.sync_watchers) do return false
-        }
+        if !oc.dense_arr__is_valid_or_empty(&self.sync_watchers) do return false
 
         return true
     }
@@ -106,22 +77,15 @@ package ode_ecs
         oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
-        // subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-        // are allocated lazily, on first attach (see compact_table_base__attach_subscriber
-        // etc.) — most tables never gain a filtered/excluding/any_of subscriber, so this
-        // keeps them at zero cost.
-        when SYNC_ENABLED {
-            oc.dense_arr__init(&self.sync_watchers, sync_channels_cap, db.allocator) or_return
-        }
+        self.sync_channels_cap = sync_channels_cap
+        // subscriber lists and sync_watchers are allocated lazily, on first attach.
 
         return nil
     }
 
     @(private)
     compact_table_base__terminate :: proc(self: ^Compact_Table_Base) -> Error {
-        when SYNC_ENABLED {
-            oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
-        }
+        if self.sync_watchers.items != nil do oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
         if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
         if self.subscribers_excluding.items != nil do oc.dense_arr__terminate(&self.subscribers_excluding, self.db.allocator) or_return
         if self.subscribers_with_filter.items != nil do oc.dense_arr__terminate(&self.subscribers_with_filter, self.db.allocator) or_return
@@ -193,21 +157,18 @@ package ode_ecs
 
     @(private)
     compact_table_base__attach_sync_channel :: proc(self: ^Compact_Table_Base, ch: ^Sync_Channel) -> Error {
-        when SYNC_ENABLED {
-            _, err := oc.dense_arr__add(&self.sync_watchers, ch)
-            return err
-        } else {
-            return API_Error.Sync_Feature_Disabled
-        }
+        when !SYNC_ENABLED do return API_Error.Sync_Feature_Disabled
+
+        if self.sync_watchers.items == nil do oc.dense_arr__init(&self.sync_watchers, self.sync_channels_cap, self.db.allocator) or_return
+        _, err := oc.dense_arr__add(&self.sync_watchers, ch)
+        return err
     }
 
     @(private)
     compact_table_base__detach_sync_channel :: proc(self: ^Compact_Table_Base, ch: ^Sync_Channel) -> Error {
-        when SYNC_ENABLED {
-            return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
-        } else {
-            return API_Error.Sync_Feature_Disabled
-        }
+        when !SYNC_ENABLED do return API_Error.Sync_Feature_Disabled
+
+        return oc.dense_arr__remove_by_value(&self.sync_watchers, ch)
     }
 
     @(private)
@@ -238,31 +199,25 @@ package ode_ecs
     @(private)
     // See table_base__notify_sync_add. #force_inline: see table_base__notify_excluding_views.
     compact_table_base__notify_sync_add :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, true)
-                sync_channel__mark_touched(ch, self.id, eid)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__notify_structural(ch, self.id, eid, true)
+            sync_channel__mark_touched(ch, self.id, eid)
         }
     }
 
     @(private)
     // See table_base__notify_sync_remove. #force_inline: see table_base__notify_excluding_views.
     compact_table_base__notify_sync_remove :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, false)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__notify_structural(ch, self.id, eid, false)
         }
     }
 
     @(private)
     // See table_base__mark_touched. #force_inline: see table_base__notify_excluding_views.
     compact_table_base__mark_touched :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items {
-                sync_channel__mark_touched(ch, self.id, eid)
-            }
+        for ch in self.sync_watchers.items {
+            sync_channel__mark_touched(ch, self.id, eid)
         }
     }
 
@@ -283,9 +238,7 @@ package ode_ecs
         total += oc.dense_arr__memory_usage(&self.subscribers_with_filter)
         total += oc.dense_arr__memory_usage(&self.subscribers_excluding)
         total += oc.dense_arr__memory_usage(&self.subscribers_any_of)
-        when SYNC_ENABLED {
-            total += oc.dense_arr__memory_usage(&self.sync_watchers)
-        }
+        total += oc.dense_arr__memory_usage(&self.sync_watchers)
 
         return total
     }
@@ -327,9 +280,7 @@ package ode_ecs
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
-        when SYNC_ENABLED {
-            for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
-        }
+        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
 
         // Clear this table's bit from all entities, see table_raw__terminate
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
