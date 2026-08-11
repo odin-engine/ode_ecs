@@ -29,7 +29,9 @@ package ode_ecs
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
     
     // Initial capacity of tables (component types). Doubles in size when cap 
-    // is reached (outside of the frame loop so it is ok).
+    // is reached (outside of the frame loop so it is ok). 
+    // Max cap is BIT_SET_VALUES_CAP * TABLES_MULT (table ids are Uni_Bits bit indices) 
+    // — increase ECS_TABLES_MULT to raise this ceiling.
     TABLES_CAP ::  #config(ECS_TABLES_CAP, 16)
 
     // Initial capacity of views
