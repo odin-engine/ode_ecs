@@ -7,9 +7,9 @@
 
 #### High-performance
 - No hidden allocations in the game loop: Capacities are set upfront, eliminating unexpected allocations, deallocations, or memory copies mid-frame.
+- Data is cache-friendly since there's no extra per-row metadata.
 - Micro-optimized and benchmarked for maximum throughput.
 - Frame-to-frame stability from both CPU and memory standpoints.
-- Data is cache-friendly since there's no extra per-row metadata.
 
 #### Low-level & hybrid
 - A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Tag_Table](/docs/tables.md#tag_table) (just tags, no data).
