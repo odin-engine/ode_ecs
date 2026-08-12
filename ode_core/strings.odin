@@ -19,7 +19,7 @@ import "core:testing"
 
         b_len := len(b.buf)
 
-        b_len_m := b_len // b_len but taking into a accout minus
+        b_len_m := b_len // excluding the minus sign, if any
         if value < 0 do b_len_m -= 1
 
         inserts_count := b_len_m % 3 == 0 ? b_len_m / 3 - 1 : b_len_m / 3

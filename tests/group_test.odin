@@ -1,10 +1,10 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    Tests for owned groups (group.odin): entities that have every owned component
-    must occupy the aligned prefix [0, group_len) of every owned table, at the
-    same row index in each — maintained incrementally through add/remove/destroy,
-    deferred while tail swap is paused, and rebuilt on resume.
+    Tests for owned groups: entities with every owned component must occupy
+    the aligned prefix [0, group_len) of every owned table, at the same row
+    index in each — maintained incrementally, deferred while tail swap is
+    paused, and rebuilt on resume.
 */
 
 package ode_ecs__tests

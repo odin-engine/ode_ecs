@@ -17,15 +17,13 @@ package ode_ecs_sample4
     import "core:fmt"
     import "core:log"
     import "core:mem"
-     
+
 // ODE_ECS
     import ecs "../../"
     import oc "../../ode_core"
 
 //
 // Components
-// 
-
     Position :: struct { x, y: int }
     AI :: struct { level: int, name: [32]u8 }
     Health :: struct { hp: int, max_hp: int }
@@ -38,7 +36,7 @@ package ode_ecs_sample4
         Potion,
         Food,
         Misc
-    } 
+    }
 
 //
 // This example includes simple error handling.
@@ -46,102 +44,82 @@ package ode_ecs_sample4
 main :: proc() {
 
     //
-    // OPTIONAL: Setup memory tracking and logger. 
+    // OPTIONAL: Setup memory tracking and logger.
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
-        context.allocator = oc.mem_track__init(&mem_track, context.allocator)  
+        context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with a panic allocator to make sure that  
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
     //
     // Actual ODE_ECS sample starts here.
-    //
-
-        // Simple error handling
         err: ecs.Error
-
-        // ECS Database
         db: ecs.Database
 
         // Entities
         human, robot, bird: ecs.entity_id
 
         // Init database
-        defer { 
-            err = ecs.terminate(&db) 
+        defer {
+            err = ecs.terminate(&db)
             if err != nil do report_error(err)
         }
-        err = ecs.init(&db, 100, allocator) 
+        err = ecs.init(&db, 100, allocator)
         if err != nil { report_error(err); return }
 
         //
         // Create entities
-        //
-
-        // human entity
         human, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // robot entity
         robot, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // non important entity, we just want to increase entity count
+        // Two throwaway entities, just to increase the entity count
         _, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // non important entity, we just want to increase entity count
         _, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // bird entity
         bird, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
         //
         // Tiny_Table
         //
+        pos_table : ecs.Tiny_Table(Position)
 
-        pos_table : ecs.Tiny_Table(Position) // Tiny_Table !!!
-        
         err = ecs.tiny_table__init(&pos_table, &db)
         if err != nil { report_error(err); return }
 
         //
         // Add components to human and bird entities
-        // 
-
         human_pos: ^Position
         bird_pos: ^Position
 
         human_pos, err = ecs.add_component(&pos_table, human)
         if err != nil { report_error(err); return }
         human_pos.x = 10
-        human_pos.y = 20    
+        human_pos.y = 20
 
         bird_pos, err = ecs.add_component(&pos_table, bird)
         if err != nil { report_error(err); return }
         bird_pos.x = 100
-        bird_pos.y = 200   
+        bird_pos.y = 200
 
         //
-        // Iterate over components.
-        // NOTE: Tiny_Table can hold only eight (defined by TINY_TABLE__ROW_CAP) components.
-        // .rows in Tiny_Table is a static (fixed-size) array of TINY_TABLE__ROW_CAP elements (because Tiny_Table has no dynamic arrays and is fully in stack memory).
-        // There is no metadata for it, so if you use `for &pos, index in pos_table.rows` loop it will go through all eight elements.
-        // To avoid this use `ecs.slice(&pos_table)` instead, which slices `rows` down to
-        // just the live prefix (same tail-swap-packed invariant every other table type keeps).
+        // NOTE: Tiny_Table.rows is a fixed TINY_TABLE__ROW_CAP-size array with no length metadata,
+        // so `for x in pos_table.rows` visits all eight slots regardless of how many are live.
+        // Use `ecs.slice(&pos_table)` instead to get just the live prefix.
         //
         fmt.println("Using `for &pos, index in pos_table.rows` loop (the gotcha — visits all eight slots):")
         fmt.println("--------------------------------------------------------------")
@@ -162,12 +140,8 @@ main :: proc() {
 
         fmt.println("Using `for &pos, index in ecs.slice(&pos_table)` loop:")
         fmt.println("--------------------------------------------------------------")
-        // This loop is better because it goes only through valid components —
-        // and, unlike a manual `for i := 0; i < ecs.table_len(&pos_table); i += 1`
-        // loop indexing pos_table.rows[i] directly, it also avoids a codegen
-        // pitfall: reading rows as a field on a live struct inside a hot loop
-        // compiles worse than reading a slice returned by value from a call.
-        // See table__slice's doc comment (table.odin) for the full story.
+        // Better: only visits valid components, and also avoids a codegen pitfall where reading
+        // `.rows` directly in a hot loop compiles worse than a slice returned by value (see table__slice's doc comment).
         for &component, index in ecs.slice(&pos_table) {
             eid := ecs.get_entity(&pos_table, index)
 
@@ -182,100 +156,85 @@ main :: proc() {
         }
 
         //
-        // View on top of Tiny_Table, Table, Tag_Table and Component_Table
+        // View on top of Tiny_Table, Table, Tag_Table and Compact_Table
         //
 
-        // 
+        //
         // Table
         //
-
-        health_table : ecs.Table(Health)  // Table !!!
+        health_table : ecs.Table(Health)
         err = ecs.table__init(&health_table, &db, 20)
-        if err != nil { report_error(err); return } 
+        if err != nil { report_error(err); return }
 
         //
         // Tag_Table
         //
-
         is_alive_tag_table : ecs.Tag_Table
         err = ecs.tag_table__init(&is_alive_tag_table, &db, 20)
-        if err != nil { report_error(err); return } 
+        if err != nil { report_error(err); return }
 
         //ecs.tag_table__terminate(&is_alive_tag_table)
 
         //
         // Compact_Table
         //
-        inventory_table : ecs.Compact_Table(Inventory) // Compact_Table !!!
+        inventory_table : ecs.Compact_Table(Inventory)
         err = ecs.compact_table__init(&inventory_table, &db, 5)
-        if err != nil { report_error(err); return }     
+        if err != nil { report_error(err); return }
 
-        //
-        // Create view on top of different table types
-        //
         view: ecs.View
-        err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table, &is_alive_tag_table}) // View on top of Tiny_Table, Table and Compact_Table !!!
+        err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table, &is_alive_tag_table})
         if err != nil { report_error(err); return }
 
         //
         // Add Health and Inventory components to human and bird entities
         //
-
-        // Add Health component to human
         human_health: ^Health
         human_health, err = ecs.add_component(&health_table, human)
         if err != nil { report_error(err); return }
         human_health.hp = 100
         human_health.max_hp = 300
 
-        // Tag as alive
         err = ecs.add_tag(&is_alive_tag_table, human)
-        if err != nil { report_error(err); return } 
+        if err != nil { report_error(err); return }
 
-        // Add Inventory component to human
         human_inventory: ^Inventory
         human_inventory, err = ecs.add_component(&inventory_table, human)
         if err != nil { report_error(err); return }
         human_inventory.items[0][0] = Item_Type.Sword
         human_inventory.item_count = 1
 
-        // Add Health component to bird
         bird_health: ^Health
         bird_health, err = ecs.add_component(&health_table, bird)
         if err != nil { report_error(err); return }
         bird_health.hp = 10
         bird_health.max_hp = 10
 
-        // Tag as alive
         err = ecs.add_tag(&is_alive_tag_table, bird)
-        if err != nil { report_error(err); return } 
+        if err != nil { report_error(err); return }
 
-        // Add Inventory component to bird
-        bird_inventory: ^Inventory  
+        bird_inventory: ^Inventory
         bird_inventory, err = ecs.add_component(&inventory_table, bird)
         if err != nil { report_error(err); return }
         bird_inventory.items[0][0] = Item_Type.Food
         bird_inventory.item_count = 1
 
         //
-        // Rebuild view after adding components because Positions were added before view was created
+        // Rebuild view: Positions were added to pos_table before the view was created
         //
-
-        ecs.view__rebuild(&view) 
-
+        ecs.view__rebuild(&view)
         //
-        // Iterate over view that includes Position(Tiny_Table), Health(Table) and Inventory(Compact_Table) components
         //
 
         it: ecs.Iterator
-        err = ecs.iterator_init(&it, &view)   
+        err = ecs.iterator_init(&it, &view)
         if err != nil { report_error(err); return }
 
         fmt.println()
         fmt.println("Iterating over view that is on top of Tiny_Table, Table, Compact_Table and Tag_Table tables:")
         fmt.println("--------------------------------------------------------------")
         for ecs.next(&it) {
-            eid := ecs.get_entity(&it)  
+            eid := ecs.get_entity(&it)
 
             pos := ecs.get_component(&pos_table, &it)
             health := ecs.get_component(&health_table, &it)
@@ -285,18 +244,17 @@ main :: proc() {
                 fmt.printfln("HUMAN id=%d position(x: %v, y: %v) health: %v/%v inventory: %v", eid.ix, pos.x, pos.y, health.hp, health.max_hp, inventory.items[0][0])
             } else if eid == bird {
                fmt.printfln("BIRD id=%d position(x: %v, y: %v) health: %v/%v inventory: %v", eid.ix, pos.x, pos.y, health.hp, health.max_hp, inventory.items[0][0])
-            }   
+            }
             else {
                 fmt.println("Unknown entity: ", eid, pos, health, inventory)
-            }  
+            }
         }
 
         //
-        // Another way to do tags 
+        // Another way to do tags: an enum component
         // 
-
         Player_State :: enum {
-            Walking, 
+            Walking,
             Running,
             Flying,
             Stunned,
@@ -328,17 +286,15 @@ main :: proc() {
                 fmt.println("Human is", tag)
             } else if eid == bird {
                 fmt.println("Bird is", tag)
-            }   
+            }
             else {
                 fmt.println("Unknown entity is", tag)
-            }   
+            }
         }
 
         //
-        // An example of a bool table (I think it’s probably better to organize your components to hold more data, 
-        // and using a struct might be better since you can add more fields later — but you can use any type if you want).
+        // A bool table: usually better to use a struct so you can add fields later, but any type works
         // 
-
         bool_table : ecs.Table(bool)
 
         err = ecs.table_init(&bool_table, &db, 10)
@@ -362,10 +318,10 @@ main :: proc() {
                 fmt.println("Human is", comp)
             } else if eid == bird {
                 fmt.println("Bird is", comp)
-            }   
+            }
             else {
                 fmt.println("Unknown entity is", comp)
-            }   
+            }
         }
 
 }
@@ -373,6 +329,3 @@ main :: proc() {
 report_error :: proc (err: ecs.Error, loc := #caller_location) {
     log.error("Error:", err, location = loc)
 }
-
-
-

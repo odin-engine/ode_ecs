@@ -22,8 +22,7 @@ package ode_core
     mem_track__init ::  proc(self: ^Mem_Track, default_allocator: runtime.Allocator) -> runtime.Allocator {
         self.default = default_allocator
         mem.tracking_allocator_init(&self.tracking, self.default)
-        // core:mem defaults to panicking inside the allocator on a bad free,
-        // which would bypass check_bad_frees/panic_if_bad_frees entirely —
+        // core:mem panics on a bad free by default, bypassing our check/panic procs —
         // collect into bad_free_array instead so Mem_Track can report locations
         self.tracking.bad_free_callback = mem.tracking_allocator_bad_free_callback_add_to_array
         return mem.tracking_allocator(&self.tracking)

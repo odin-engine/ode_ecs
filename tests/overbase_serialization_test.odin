@@ -62,14 +62,12 @@ package ode_ecs__tests
             testing.expect(t, werr == nil)
             testing.expect(t, written == size)
 
-            // Mutate after the snapshot: recycle eids[2]'s freed slot, then
-            // free a currently-alive one too.
+            // Mutate after the snapshot: recycle eids[2]'s slot, then free eids[0].
             new_eid, nerr := ecs.create_entity(&ob)
             testing.expect(t, nerr == nil)
             testing.expect(t, new_eid.ix == eids[2].ix)
             testing.expect(t, ecs.destroy_entity(&ob, eids[0]) == nil)
 
-            // Restore
             testing.expect(t, ecs.overbase_deserialize(&ob, buf) == nil)
 
             testing.expect(t, ecs.entities_len(&ob) == 4)
@@ -80,8 +78,7 @@ package ode_ecs__tests
             testing.expect(t, !ecs.is_expired(&ob, eids[4]))
             testing.expect(t, ecs.is_expired(&ob, new_eid)) // created only after the snapshot -> rolled back
 
-            // Deterministic: creating anew reproduces the exact same id that
-            // new_eid had, since the factory state is byte-identical again.
+            // Deterministic: recreating reproduces the exact same id since factory state is byte-identical.
             new_eid_2, nerr2 := ecs.create_entity(&ob)
             testing.expect(t, nerr2 == nil)
             testing.expect(t, new_eid_2 == new_eid)
@@ -170,8 +167,7 @@ package ode_ecs__tests
 
 ///////////////////////////////////////////////////////////////////////////////
 // Database serialize/deserialize on a SHARED Overbase never touches the
-// shared id-space — this is the fix for docs/overbase.md's old "Serialization
-// caveat".
+// shared id-space — the fix for docs/overbase.md's old "Serialization caveat"
 
     @(test)
     overbase_deserialize_shared_never_touches_id_space__test :: proc(t: ^testing.T) {
@@ -214,8 +210,7 @@ package ode_ecs__tests
                 testing.expect(t, serr == nil)
             }
 
-            // world_db's snapshot carries no entity-id section at all (it
-            // doesn't own ob) — only its own positions table.
+            // world_db's snapshot carries no entity-id section (it doesn't own ob) — only its own positions table.
             size, size_err := ecs.serialized_size(&world_db)
             testing.expect(t, size_err == nil)
             buf := make([]byte, size, allocator)
@@ -223,9 +218,8 @@ package ode_ecs__tests
             _, werr := ecs.serialize(&world_db, buf)
             testing.expect(t, werr == nil)
 
-            // Mutate the shared id-space: destroy eids[1] (cascades to both
-            // Databases), then recycle its freed slot into a brand-new entity
-            // that gets its own sprite on render_db.
+            // Mutate the shared id-space: destroy eids[1] (cascades to both Databases),
+            // then recycle its freed slot into a new entity with its own sprite on render_db.
             testing.expect(t, ecs.destroy_entity(&world_db, eids[1]) == nil)
             new_eid, nerr := ecs.create_entity(&ob)
             testing.expect(t, nerr == nil)
@@ -234,24 +228,20 @@ package ode_ecs__tests
             testing.expect(t, nsprerr == nil)
             testing.expect(t, ecs.entities_len(&render_db) == 3) // eids[0], eids[2], new_eid
 
-            // Safety net: world_db's snapshot still references the ORIGINAL
-            // eids[1] (now a stale id — its slot was recycled into new_eid).
-            // deserialize must reject this rather than silently writing
-            // eids[1]'s saved position back under whatever entity now sits at
-            // that recycled slot.
+            // world_db's snapshot still references the ORIGINAL eids[1] (now stale, its
+            // slot recycled into new_eid) — deserialize must reject it rather than write
+            // the saved position back under whatever entity now sits at that slot.
             derr := ecs.deserialize(&world_db, buf)
             testing.expect(t, derr == ecs.API_Error.Snapshot_Invalid)
 
-            // Rejected load must not have touched anything: shared id-space
-            // (as seen through the sibling render_db) is exactly as it was
-            // right before the attempt, and so is world_db's own data.
+            // Rejected load touched nothing: shared id-space (via sibling render_db) and
+            // world_db's own data are exactly as they were before the attempt.
             testing.expect(t, ecs.entities_len(&render_db) == 3)
             testing.expect(t, ecs.is_expired(&render_db, eids[1]))
             testing.expect(t, !ecs.is_expired(&render_db, new_eid))
             testing.expect(t, ecs.get_component(&positions, eids[0]).x == 0)
 
-            // Now take a fresh snapshot of world_db's CURRENT state (only
-            // references eids[0]/eids[2], both still valid) and mutate again.
+            // Fresh snapshot of world_db's current state (only eids[0]/eids[2]), then mutate again.
             size2, _ := ecs.serialized_size(&world_db)
             buf2 := make([]byte, size2, allocator)
             defer delete(buf2, allocator)
@@ -261,9 +251,8 @@ package ode_ecs__tests
             pos0 := ecs.get_component(&positions, eids[0])
             pos0.x = 9999
 
-            // This restore succeeds (rows are valid against the live shared
-            // factory) and rolls back world_db's own table — but must still
-            // leave the shared id-space (and render_db) completely alone.
+            // Restore succeeds (rows are valid against the live shared factory) and rolls
+            // back world_db's own table, but must leave the shared id-space (and render_db) alone.
             testing.expect(t, ecs.deserialize(&world_db, buf2) == nil)
             testing.expect(t, ecs.get_component(&positions, eids[0]).x == 0)
             testing.expect(t, ecs.entities_len(&render_db) == 3)
@@ -272,11 +261,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.has_component(&sprites, new_eid))
     }
 
-    // The full, correct workflow for saving/restoring a multi-Database shared
-    // Overbase: overbase_serialize/overbase_deserialize for the shared
-    // id-space, plus each Database's own serialize/deserialize for its
-    // tables — and the Overbase MUST be restored first, since a Database's
-    // own rows validate against whatever id-space is live at the time.
+    // Overbase restore MUST happen before each Database's own restore — Database rows
+    // validate against whatever id-space is live at deserialize time.
     @(test)
     overbase_serialize_with_attached_databases__test :: proc(t: ^testing.T) {
         //
@@ -338,9 +324,8 @@ package ode_ecs__tests
             _, render_err := ecs.serialize(&render_db, buf_render)
             testing.expect(t, render_err == nil)
 
-            // Diverge significantly: destroy eids[1] (cascades), recycle its
-            // slot into a new entity with components on both Databases, and
-            // mutate eids[0]'s data in place.
+            // Diverge: destroy eids[1] (cascades), recycle its slot into a new entity with
+            // components on both Databases, and mutate eids[0]'s data in place.
             testing.expect(t, ecs.destroy_entity(&world_db, eids[1]) == nil)
             new_eid, nerr := ecs.create_entity(&ob)
             testing.expect(t, nerr == nil)
@@ -351,9 +336,7 @@ package ode_ecs__tests
             ecs.get_component(&positions, eids[0]).x = -1
             ecs.get_component(&sprites, eids[0]).texture_id = -1
 
-            // Restore — Overbase FIRST (rolls the shared id-space back so
-            // eids[1] is valid again and new_eid no longer is), THEN each
-            // Database's own tables.
+            // Restore Overbase first (rolls the shared id-space back), then each Database.
             testing.expect(t, ecs.overbase_deserialize(&ob, buf_ob) == nil)
             testing.expect(t, ecs.deserialize(&world_db, buf_world) == nil)
             testing.expect(t, ecs.deserialize(&render_db, buf_render) == nil)
@@ -368,9 +351,8 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Reconnecting a Database that was originally serialized standalone (its own
-// private Overbase, full id+tables snapshot) into a freshly restored shared
-// Overbase.
+// Reconnecting a standalone-serialized Database (own private Overbase) into a
+// freshly restored shared Overbase.
 
     @(test)
     overbase_reconnect_previously_standalone_database__test :: proc(t: ^testing.T) {
@@ -388,8 +370,8 @@ package ode_ecs__tests
         //
         // Test
         //
-            // A plain, standalone Database (owns its own private Overbase) —
-            // serialized the ordinary way, full id+tables snapshot.
+            // Plain standalone Database (owns its own private Overbase), serialized the
+            // ordinary way with a full id+tables snapshot.
             testing.expect(t, ecs.init(&standalone_db, entities_cap = 10, allocator = allocator) == nil)
             testing.expect(t, ecs.table_init(&standalone_positions, &standalone_db, 10) == nil)
 
@@ -413,9 +395,8 @@ package ode_ecs__tests
 
             ecs.terminate(&standalone_db) // done with it — only its bytes matter now
 
-            // Separately: an Overbase serialized "without linked Databases",
-            // populated with the SAME two entities (deterministic ix/gen
-            // sequence from a fresh id_factory reproduces e0/e1 exactly).
+            // Separately, an Overbase serialized without linked Databases but populated
+            // with the SAME two entities (fresh id_factory deterministically reproduces e0/e1).
             ob_source: ecs.Overbase
             testing.expect(t, ecs.overbase_init(&ob_source, entities_cap = 10, allocator = allocator) == nil)
             src_e0, src_e0_err := ecs.create_entity(&ob_source)
@@ -431,10 +412,9 @@ package ode_ecs__tests
             testing.expect(t, oberr == nil)
             ecs.overbase_terminate(&ob_source)
 
-            // Load side: a fresh shared Overbase restored from that
-            // Overbase-only snapshot, a fresh Database attached to it (same
-            // table schema/order as standalone_db had), then the ORIGINAL
-            // standalone full snapshot deserialized into it.
+            // Load side: fresh shared Overbase restored from that snapshot, a fresh
+            // Database attached to it (same table schema/order as standalone_db had),
+            // then the original standalone full snapshot deserialized into it.
             ob2: ecs.Overbase
             defer ecs.overbase_terminate(&ob2)
             testing.expect(t, ecs.overbase_init(&ob2, entities_cap = 10, databases_cap = 1, allocator = allocator) == nil)
@@ -449,26 +429,22 @@ package ode_ecs__tests
 
             entities_len_before := ecs.entities_len(&ob2)
 
-            // db2 does not own ob2 -> the standalone snapshot's embedded
-            // id-section is ignored; rows are validated against ob2's live
-            // (already-matching) factory instead.
+            // db2 does not own ob2, so the standalone snapshot's id-section is ignored;
+            // rows validate against ob2's live (already-matching) factory instead.
             testing.expect(t, ecs.deserialize(&db2, buf_standalone) == nil)
 
             testing.expect(t, ecs.get_component(&positions2, e0).x == 7)
             testing.expect(t, ecs.get_component(&positions2, e1).x == 8)
 
-            // ob2's shared id-space was not touched by db2's deserialize.
-            testing.expect(t, ecs.entities_len(&ob2) == entities_len_before)
+            testing.expect(t, ecs.entities_len(&ob2) == entities_len_before) // ob2's id-space untouched
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Relations_Table and Tag_Table on a shared-Overbase Database — the row/link
-// validation branches for these two table kinds are separate code paths from
-// the named-component branch and were untouched by any test above.
+// Relations_Table and Tag_Table on a shared-Overbase Database — separate row/link
+// validation branches from the named-component case, untouched by tests above.
 
-    // Relations links (parent/first_child/next_sibling/prev_sibling) go
-    // through the same snapshot__validate_row_eid helper as table rows, but
-    // via their own code path in database__deserialize.
+    // Relations links go through the same snapshot__validate_row_eid helper as table
+    // rows, but via their own code path in database__deserialize.
     @(test)
     overbase_deserialize_shared_relations__test :: proc(t: ^testing.T) {
         //
@@ -511,8 +487,7 @@ package ode_ecs__tests
 
             testing.expect(t, ecs.set_parent(&world_db, child, parent) == nil)
 
-            // world_db's snapshot carries positions + the parent/child link,
-            // but no entity-id section at all (it doesn't own ob).
+            // world_db's snapshot carries positions + the link, but no entity-id section (it doesn't own ob).
             size, _ := ecs.serialized_size(&world_db)
             buf := make([]byte, size, allocator)
             defer delete(buf, allocator)
@@ -520,8 +495,8 @@ package ode_ecs__tests
             testing.expect(t, serr == nil)
 
             //
-            // (a) Happy path: mutate unrelated state, restore — the relation
-            // round-trips and the shared id-space stays untouched.
+            // (a) Happy path: mutate unrelated state, restore — the relation round-trips
+            // and the shared id-space stays untouched.
             //
             pos_p.x = -1
             testing.expect(t, ecs.deserialize(&world_db, buf) == nil)
@@ -534,9 +509,8 @@ package ode_ecs__tests
             testing.expect(t, !ecs.is_expired(&render_db, child))
 
             //
-            // (b) Stale rejection: destroy+recycle child's slot, then try to
-            // restore the SAME buf again — its saved first_child link now
-            // references a stale id; deserialize must reject, not write it.
+            // (b) Stale rejection: destroy+recycle child's slot, then restore the SAME buf
+            // again — its saved first_child link now references a stale id; must reject, not write it.
             //
             testing.expect(t, ecs.destroy_entity(&world_db, child) == nil)
             new_eid, nerr := ecs.create_entity(&ob)
@@ -552,11 +526,8 @@ package ode_ecs__tests
             testing.expect(t, !ecs.is_expired(&render_db, new_eid))
     }
 
-    // Tag_Table rows are entity ids directly (no component payload) — a
-    // separate branch in the validation loop from the named-component case.
-    // Also exercises defensive behavior: has_tag must read as false for a
-    // stale id rather than reporting stale data, during the transient window
-    // where world_db's own tag table hasn't caught up with the live Overbase.
+    // Tag_Table rows are entity ids directly — a separate validation branch from the
+    // named-component case. Also checks has_tag reads false for a stale id, not stale data.
     @(test)
     overbase_deserialize_shared_tag_table__test :: proc(t: ^testing.T) {
         //
@@ -608,8 +579,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.entities_len(&render_db) == 2)
 
             //
-            // (b) Stale rejection: destroy+recycle e1 before restoring buf
-            // again — its saved tag row now references a stale id.
+            // (b) Stale rejection: destroy+recycle e1 before restoring buf again — its
+            // saved tag row now references a stale id.
             //
             testing.expect(t, ecs.destroy_entity(&world_db, e1) == nil)
             new_eid, nerr := ecs.create_entity(&ob)
@@ -619,21 +590,18 @@ package ode_ecs__tests
             derr := ecs.deserialize(&world_db, buf)
             testing.expect(t, derr == ecs.API_Error.Snapshot_Invalid)
 
-            // Rejected load touched nothing: shared id-space unaffected...
             testing.expect(t, ecs.entities_len(&render_db) == 2) // e0, new_eid
             testing.expect(t, ecs.is_expired(&render_db, e1))
             testing.expect(t, !ecs.is_expired(&render_db, new_eid))
 
-            // ...and world_db's own (untouched, still-from-(a)) tag table
-            // correctly reports the stale id as absent rather than serving
-            // its old row — is_entity_correct guards it, same as any other
-            // table kind.
+            // world_db's own tag table still correctly reports the stale id as absent
+            // (is_entity_correct guards it, same as any other table kind).
             testing.expect(t, ecs.has_tag(&is_alive, e1) == false)
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// serialized_size/serialize buffer-sizing for a shared Database — the branch
-// that omits the id-section cost.
+// serialized_size/serialize buffer-sizing for a shared Database — the branch that
+// omits the id-section cost.
 
     @(test)
     overbase_shared_database_serialize_buffer_too_small__test :: proc(t: ^testing.T) {
@@ -686,18 +654,13 @@ package ode_ecs__tests
             standalone_size, standalone_size_err := ecs.serialized_size(&standalone_db)
             testing.expect(t, standalone_size_err == nil)
 
-            // The id-section is genuinely omitted from the shared Database's
-            // buffer, not merely ignored when reading it back.
-            testing.expect(t, shared_size < standalone_size)
+            testing.expect(t, shared_size < standalone_size) // id-section genuinely omitted, not just ignored on read
 
-            // Buffer-too-small still fires correctly for the smaller
-            // (tables-only) format.
             small := make([]byte, shared_size - 1, allocator)
             defer delete(small, allocator)
             _, e := ecs.serialize(&world_db, small)
             testing.expect(t, e == ecs.API_Error.Serialize_Buffer_Too_Small)
 
-            // And the correctly-sized buffer still works.
             buf := make([]byte, shared_size, allocator)
             defer delete(buf, allocator)
             written, werr := ecs.serialize(&world_db, buf)
@@ -708,11 +671,8 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Adversarial: flipping SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION itself
 
-    // Every other corruption test in the suite flips magic/version/length
-    // bytes. None flips this new flag bit, which changes how many bytes
-    // deserialize expects between the header and the first table section —
-    // exercise it directly in both directions and confirm a clean Error,
-    // never a panic, and that the database stays usable afterward.
+    // Every other corruption test flips magic/version/length bytes; this flips the flag
+    // bit that changes how many bytes deserialize expects before the first table section.
     @(test)
     overbase_serialize_flag_bit_corruption__test :: proc(t: ^testing.T) {
         //
@@ -737,9 +697,8 @@ package ode_ecs__tests
             defer ecs.overbase_terminate(&ob)
             defer ecs.terminate(&world_db)
 
-            // Standalone (owns_overbase == true) — buffer legitimately HAS
-            // the entity-id section (flag byte is at offset 16: magic:8 +
-            // version:4 + endian_check:4; bit value 0x02).
+            // Standalone (owns_overbase == true): buffer legitimately HAS the entity-id
+            // section (flag byte at offset 16: magic:8 + version:4 + endian_check:4; bit 0x02).
             testing.expect(t, ecs.init(&standalone_db, entities_cap = 10, allocator = allocator) == nil)
             testing.expect(t, ecs.table_init(&standalone_positions, &standalone_db, 10) == nil)
             s_eid, s_err := ecs.create_entity(&standalone_db)
@@ -758,15 +717,12 @@ package ode_ecs__tests
             copy(s_corrupt, s_buf)
             s_corrupt[16] ~= 0x02 // flip HAS_ENTITY_ID_SECTION off
 
-            // Exact resulting error variant depends on incidental byte
-            // values downstream (the reader misinterprets id-section bytes
-            // as a table header); what matters is a clean Error, never a
-            // panic, and that the database is left usable afterward.
+            // Exact error variant depends on incidental downstream byte values; what matters
+            // is a clean Error, never a panic, and the database stays usable afterward.
             testing.expect(t, ecs.deserialize(&standalone_db, s_corrupt) != nil)
             testing.expect(t, ecs.deserialize(&standalone_db, s_buf) == nil)
 
-            // Shared (owns_overbase == false) — buffer legitimately has NO
-            // entity-id section.
+            // Shared (owns_overbase == false): buffer legitimately has NO entity-id section.
             testing.expect(t, ecs.overbase_init(&ob, entities_cap = 10, databases_cap = 1, allocator = allocator) == nil)
             testing.expect(t, ecs.init_from_overbase(&world_db, &ob) == nil)
             testing.expect(t, ecs.table_init(&positions, &world_db, 10) == nil)

@@ -1,7 +1,7 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    This example shows how to optimize your ECS (Approach 1 vs. Approach 2).  
+    This example shows how to optimize your ECS (Approach 1 vs. Approach 2).
 
     Run this sample with speed optimizations to see results closer to real-world performance:
 
@@ -19,27 +19,25 @@ package ode_ecs_sample2
     import "core:mem"
     import "core:math/rand"
     import "core:time"
-     
+
 // ODE_ECS
     import ecs "../../"
     import oc "../../ode_core"
 
 //
 // Defines
-//
-
     NUMBER_OF_ENTITIES :: 100_000
 
 //
 // Approach 1
 //
-    Enemy1 :: struct { 
+    Enemy1 :: struct {
         id: int,
-        
+
         // State
         dead: bool,
         frenzy: bool,
-    } 
+    }
 
     db1: ecs.Database
 
@@ -47,8 +45,6 @@ package ode_ecs_sample2
 
 // 
 // Approach 2
-// 
-
     Enemy2 :: struct {
         id: int,
     }
@@ -62,16 +58,16 @@ package ode_ecs_sample2
 //
 // Approach 1 with payload (more data to make things more realistic)
 //
-    Enemy1_With_Payload :: struct { 
+    Enemy1_With_Payload :: struct {
         id: int,
-        
+
         // State
         dead: bool,
         frenzy: bool,
 
         // Payload to make things more realistic
-        some_data: [20]int, 
-    } 
+        some_data: [20]int,
+    }
 
     db1_with_payload: ecs.Database
 
@@ -79,13 +75,11 @@ package ode_ecs_sample2
 
 // 
 // Approach 2 with payload
-// 
-
     Enemy2_With_Payload :: struct {
         id: int,
 
         // Payload
-        some_data: [20]int, 
+        some_data: [20]int,
     }
 
     db2_with_payload: ecs.Database
@@ -93,36 +87,30 @@ package ode_ecs_sample2
     dead_enemies_with_payload : ecs.Table(Enemy2_With_Payload)
     frenzy_enemies_with_payload: ecs.Table(Enemy2_With_Payload)
     normal_enemies_with_payload: ecs.Table(Enemy2_With_Payload)
-    
+
 //
-// ECS Optimization example
-// This example includes simple error handling.
+// ECS Optimization example. This example includes simple error handling.
 //
-main :: proc() { 
+main :: proc() {
 
     //
-    // OPTIONAL: Setup memory tracking and logger. 
+    // OPTIONAL: Setup memory tracking and logger.
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
-        context.allocator = oc.mem_track__init(&mem_track, context.allocator)  
+        context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
     //
     // Variables
-    // 
-
         err: ecs.Error
         eid1: ecs.entity_id
         eid2: ecs.entity_id
@@ -139,8 +127,6 @@ main :: proc() {
         sw: time.Stopwatch
     //
     // Init db1
-    //
-
         defer ecs.terminate(&db1)
         err = ecs.init(&db1, NUMBER_OF_ENTITIES, allocator)
         if err != nil { report_error(err); return }
@@ -148,14 +134,10 @@ main :: proc() {
         err = ecs.table_init(&all_enemies, &db1, NUMBER_OF_ENTITIES)
         if err != nil { report_error(err); return }
 
-
-    //
     // Init db2
-    //
-
         defer ecs.terminate(&db2)
         ecs.init(&db2, NUMBER_OF_ENTITIES, allocator)
-        
+
         err = ecs.table_init(&normal_enemies, &db2, NUMBER_OF_ENTITIES)
         if err != nil { report_error(err); return }
 
@@ -167,8 +149,6 @@ main :: proc() {
 
     //
     // Init db1 with payload
-    //
-
         defer ecs.terminate(&db1_with_payload)
         err = ecs.init(&db1_with_payload, NUMBER_OF_ENTITIES, allocator)
         if err != nil { report_error(err); return }
@@ -178,11 +158,9 @@ main :: proc() {
 
     //
     // Init db2 with payload
-    //
-
         defer ecs.terminate(&db2_with_payload)
         ecs.init(&db2_with_payload, NUMBER_OF_ENTITIES, allocator)
-        
+
         err = ecs.table_init(&normal_enemies_with_payload, &db2_with_payload, NUMBER_OF_ENTITIES)
         if err != nil { report_error(err); return }
 
@@ -193,11 +171,10 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
     //
-    // Feel both dbs with the "same" data
+    // Fill both dbs with the "same" data
     //
-
         EnemyState :: enum { Normal, Dead, Frenzy }
-        choose_state: []EnemyState = { .Normal, .Dead, .Frenzy } 
+        choose_state: []EnemyState = { .Normal, .Dead, .Frenzy }
 
         for i:=0; i < NUMBER_OF_ENTITIES; i+=1 {
             eid1, err = ecs.database__create_entity(&db1)
@@ -223,12 +200,12 @@ main :: proc() {
             enemy1_with_payload.id = i
 
             switch rand.choice(choose_state[:]) {
-                case .Normal: 
+                case .Normal:
                     enemy1.dead = false
                     enemy1.frenzy = false
 
                     enemy2, err = ecs.add_component(&normal_enemies, eid2)
-                    enemy2.id = i 
+                    enemy2.id = i
 
                     // With payload:
 
@@ -236,14 +213,14 @@ main :: proc() {
                     enemy1_with_payload.frenzy = false
 
                     enemy2_with_payload, err = ecs.add_component(&normal_enemies_with_payload, eid2_with_payload)
-                    enemy2_with_payload.id = i 
+                    enemy2_with_payload.id = i
 
                 case .Dead:
                     enemy1.dead = true
                     enemy1.frenzy = false
 
                     enemy2, err = ecs.add_component(&dead_enemies, eid2)
-                    enemy2.id = i 
+                    enemy2.id = i
 
                     // With payload:
 
@@ -251,14 +228,14 @@ main :: proc() {
                     enemy1_with_payload.frenzy = false
 
                     enemy2_with_payload, err = ecs.add_component(&dead_enemies_with_payload, eid2_with_payload)
-                    enemy2_with_payload.id = i 
+                    enemy2_with_payload.id = i
 
                 case .Frenzy:
                     enemy1.dead = false
                     enemy1.frenzy = true
 
                     enemy2, err = ecs.add_component(&frenzy_enemies, eid2)
-                    enemy2.id = i 
+                    enemy2.id = i
 
                     // With payload:
 
@@ -266,14 +243,12 @@ main :: proc() {
                     enemy1_with_payload.frenzy = true
 
                     enemy2_with_payload, err = ecs.add_component(&frenzy_enemies_with_payload, eid2_with_payload)
-                    enemy2_with_payload.id = i 
+                    enemy2_with_payload.id = i
             }
         }
 
     //
     // Test speed
-    //
-
         // Approach 1
         time.stopwatch_start(&sw)
 
@@ -308,14 +283,13 @@ main :: proc() {
                 en.id += 3
             }
 
-    
+
         time.stopwatch_stop(&sw)
         _, _, _, nanos2 := time.precise_clock_from_stopwatch(sw)
 
     //
-    // Test speed with payload 
+    // Test speed with payload
     //
-
         // Approach 1 with payload
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
@@ -351,14 +325,12 @@ main :: proc() {
                 en.id += 3
             }
 
-    
+
         time.stopwatch_stop(&sw)
         _, _, _, nanos2_with_payload := time.precise_clock_from_stopwatch(sw)
 
     //
     // Print results
-    //
-
         s:= oc.add_thousand_separator(NUMBER_OF_ENTITIES, sep=',', allocator=allocator)
         fmt.println("Iterating over", s, "entities.")
         delete(s, allocator)
@@ -371,7 +343,7 @@ main :: proc() {
         fmt.printfln("%-30s %.4f ms", "Approach 2 time:", f64(nanos2)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.4f times", "Difference is ", difference)
-        
+
         fmt.println("")
 
         difference_with_payload := f64(nanos1_with_payload) / f64(nanos2_with_payload)
@@ -380,7 +352,7 @@ main :: proc() {
         fmt.printfln("%-30s %.4f ms", "Approach 2 with payload time:", f64(nanos2_with_payload)/1_000_000.0)
         fmt.println("-----------------------------------------------------------")
         fmt.printfln("%-30s %.4f times", "Difference is ", difference_with_payload)
-        
+
         fmt.println("")
         fmt.println("")
 

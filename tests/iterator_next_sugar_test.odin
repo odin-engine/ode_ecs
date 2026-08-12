@@ -21,9 +21,7 @@ package ode_ecs__tests
 
     @(test)
     // ecs.next(&it) with no table args is plain iterator__next (bool advance,
-    // now in the same `next` group instead of a separate iterator_next name) —
-    // get_entity/get_component are called manually, same as the pre-existing
-    // manual iterator_next form this replaces.
+    // now in the same `next` group) — get_entity/get_component called manually.
     iterator_next0_type_free__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)

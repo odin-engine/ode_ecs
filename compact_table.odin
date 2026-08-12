@@ -315,7 +315,6 @@ package ode_ecs
         // remove_at reuses the slot index instead of re-probing the key
         target_rid, target_slot := oc_maps.rh_map32__get_with_index(&self.eid_to_rid, u32(target_eid.ix))
 
-        // Check if component exists
         if target_slot == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
 
         T_size := elem_size
@@ -361,7 +360,6 @@ package ode_ecs
 
         // Replace removed component with tail
         if int(target_rid) == tail_rid {
-            // Remove indexes
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
@@ -372,11 +370,9 @@ package ode_ecs
             }
         }
         else {
-            // DATA COPY
             mem.copy(target, tail, T_size)
 
-            // Update tail indexes (value-only update — slots don't move, so
-            // target_slot stays valid for the remove_at)
+            // Value-only update — slots don't move, so target_slot stays valid for the remove_at
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(tail_eid.ix), target_rid)
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
@@ -395,11 +391,9 @@ package ode_ecs
             }
         }
 
-        // Zero tail
         mem.zero(tail, T_size)
         raw.len -= 1
 
-        // Update eid_to_bits in db
         database__remove_component(self.db, target_eid, self.id)
 
         compact_table_base__notify_sync_remove(self, target_eid)
@@ -416,38 +410,29 @@ package ode_ecs
     }
 
     @(private)
-    // Adds (or finds) the entity's row and returns a pointer to the component.
-    // If `data` is not nil it is copied into the component BEFORE the subscriber
-    // notifications run (view filters read component data through the row refs),
-    // and it also overwrites the existing value on the Component_Already_Exist
-    // path — "last write wins", used by Command_Buffer.
-    // elem_size explicit parameter: see table_raw__add_component_sized (table.odin).
-    // #no_bounds_check: callers validate eid via database__is_entity_correct;
-    // row indexes derive from raw.len < cap or from the rid map
+    // Adds (or finds) the entity's row and returns a pointer to the component. If
+    // `data` is not nil it is copied in before notifications run, and overwrites the
+    // existing value on the Component_Already_Exist path — "last write wins", used
+    // by Command_Buffer. elem_size explicit parameter: see table_raw__add_component_sized (table.odin).
+    // #no_bounds_check: callers validate eid; row indexes derive from raw.len < cap or the rid map.
     compact_table_raw__add_component_sized :: #force_inline proc(self: ^Compact_Table_Raw, eid: entity_id, elem_size: int, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        // One probe serves both the existence check and the insert below —
-        // get_or_insert reuses the located slot instead of get() then add()
-        // re-walking the same chain. Capacity only matters when actually
-        // inserting — re-adding an existing component on a full table must
-        // still report Component_Already_Exist, so the row-count cap gates
-        // can_insert rather than being checked up front.
+        // One probe serves both the existence check and the insert below — get_or_insert
+        // reuses the located slot instead of get() then add() re-walking the same chain.
+        // Capacity is gated on can_insert (not checked up front) since re-adding an
+        // existing component on a full table must still report Component_Already_Exist.
         rid, found, gerr := oc_maps.rh_map32__get_or_insert(&self.eid_to_rid, u32(eid.ix), u32(raw.len), raw.len < self.cap)
 
-        // Check if component already exist
         if !found {
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
             if gerr != nil do return nil, gerr
 
-            // Get component
             component = compact_table_raw__rid_to_ptr_sized(self, raw.len, elem_size)
             if data != nil do mem.copy(component, data, elem_size)
 
-            // Update rid_to_eid
             self.rid_to_eid[raw.len] = eid
 
-            // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)
 
             compact_table_base__notify_sync_add(self, eid)
@@ -595,7 +580,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Compact_Table
 
-    // Components table
     Compact_Table :: struct($T: typeid) {
         using base: Compact_Table_Base,
         // table_record_id => component
@@ -614,7 +598,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
             assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
@@ -729,11 +713,9 @@ package ode_ecs
         return compact_table_base__cap(self)
     }
 
-    // Live rows in row order as one contiguous slice — `rows` itself is
-    // already length-bounded to the live row count. See table__slice's
-    // doc comment (table.odin) for why returning it by value from a call,
-    // rather than reading the `rows` field directly in a hot loop, matters
-    // for codegen, not just convenience.
+    // Live rows as one contiguous slice — `rows` is already length-bounded to the
+    // live row count. See table__slice's doc comment (table.odin) for why returning
+    // it by value from a call matters for codegen, not just convenience.
     @(require_results)
     compact_table__slice :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> []T {
         return self.rows
@@ -818,7 +800,7 @@ package ode_ecs
         database__is_entity_correct(dest.db, eid) or_return
 
         src_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) src, eid)
-        if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
+        if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found
 
         dest_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
@@ -827,7 +809,6 @@ package ode_ecs
             dest_component = cast(^T) c
         }
 
-        // copy data
         dest_component^ = src_component^
 
         return dest_component, src_component, nil

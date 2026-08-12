@@ -41,17 +41,14 @@ main :: proc() {
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 

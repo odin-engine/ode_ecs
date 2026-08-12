@@ -14,22 +14,12 @@ package ode_ecs
     import oc_maps "ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tiny_Table_Subscriber_Slot — the View-subscriber bookkeeping for one
-// Tiny_Table, batch-allocated in Database.tiny_table_subscriber_slots
-// (see database__attach_tiny_table_subscribers) instead of living inline in
-// every Tiny_Table_Base. Tiny_Table_Base only keeps a slot_id + the 3 live
-// counts inline — those are read unconditionally on every add/remove, so
-// they stay indirection-free; the arrays themselves are only ever touched
-// when a count is already non-zero, the rarer and heavier path (it's about
-// to call view__add_record/view__components_match anyway), so one extra
-// pointer chase there is negligible. This also shrinks Tiny_Table_Base
-// itself (216 bytes of subscriber arrays -> 8 bytes for the slot id),
-// which is the whole point of Tiny_Table: cheap to declare in bulk.
+// Tiny_Table_Subscriber_Slot — View-subscriber bookkeeping for one Tiny_Table, batch-allocated
+// in Database.tiny_table_subscriber_slots instead of living inline in every Tiny_Table_Base.
+// Shrinks Tiny_Table_Base from 216 bytes of subscriber arrays to an 8-byte slot id — the point
+// of Tiny_Table: cheap to declare in bulk.
 
-    // Duplicated per SYNC_ENABLED because Odin's `when` can't gate a single struct
-    // field, only a whole top-level declaration. Unlike Table_Base/Compact_Table_Base/
-    // Tag_Table (whose sync_watchers is now a lazily-allocated Dense_Arr instead),
-    // this fixed-size per-slot array has no lazy-allocation equivalent.
+    // Duplicated per SYNC_ENABLED because Odin's `when` can't gate a single struct field.
     when SYNC_ENABLED {
         @(private)
         Tiny_Table_Subscriber_Slot :: struct {
@@ -64,12 +54,9 @@ package ode_ecs
             // Index into db.tiny_table_subscriber_slots — see Tiny_Table_Subscriber_Slot.
             subscribers_slot_id: int,
 
-            // Live counts for subscribers/subscribers_excluding/subscribers_any_of. Unlike
-            // Table's Dense_Arr (whose .items slice already has an O(1) length), a fixed
-            // [N]^View array has no free "is anything in here" check — scanning all
-            // TINY_TABLE__VIEWS_CAP slots costs the same whether 0 or N are set. These
-            // counts let the (common) all-empty case skip the scan entirely, kept inline
-            // (not in the slot) so this check never pays the slot indirection.
+            // Live counts for the subscriber arrays: unlike Table's Dense_Arr, a fixed [N]^View
+            // has no O(1) "is anything set" check, so these let the common all-empty case skip
+            // the scan; kept inline (not in the slot) so the check never pays the indirection.
             subscribers_count: int,
             subscribers_excluding_count: int,
             subscribers_any_of_count: int,
@@ -111,10 +98,8 @@ package ode_ecs
     }
 
     @(private)
-    // #force_inline: single expression, called at every hot-path site that touches
-    // the subscriber arrays (only ever inside an already subscribers_*_count > 0
-    // guard) — inlining keeps that one extra indirection down to the raw slice
-    // index it already is, no call/return boundary.
+    // #force_inline: called only inside an already subscribers_*_count > 0 guard on hot
+    // paths — inlining keeps this down to a raw slice index, no call/return boundary.
     tiny_table_base__slot :: #force_inline proc "contextless" (self: ^Tiny_Table_Base) -> ^Tiny_Table_Subscriber_Slot #no_bounds_check {
         return &self.db.tiny_table_subscriber_slots[self.subscribers_slot_id]
     }
@@ -123,10 +108,8 @@ package ode_ecs
     tiny_table_base__init :: proc(self: ^Tiny_Table_Base, db: ^Database) -> Error {
         shared_table__init(&self.shared, Table_Type.Tiny_Table, db)
 
-        // The slot pool zeroes a slot on attach (fresh) and on detach (see
-        // database__detach_tiny_table_subscribers), so a reused slot never
-        // carries stale views from a previous Tiny_Table's life — same
-        // guarantee issue #8 needed when these arrays were inline here.
+        // The slot pool zeroes a slot on attach and on detach, so a reused slot never
+        // carries stale views from a previous Tiny_Table's life.
         self.subscribers_slot_id = database__attach_tiny_table_subscribers(db) or_return
         self.subscribers_count = 0
         self.subscribers_excluding_count = 0
@@ -135,12 +118,8 @@ package ode_ecs
             self.sync_channels_count = 0
         }
 
-        // database__attach_table is capacity-limited (Container_Is_Full once
-        // tables_cap is exhausted) — must not leak the subscriber slot just
-        // claimed above on failure (that slot has no state==Normal guard to
-        // reuse for cleanup, unlike table__init/compact_table__init/
-        // tag_table__init's heap allocations, but leaving it claimed would
-        // permanently waste one tiny_tables_cap slot with no way to reclaim it).
+        // database__attach_table is capacity-limited — must not leak the subscriber slot
+        // claimed above on failure (it has no state==Normal guard to reuse for cleanup).
         id, aerr := database__attach_table(db, self)
         if aerr != nil {
             database__detach_tiny_table_subscribers(db, self.subscribers_slot_id)
@@ -293,8 +272,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_sync_add. #force_inline + the count check: see
-    // tiny_table_base__notify_excluding_views.
+    // See table_base__notify_sync_add; #force_inline + count check: see tiny_table_base__notify_excluding_views.
     tiny_table_base__notify_sync_add :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
         when SYNC_ENABLED {
             if self.sync_channels_count == 0 do return
@@ -308,8 +286,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_sync_remove. #force_inline + the count check: see
-    // tiny_table_base__notify_excluding_views.
+    // See table_base__notify_sync_remove; #force_inline + count check: see tiny_table_base__notify_excluding_views.
     tiny_table_base__notify_sync_remove :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
         when SYNC_ENABLED {
             if self.sync_channels_count == 0 do return
@@ -322,8 +299,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__mark_touched. #force_inline + the count check: see
-    // tiny_table_base__notify_excluding_views.
+    // See table_base__mark_touched; #force_inline + count check: see tiny_table_base__notify_excluding_views.
     tiny_table_base__mark_touched :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
         when SYNC_ENABLED {
             if self.sync_channels_count == 0 do return
@@ -336,9 +312,8 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_excluding_views. #force_inline + the count check: unlike
-    // Table's Dense_Arr, this fixed-array scan has no free "is anything in here" — see
-    // subscribers_excluding_count's doc comment above.
+    // See table_base__notify_excluding_views. #force_inline + count check: unlike Table's
+    // Dense_Arr, this fixed-array scan has no free "is anything in here" — see subscribers_excluding_count above.
     tiny_table_base__notify_excluding_views :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
         if self.subscribers_excluding_count == 0 do return
         if self.db.destroying_eid_ix == eid.ix do return
@@ -358,8 +333,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_any_of_views. #force_inline + the count check: see
-    // tiny_table_base__notify_excluding_views.
+    // See table_base__notify_any_of_views; #force_inline + count check: see tiny_table_base__notify_excluding_views.
     tiny_table_base__notify_any_of_views :: #force_inline proc(self: ^Tiny_Table_Base, eid: entity_id) {
         if self.subscribers_any_of_count == 0 do return
         slot := tiny_table_base__slot(self)
@@ -483,7 +457,6 @@ package ode_ecs
 
         // Replace removed component with tail
         if target == tail {
-            // Remove indexes
             oc_maps.tt_map__remove_found(&self.eid_to_ptr, target_item, target_slot)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
@@ -501,7 +474,6 @@ package ode_ecs
             tail_eid := self.rid_to_eid[tail_rid]
             when VALIDATIONS do assert(!is_not_set(tail_eid))
 
-            // DATA COPY
             mem.copy(target, tail, T_size)
 
             // Update tail indexes (the add updates an existing key's value in
@@ -529,7 +501,6 @@ package ode_ecs
             }
         }
 
-        // Zero tail
         mem.zero(tail, T_size)
         self.len -= 1
 
@@ -562,7 +533,6 @@ package ode_ecs
     tiny_table_raw__add_component_sized :: #force_inline proc(self: ^Tiny_Table_Raw, eid: entity_id, elem_size: int, data: rawptr = nil) -> (component: rawptr, err: Error) {
         component = oc_maps.tt_map__get(&self.eid_to_ptr, eid.ix)
 
-        // Check if component already exist
         if component == nil {
             // Capacity only matters when actually inserting — re-adding an
             // existing component on a full table must still report Component_Already_Exist
@@ -570,15 +540,12 @@ package ode_ecs
 
             T_size := elem_size
 
-            // Get component
             component = rawptr(uintptr(&self.rows[0]) + uintptr(self.len) * uintptr(T_size))
             if data != nil do mem.copy(component, data, T_size)
 
-            // Update eid_to_ptr
             err = oc_maps.tt_map__add(&self.eid_to_ptr, eid.ix, component)
             if err != nil do return nil, err
 
-            // Update rid_to_eid
             self.rid_to_eid[self.len] = eid
 
             // Update eid_to_bits in db
@@ -591,9 +558,8 @@ package ode_ecs
             if data != nil {
                 mem.copy(component, data, elem_size)
                 tiny_table_base__mark_touched(self, eid)
-                // See table_raw__add_component: an overwrite can flip a view's
-                // filter verdict, and the add-notify below skips existing members.
-                // Tiny_Table keeps no separate with-filter list — check per view.
+                // An overwrite can flip a view's filter verdict; the add-notify below skips
+                // existing members. Tiny_Table has no separate with-filter list, so check per view.
                 if self.subscribers_count > 0 {
                     slot := tiny_table_base__slot(self)
                     for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
@@ -615,10 +581,8 @@ package ode_ecs
             }
         }
 
-        // Views any_of-ing this table may have gained their (first) matching table for
-        // this entity (no-op if already a member via another any_of table). Guarded by
-        // the count (see subscribers_any_of_count's doc comment) so the common
-        // no-any_of case skips the fixed-array scan entirely.
+        // Views any_of-ing this table may have gained their first matching table for this
+        // entity (no-op if already a member elsewhere). Guarded by the count so the no-any_of case skips the scan.
         if self.subscribers_any_of_count > 0 {
             slot := tiny_table_base__slot(self)
             for i:=0; i<TINY_TABLE__VIEWS_CAP; i+=1 {
@@ -639,7 +603,6 @@ package ode_ecs
         return
     }
 
-    // clear data, nothing else
     @(private)
     tiny_table_raw__clear :: proc (self: ^Tiny_Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
@@ -666,9 +629,8 @@ package ode_ecs
         return tiny_table_raw__pack_sized(self, self.type_info.size)
     }
 
-    // Compact holes left by removals made while tail swap was paused,
-    // see table_raw__pack for the algorithm. elem_size explicit parameter:
-    // see table_raw__pack_sized (table.odin).
+    // Compact holes left while tail swap was paused, see table_raw__pack for the algorithm.
+    // elem_size explicit parameter: see table_raw__pack_sized (table.odin).
     @(private)
     tiny_table_raw__pack_sized :: #force_inline proc(self: ^Tiny_Table_Raw, elem_size: int) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
@@ -746,11 +708,10 @@ package ode_ecs
 // Tiny_Table
 
     Tiny_Table :: struct($T: typeid) {
-        using base: Tiny_Table_Base, 
-        rows: [TINY_TABLE__ROW_CAP]T,       
+        using base: Tiny_Table_Base,
+        rows: [TINY_TABLE__ROW_CAP]T,
     }
 
-    // Is table valid and ready to use (initialized and everything is ok)
     tiny_table__is_valid :: proc (self: ^Tiny_Table($T)) -> bool {
         if self == nil do return false 
         if !tiny_table_base__is_valid(&self.base) do return false
@@ -758,12 +719,11 @@ package ode_ecs
         return true
     }
 
-    // Initialize table
     tiny_table__init :: proc(self: ^Tiny_Table($T), db: ^Database, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // table should be NOT_INITIALIZED
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(size_of(T) != 0, "component type T must not be zero-sized — use Tag_Table for a marker/tag component that carries no data", loc = loc)
         }
 
@@ -780,14 +740,13 @@ package ode_ecs
         return nil
     }
 
-    // Terminate table
     tiny_table__terminate :: proc(self: ^Tiny_Table($T), loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(self.type_info.id == typeid_of(T), loc = loc)
             assert(self.db != nil, loc = loc)
-            assert(self.state == Object_State.Normal, loc = loc) // table should be Normal
-            assert(self.db.state == Object_State.Normal, loc = loc) // db should be Normal
+            assert(self.state == Object_State.Normal, loc = loc)
+            assert(self.db.state == Object_State.Normal, loc = loc)
         }
 
         tiny_table_base__terminate(cast(^Tiny_Table_Base) self) or_return
@@ -795,7 +754,6 @@ package ode_ecs
         return nil
     }
 
-    // Add component for entity `eid`
     tiny_table__add_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         when VALIDATIONS {
             assert(self != nil)
@@ -836,7 +794,6 @@ package ode_ecs
         return tiny_table_raw__resume_packing(cast(^Tiny_Table_Raw) self)
     }
 
-    // Remove component for entity `eid`
     tiny_table__remove_component :: proc(self: ^Tiny_Table($T), eid: entity_id) -> (err: Error) {
         when VALIDATIONS {
             assert(self != nil)
@@ -908,14 +865,9 @@ package ode_ecs
         return tiny_table_base__cap(cast(^Tiny_Table_Base) self)
     }
 
-    // Live rows in row order as one contiguous slice. Unlike Table's `rows`,
-    // Tiny_Table's `rows` is a FIXED-SIZE ARRAY (TINY_TABLE__ROW_CAP elements,
-    // stack-resident, no dynamic allocation) — it has no length of its own, so
-    // `for x in a_tiny_table.rows` always visits all TINY_TABLE__ROW_CAP slots
-    // regardless of how many are live. This slices it down to the live prefix
-    // (same tail-swap-packed invariant every other table type keeps) AND
-    // returns it by value from a call — see table__slice's doc comment
-    // for why that second part matters for codegen, not just correctness.
+    // Live rows as one contiguous slice, sliced to the live prefix — Tiny_Table's `rows` is a
+    // fixed-size array with no length of its own (unlike Table's `rows`). Returned by value
+    // from a call, not field access — see table__slice's doc comment for why that matters for codegen.
     @(require_results)
     tiny_table__slice :: #force_inline proc "contextless" (self: ^Tiny_Table($T)) -> []T {
         return self.rows[:self.len]
@@ -990,7 +942,6 @@ package ode_ecs
         return dest_component, nil
     }
 
-    // Clear all data, nothing else
     tiny_table__clear :: proc(self: ^Tiny_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)

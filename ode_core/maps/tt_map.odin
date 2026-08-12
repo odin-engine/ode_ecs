@@ -17,9 +17,8 @@ package maps
     import oc ".."
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tt_Map - Tiny Table Map (tiny one array map, index to $V). 
-// index expected to be POSITIVE int
-// V expected to be a pointer.
+// Tt_Map - Tiny Table Map (tiny one-array map, index to $V).
+// index expected to be a positive int; V expected to be a pointer.
 
     Tt_Map_Item :: struct($V: typeid) {
         key: int,
@@ -51,8 +50,7 @@ package maps
 
     @(private)
     tt_map__hash :: #force_inline proc "contextless" (self: ^Tt_Map($CAP, $V), key: int) -> int {
-        // & is much faster than %
-        return key & (CAP - 1)
+        return key & (CAP - 1) // & is much faster than %
     }
 
     // Returns pointer to item with key or pointer to next empty item
@@ -97,10 +95,9 @@ package maps
         return nil
     }
 
-    // Remove an item already located by tt_map__find_item_with_index (a present
-    // key: p.value != nil) — skips re-hashing and re-probing the key. The
-    // (p, f_ix) pair is only valid until the next remove; value-only add
-    // updates of existing keys don't move slots.
+    // Remove an item already located by tt_map__find_item_with_index — skips
+    // re-hashing/re-probing. (p, f_ix) is only valid until the next remove;
+    // value-only updates of existing keys don't move slots.
     tt_map__remove_found :: proc(self: ^Tt_Map($CAP, $V), p: ^Tt_Map_Item(V), f_ix: int) {
         p := p
 
@@ -112,7 +109,7 @@ package maps
         temp: [CAP]Tt_Map_Item(V) = --- // written before read below
         temp_len: int = 0
 
-        // Temporarily remove bucket items on right
+        // temporarily remove bucket items to the right
         for i:=0; i<CAP; i+=1 {
             n_ix += 1
             if n_ix >= CAP {
@@ -129,7 +126,7 @@ package maps
             p.value = nil
         }
 
-        // Readd
+        // re-add
         for i:=0; i < temp_len; i+=1 {
             tt_map__add(self, temp[i].key, temp[i].value)
         }
@@ -138,8 +135,7 @@ package maps
     tt_map__remove :: proc(self: ^Tt_Map($CAP, $V), key: int) -> oc.Core_Error {
         p, f_ix := tt_map__find_item_with_index(self, key)
 
-        // find returns the first empty slot when the key is absent — that is
-        // Not_Found for removal purposes, not a match
+        // find returns the first empty slot when the key is absent, not a match
         if p == nil || p.value == nil do return oc.Core_Error.Not_Found
 
         tt_map__remove_found(self, p, f_ix)
@@ -162,7 +158,7 @@ package maps
 ///////////////////////////////////////////////////////////////////////////////
 // Tests
 // 
-    
+
     @(test)
     tt_map__test :: proc(t: ^testing.T) {
         // Log into console when panic happens
@@ -181,7 +177,7 @@ package maps
         // map1
         //
 
-        map1: Tt_Map(2, ^int) 
+        map1: Tt_Map(2, ^int)
 
         item := tt_map__find_item(&map1, 33)
 
@@ -251,10 +247,10 @@ package maps
         testing.expect(t, tt_map__get(&map1, 1) == nil)
 
         //
-        // map2 
+        // map2
         // 
 
-        map2: Tt_Map(4, ^int) 
+        map2: Tt_Map(4, ^int)
         testing.expect(t, tt_map__add(&map2, 4, &v1) == nil)
         testing.expect(t, tt_map__add(&map2, 8, &v2) == nil)
         testing.expect(t, tt_map__add(&map2, 12, &v3) == nil)
@@ -271,7 +267,7 @@ package maps
         testing.expect(t, v == &v4)
         testing.expect(t, i == 3)
 
-        testing.expect(t, tt_map__remove(&map2, 8) == nil) // remove
+        testing.expect(t, tt_map__remove(&map2, 8) == nil)
         testing.expect(t, tt_map__get(&map2, 8) == nil)
 
         v,i = tt_map__get_with_index(&map2, 4)
@@ -284,7 +280,7 @@ package maps
         testing.expect(t, v == &v4)
         testing.expect(t, i == 2)
 
-        testing.expect(t, tt_map__remove(&map2, 4) == nil) // remove
+        testing.expect(t, tt_map__remove(&map2, 4) == nil)
         testing.expect(t, tt_map__get(&map2, 4) == nil)
 
         v,i = tt_map__get_with_index(&map2, 12)
@@ -311,8 +307,8 @@ package maps
         testing.expect(t, v == &v1)
         testing.expect(t, i == 3)
 
-        testing.expect(t, tt_map__remove(&map2, 8) == nil) // remove
-        testing.expect(t, tt_map__remove(&map2, 12) == nil) // remove
+        testing.expect(t, tt_map__remove(&map2, 8) == nil)
+        testing.expect(t, tt_map__remove(&map2, 12) == nil)
 
         v,i = tt_map__get_with_index(&map2, 4)
         testing.expect(t, v == &v1)

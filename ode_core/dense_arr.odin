@@ -12,13 +12,10 @@ package ode_core
     import "core:testing"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Dense_Arr -- tail swap unordered dense preallocated array. 
+// Dense_Arr -- tail-swap unordered dense preallocated array.
 // 
-// Use it when order doesn't matter but iteration speed does. 
-// When item is removed it is replaced with tail item and count decresed by one.
-// Has no empty (nil) items.
-// Why not use [dynamic] array? Because we want full control over 
-// memory allocations and what operations are allowed.
+// Use when order doesn't matter but iteration speed does; removed items are
+// replaced by the tail item. No [dynamic] array so allocation stays controlled.
 
     Dense_Arr :: struct($T: typeid) {
         cap: int, 
@@ -75,16 +72,14 @@ package ode_core
         return nil
     }
 
-    // `dense_arr__remove_by_index` removes the element at the specified `index`.
+    // Similar to unordered_remove() for dynamic arrays, but this isn't one.
     // 
-    // Note: Similar to unordered_remove() for dynamic arrays but this is not a dynamic array.
     dense_arr__remove_by_index :: proc(self: ^Dense_Arr($T), #any_int index: int, loc := #caller_location) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.items)
         runtime.bounds_check_error_loc(loc, index, raw.len)
 
         n := raw.len - 1
         if index != n {
-            // COPY
             self.items[index] = self.items[n]
         }
         raw.len -= 1

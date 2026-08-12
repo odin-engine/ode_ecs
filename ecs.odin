@@ -14,71 +14,54 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Defines
 
-    // If true, procedures validate parameters and their states using asserts.
-    // Set it to false if you 100% know what you are doing and want a slight speed 
-    // increase.
+    // Validates parameters/state via asserts. Set false for a slight speed gain
+    // once you're confident everything is correct.
     VALIDATIONS :: #config(ECS_VALIDATIONS, true)
-   
-    BIT_SET_VALUES_CAP :: 128   // don't change this unless Odin changes how 
-                                // many bits can be stored in a bit_set
 
-    // Like in other ECSs we use bit_set to store info about what components
-    // an entity has. By default one bit_set can store info about 128 types of
-    // components, if you increase TABLES_MULT number to 2, ODE ECS will store
-    // info about up to 256 types of components, if 3 then 384, 4 = 512, etc. 
-    // You can have unlimited number of types of components (as long as you 
-    // have memory). 
+    BIT_SET_VALUES_CAP :: 128   // don't change unless Odin changes bit_set's max bit count
+
+    // A bit_set tracks which components an entity has; one bit_set holds 128
+    // component types per TABLES_MULT (2 -> 256, 3 -> 384, etc).
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
-    
-    // Initial capacity of tables (component types). Doubles in size when cap 
-    // is reached (outside of the frame loop so it is ok). TABLES_CAP should be 
-    // less than or equal to BIT_SET_VALUES_CAP * TABLES_MULT. Increase 
-    // ECS_TABLES_MULT to raise this ceiling.
+
+    // Initial table (component type) capacity; doubles when reached (init-time
+    // only). Must stay <= BIT_SET_VALUES_CAP * TABLES_MULT.
     TABLES_CAP ::  #config(ECS_TABLES_CAP, 16)
 
-    // Initial capacity of views
     VIEWS_CAP :: #config(ECS_VIEWS_CAP, 16)
 
-    // Initial capacity of subscribers
     SUBSCRIBERS_CAP :: #config(ECS_SUBSCRIBERS_CAP, 8)
 
-    // -1 by default, just to see if index is not used or incorrect
-    DELETED_INDEX :: oc.DELETED_INDEX
+    DELETED_INDEX :: oc.DELETED_INDEX // -1 by default; marks "unused/incorrect index"
 
     //
     // Tiny_Table
     //
 
-        // You can change this if you want but remember that rows are not dynamically allocated for Tiny_Table and
-        // are just a part of Tiny_Table struct.
-        TINY_TABLE__ROW_CAP :: 8        // Tiny_Table can contain maximum TINY_TABLE__ROW_CAP number of components
-        TINY_TABLE__VIEWS_CAP :: 8      // Only maximum TINY_TABLE__VIEWS_CAP number of Views can subsribe to Tiny_Table
-        TINY_TABLE__MAP_CAP :: 32       // Should be power of 2
+        // Rows live inline in the struct, not dynamically allocated.
+        TINY_TABLE__ROW_CAP :: 8
+        TINY_TABLE__VIEWS_CAP :: 8      // max Views subscribed to one Tiny_Table
+        TINY_TABLE__MAP_CAP :: 32       // must be power of 2
 
-        // Maximum number of concurrently-alive Tiny_Tables in one Database — their
-        // View-subscriber bookkeeping (subscribers/subscribers_excluding/subscribers_any_of)
-        // lives in one Database-owned batch pool (tiny_table.odin's Tiny_Table_Subscriber_Slot)
-        // rather than inline in each Tiny_Table, so it needs its own cap.
+        // Max concurrently-alive Tiny_Tables per Database — their View-subscriber
+        // bookkeeping lives in one Database-owned batch pool (Tiny_Table_Subscriber_Slot
+        // in tiny_table.odin), so it needs its own cap.
         TINY_TABLES_CAP :: #config(ECS_TINY_TABLES_CAP, 32)
 
     //
     // Sync (delta-change replication, see sync.odin)
     //
 
-        // Off by default: the feature must be explicitly compiled in with
-        // -define:ECS_SYNC_ENABLED=true. 
+        // Off by default; compile in with -define:ECS_SYNC_ENABLED=true.
         SYNC_ENABLED :: #config(ECS_SYNC_ENABLED, false)
 
-        // Maximum number of Sync_Channel/Sync_Decoder that may watch one Table/
-        // Compact_Table/Tag_Table simultaneously (Dense_Arr-backed, like VIEWS_CAP).
+        // Max Sync_Channel/Sync_Decoder watching one Table/Compact_Table/Tag_Table at once.
         SYNC_CHANNELS_CAP :: #config(ECS_SYNC_CHANNELS_CAP, 8)
 
-        // Same as SYNC_CHANNELS_CAP but for Tiny_Table's batch-allocated slot
-        // (mirrors TINY_TABLE__VIEWS_CAP's reasoning).
+        // Same, but for Tiny_Table's batch-allocated slot.
         TINY_TABLE__SYNC_CHANNELS_CAP :: #config(ECS_TINY_TABLE__SYNC_CHANNELS_CAP, 4)
 
-        // Top-level fields per component a Sync_Channel can diff; the field-changed
-        // mask on the wire is a u32, one bit per field.
+        // Top-level fields per component a Sync_Channel can diff; wire field-changed mask is a u32.
         SYNC_MAX_FIELDS :: 32
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -94,10 +77,9 @@ package ode_ecs
         resume_tail_swap        :: database__resume_packing
 
     //
-    // Overbase (shared entity ID space, see overbase.odin). Attach a Database
-    // to one with init_from_overbase instead of init to share entities across
-    // Databases; create_entity/destroy_entity/is_expired/entities_len/get_entity
-    // below all accept either a ^Database or a ^Overbase.
+    // Overbase (shared entity ID space, see overbase.odin). Attach via
+    // init_from_overbase to share entities across Databases; create_entity/
+    // destroy_entity/is_expired/entities_len/get_entity below accept either.
     //
         overbase_init           :: overbase__init
         overbase_terminate      :: overbase__terminate
@@ -135,10 +117,9 @@ package ode_ecs
         load_from_file          :: database__load_from_file     // read a file + deserialize
 
     //
-    // Overbase serialization (binary snapshot of just the shared entity-id
-    // space, see overbase_serialization.odin). Use this to save/restore the
-    // id-space of an Overbase shared by multiple Databases — a Database's own
-    // serialize/deserialize never touches a shared Overbase's id-space.
+    // Overbase serialization (binary snapshot of just the shared entity-id space,
+    // see overbase_serialization.odin) — a Database's own serialize/deserialize
+    // never touches a shared Overbase's id-space.
     //
         overbase_serialized_size :: overbase__serialized_size
         overbase_serialize       :: overbase__serialize
@@ -147,7 +128,7 @@ package ode_ecs
         overbase_load_from_file  :: overbase__load_from_file
 
     //
-    // Table 
+    // Table
     //
         table_init              :: table__init
         table_terminate         :: table__terminate
@@ -158,22 +139,22 @@ package ode_ecs
 
         view_init               :: view__init
         view_terminate          :: view__terminate
-        view_len                :: view__len                        // Number of rows in view
-        view_cap                :: view__cap                        // Maximum number of rows of view
-        rebuild                 :: view__rebuild                    // Rebuild view and fill it with entities matching view's tables
-        refilter                :: view__refilter                   // Re-evaluate the view's filter for all rows and candidates in one sweep (after bulk mutations)
-        rerun_filter            :: view__rerun_filter               // Rerun filter for one entity
-        view_components_match   :: view__components_match           // Returns true if entity has components that would match this view (includes AND excludes), doesn't check filter
-        suspend                 :: view__suspend                    // Stop updating view when entities are created/destroyed or components/tags are added/removed
-        resume                  :: view__resume                     // Resume updating view after calling suspend
+        view_len                :: view__len
+        view_cap                :: view__cap
+        rebuild                 :: view__rebuild                    // full O(n) repopulation from the view's tables
+        refilter                :: view__refilter                   // re-evaluate filter for all rows/candidates in one sweep (after bulk mutations)
+        rerun_filter            :: view__rerun_filter               // re-evaluate filter for one entity
+        view_components_match   :: view__components_match           // true if entity's components match (includes+excludes), ignoring filter
+        suspend                 :: view__suspend                    // stop updating on entity/component/tag changes
+        resume                  :: view__resume                     // resume after suspend
 
     //
     // Group (owned group — enforced dense alignment, see group.odin)
     //
-        group_init          :: group__init                          // Take exclusive ownership of tables; members stay in an aligned prefix
+        group_init          :: group__init                          // exclusive ownership of tables; members stay in an aligned prefix
         group_terminate     :: group__terminate
-        group_len           :: group__len                           // Number of entities in the group
-        group_rebuild       :: group__rebuild                       // Rebuild membership from scratch (normally maintained incrementally)
+        group_len           :: group__len
+        group_rebuild       :: group__rebuild                       // rebuild membership from scratch (normally incremental)
 
     //
     // Iterator
@@ -184,19 +165,15 @@ package ode_ecs
         iterate             :: proc{iterator__iterate1, iterator__iterate2, iterator__iterate3, iterator__iterate4} // for-in sugar: for v1, v2 in iterate(&it, &t1, &t2) { ... }; Table($T) columns only
 
     //
-    // Arch_Iterator (dense iterator directly over an Arch_Table's own rows, see
-    // arch_iterator.odin)
+    // Arch_Iterator (dense iterator directly over an Arch_Table's own rows, see arch_iterator.odin)
     //
         arch_iterator_init  :: arch_iterator__init
         arch_iterator_reset :: arch_iterator__reset
-        // for-in sugar over an Arch_Table's own columns: for eid, pos, ai in next(&it, Position, AI) { ... }.
-        // Component types are supplied per call (up to 7), not bound at arch_iterator_init.
-        // The 0-arg overload (next(&it)) returns just the entity id — no column
-        // resolution at all; fetch components afterward via arch_table__get_component.
-        // Also covers Iterator (View-based): for eid, v1, v2 in next(&it, &t1, &t2) { ... },
-        // Table($T) columns only, like iterate — but next also returns eid and goes up to
-        // arity 7. Preferred over iterate going forward; iterate stays for compatibility.
-        next                 :: proc{
+        // for-in sugar: for eid, pos, ai in next(&it, Position, AI) { ... }. Component types
+        // are supplied per call (up to 7), not bound at init; next(&it) with no types returns
+        // just the entity id. Also covers View-based Iterator (Table($T) columns, like iterate,
+        // but with eid and up to arity 7) — preferred over iterate going forward.
+        next                 :: proc {
             arch_iterator__next,
             arch_iterator__next1,
             arch_iterator__next2,
@@ -300,8 +277,7 @@ package ode_ecs
         }
 
     //
-    // Relations (parent/child), require a Relations_Table on the database,
-    // see relations_table__init
+    // Relations (parent/child); requires a Relations_Table on the database, see relations_table__init
     //
         relations_init      :: relations_table__init                // Attach a Relations_Table to a Database (one per Database)
         relations_terminate :: relations_table__terminate
@@ -318,9 +294,8 @@ package ode_ecs
         is_relation_of      :: database__is_relation_of             // Does `e` relate to `target` directly (as child or parent)?
 
     //
-    // Component enable/disable (soft toggle, see database.odin) — the component/row stays
-    // put, just excluded from (disable_component) or restored to (enable_component) query
-    // matching. Takes the owning table's pointer, same convention as has_component.
+    // Component enable/disable (soft toggle, see database.odin) — component/row stays
+    // put, just excluded from (disable_component) or restored to (enable_component) queries.
     //
         disable_component :: proc {
             table__disable_component,
@@ -360,7 +335,6 @@ package ode_ecs
         // Entity
         //
 
-        // Get entity_id from different objects
         get_entity          :: proc {
             database__get_entity,
             overbase__get_entity,
@@ -373,7 +347,6 @@ package ode_ecs
             view_row__get_entity,
         }
 
-        // Get entity_id by row number from different tables
         get_entity_by_row_number :: proc {
             table__get_entity_by_row_number,
             compact_table__get_entity_by_row_number,
@@ -386,14 +359,12 @@ package ode_ecs
         // Component
         //
 
-        // Add component to different tables
         add_component       :: proc {
             table__add_component,
             compact_table__add_component,
             tiny_table__add_component,
         }
 
-        // Remove component from different tables
         remove_component    :: proc {
             table__remove_component,
             compact_table__remove_component,
@@ -408,7 +379,6 @@ package ode_ecs
             tiny_table__rerun_views_filters,
         }
 
-        // Get component from different tables or iterator or view_row
         get_component       :: proc {
             table__get_component_by_entity,
             compact_table__get_component_by_entity,
@@ -429,7 +399,6 @@ package ode_ecs
             view_row__get_component_for_arch_table,
         }
 
-        // Check if entity has component in different tables
         has_component       :: proc {
             table__has_component,
             compact_table__has_component,
@@ -438,14 +407,12 @@ package ode_ecs
             arch_table__has_entity,
         }
 
-        // Copy components between tables of the same type
         copy_component      :: proc {
             table__copy_component,
             compact_table__copy_component,
             tiny_table__copy_component,
         }
 
-        // Move components between tables of the same type
         move_component      :: proc {
             table__move_component,
             compact_table__move_component,
@@ -466,14 +433,13 @@ package ode_ecs
         }
         untag :: remove_tag
 
-        has_tag :: tag_table__has_tag                               // Is entity tagged in this Tag_Table?
+        has_tag :: tag_table__has_tag
 
         //
         // Other
         //
 
-        // Clear all data but do not terminate object
-        clear               :: proc {  // only data clear
+        clear               :: proc {
             database__clear,
             table__clear,
             compact_table__clear,
@@ -542,10 +508,8 @@ package ode_ecs
             relations_table__cap,
         }
 
-        // Live rows in row order as one contiguous slice. Prefer this over
-        // reading a table's `rows` field directly in a hot loop — see
-        // table__slice's doc comment (table.odin) for why the codegen
-        // differs.
+        // Live rows as one contiguous slice. Prefer over reading a table's `rows`
+        // field directly in a hot loop — see table__slice's doc comment for why.
         slice :: proc {
             table__slice,
             compact_table__slice,
@@ -583,7 +547,6 @@ package ode_ecs
             sync_decoder__memory_usage,
         }
 
-        // Is object valid (initialized and everything is ok)
         is_valid            :: proc {
             database__is_valid,
             overbase__is_valid,
@@ -606,9 +569,9 @@ package ode_ecs
     //
     // IDs
     //
-    
+
         entity_id ::        oc.ix_gen           // index + generation
-        table_id ::         distinct int 
+        table_id ::         distinct int
         table_record_id ::  distinct int
         view_id ::          distinct int
         view_record_id ::   distinct u32     // view row index; u32 halves the per-view eid_to_rid array

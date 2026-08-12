@@ -12,11 +12,9 @@ package ode_core
     import "core:testing"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Sparse_Arr -- unmovable ordered sparse array of pointers 
-// To save memory uses iteration over array to find free slots to refill.
-// Good when order/position in array is important because we do not move items (hence unmovable).
-// Good for relatively small arrays or when we know that removing and adding items happens not often.
-// Can contain slots with nil value (hence sparse).
+// Sparse_Arr -- unmovable ordered sparse array of pointers. Items never move
+// (order matters), so removal leaves nil holes that later adds scan to refill.
+// Best for small arrays or infrequent add/remove.
 
     Sparse_Arr :: struct($T: typeid) {
         items: []^T,   
@@ -53,8 +51,8 @@ package ode_core
         runtime.bounds_check_error_loc(loc, index, self.cap)
 
         self.items[index] = nil
-        
-        // If we removed tail item, we can decrease count by 1 so we dont iterate over tail item
+
+        // removing the tail item just shrinks len, no hole left behind
         if index == (raw.len - 1) {
             raw.len -= 1
         } else {
@@ -91,14 +89,12 @@ package ode_core
                     self.items[i] = value 
                     found = true
                 } else if t == nil && found {
-                    // has more nil values
                     self.has_nil_item = true
-                    break // no need to iterate further
+                    break
                 }
             }
 
-            // Sanity check
-            assert(found) // Something is wrong, expected to find slot with nil value
+            assert(found) // expected to find a slot with nil value
 
         } else {    
             id = raw.len
@@ -125,9 +121,8 @@ package ode_core
         return
     }
 
-    // Resizes the backing allocation to new_cap, preserving existing items (and any
-    // nil holes) in place. Rejects shrinking below the current live span instead of
-    // dropping items — Sparse_Arr is unmovable, so it never compacts to make room.
+    // Preserves items (and nil holes) in place; rejects shrinking below the live
+    // span since Sparse_Arr is unmovable and never compacts.
     sparse_arr__resize :: proc(self: ^Sparse_Arr($T), new_cap: int, allocator: runtime.Allocator) -> Error {
         live_len := sparse_arr__len(self)
         if new_cap < live_len do return Core_Error.Cannot_Shrink_Below_Length
@@ -174,7 +169,7 @@ package ode_core
 ///////////////////////////////////////////////////////////////////////////////
 // Tests
 // 
-    
+
     @(test)
     sparse_arr__test :: proc(t: ^testing.T) {
         // Log into console when panic happens
@@ -318,9 +313,8 @@ package ode_core
         alloc_err := sparse_arr__init(&sa, 4, allocator)
         testing.expect(t, alloc_err == runtime.Allocator_Error.None)
 
-        // Fill to capacity so removing index 0 or 2 leaves a real hole
-        // instead of just shrinking len (removing the tail index is a
-        // different, already-tested code path).
+        // Fill to capacity so removing index 0 or 2 leaves a real hole instead
+        // of just shrinking len (tail removal is a different, tested path).
         _, err := sparse_arr__add(&sa, &a)
         testing.expect(t, err == Core_Error.None)
         _, err = sparse_arr__add(&sa, &b)

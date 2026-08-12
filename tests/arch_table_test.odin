@@ -60,12 +60,9 @@ package ode_ecs__tests
         testing.expect(t, ecs.arch_table__init(&at, &db, 5, {}) == ecs.API_Error.Tables_Array_Should_Not_Be_Empty)
     }
 
-    // arch_table__init asserts (under VALIDATIONS) that every component type
-    // is not zero-sized — use Tag_Table for a marker/tag component instead.
-    // No dedicated test here: catching an expected debug-mode assert via
-    // testing.expect_assert_message hangs in this project's sandboxed test
-    // environment (confirmed with an isolated repro with no ecs.odin code
-    // involved), so this is covered by manual verification only.
+    // arch_table__init asserts every component is non-zero-sized (use Tag_Table
+    // for markers). No test here: catching the assert hangs this sandbox's
+    // test runner — covered by manual verification only.
 
     @(test)
     arch_table__create_entity_and_get_component__test :: proc(t: ^testing.T) {
@@ -104,12 +101,10 @@ package ode_ecs__tests
         ai2 := ecs.get_component(&at, eid, AI)
         testing.expect(t, ai2.IQ == 100 && ai2.neurons_count == 42)
 
-        // adding the same entity again is an error, existing data untouched
         aerr := ecs.arch_table__add_entity(&at, eid)
         testing.expect(t, aerr == ecs.API_Error.Component_Already_Exist)
         testing.expect(t, ecs.table_len(&at) == 1)
 
-        // an entity with no row reports has_component == false / get_component == nil
         other, oerr := ecs.create_entity(&db)
         testing.expect(t, oerr == nil)
         testing.expect(t, !ecs.has_component(&at, other))
@@ -142,9 +137,7 @@ package ode_ecs__tests
     }
 
     @(test)
-    // The test that would catch a bug where only one column got swapped:
-    // remove the middle of three entities and assert the tail entity's row
-    // moved correctly in EVERY column, not just one.
+    // Guards against only one column getting swapped on a middle-row removal.
     arch_table__remove_entity_swaps_every_column__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -181,11 +174,10 @@ package ode_ecs__tests
         testing.expect(t, ecs.has_component(&at, e0))
         testing.expect(t, ecs.has_component(&at, e2))
 
-        // e0 untouched
         testing.expect(t, ecs.get_component(&at, e0, Position).x == 100)
         testing.expect(t, ecs.get_component(&at, e0, AI).neurons_count == 1000)
 
-        // e2 moved — BOTH columns must reflect e2's original values at its new row
+        // e2 moved — both columns must carry over to its new row
         testing.expect(t, ecs.get_component(&at, e2, Position).x == 300)
         testing.expect(t, ecs.get_component(&at, e2, AI).neurons_count == 3000)
 
@@ -237,11 +229,8 @@ package ode_ecs__tests
     }
 
     @(test)
-    // Arch_Iterator's hole-check is guarded behind holes_count > 0 (perf: skips
-    // a per-row load+branch in the common no-holes case) — this proves the
-    // guard doesn't break correctness: a hole created via pause_packing must
-    // still be skipped by ecs.next() while it exists, not just by direct
-    // get_component/has_component access.
+    // Hole-check is guarded behind holes_count > 0 for perf; proves it still
+    // skips a paused-removal hole via ecs.next(), not just direct access.
     arch_iterator__skips_hole_while_paused__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -303,9 +292,7 @@ package ode_ecs__tests
         eid, _ := ecs.create_entity(&at)
         testing.expect(t, ecs.table_len(&at) == 1)
 
-        // Database.destroy_entity walks eid_to_bits generically — no Arch_Table-
-        // specific code in the destroy path, just the shared_table__remove_component
-        // dispatch added to shared_table.odin
+        // destroy_entity walks eid_to_bits generically; no Arch_Table-specific code needed
         testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
         testing.expect(t, ecs.table_len(&at) == 0)
         testing.expect(t, !ecs.has_component(&at, eid))
@@ -404,7 +391,6 @@ package ode_ecs__tests
         }
         testing.expect(t, count == 3)
 
-        // batch [3, 6)
         it2: ecs.Arch_Iterator
         testing.expect(t, ecs.arch_iterator_init(&it2, &at, start_row = 3, end_row = 6) == nil)
         count2 := 0
@@ -415,9 +401,8 @@ package ode_ecs__tests
         }
         testing.expect(t, count2 == 3)
 
-        // a component type that isn't a column of this archetype: next() is
-        // "contextless" so it can't assert — it just reports cond == false
-        // forever instead of a loud error (see arch_iterator.odin's doc comment)
+        // a type not in this archetype: next() is "contextless" so it can't
+        // assert — cond stays false forever instead of erroring (see arch_iterator.odin)
         no_ai: ecs.Arch_Table
         defer ecs.arch_table__terminate(&no_ai)
         testing.expect(t, ecs.arch_table__init(&no_ai, &db, 5, {Position}) == nil)
@@ -706,11 +691,8 @@ package ode_ecs__tests
     }
 
     @(test)
-    // Arch_Table mixed into a View alongside a regular Table — includes-only
-    // membership plus reading both a sparse-dense column and Arch_Table
-    // columns through the same Iterator via the manual iterator_next +
-    // get_component(&table, &it, $T) form (Arch_Table columns are not part
-    // of iterator__next1..7 / ecs.iterate, see their doc comments).
+    // Arch_Table mixed into a View with a regular Table; Arch_Table columns
+    // aren't part of iterator__next1..7, so they're read via get_component(&table, &it, $T).
     arch_table__mixed_view_with_table__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)

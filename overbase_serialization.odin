@@ -69,9 +69,9 @@ package ode_ecs
 // Serialize
 
     // Writes a snapshot of the Overbase's entity-id space into buf (sized via
-    // overbase__serialized_size). Zero allocations. Works regardless of how
-    // many Databases are currently attached — they are not part of the
-    // format. Errors: Serialize_Buffer_Too_Small.
+    // overbase__serialized_size). Zero allocations, works regardless of how
+    // many Databases are attached — they're not part of the format.
+    // Errors: Serialize_Buffer_Too_Small.
     overbase__serialize :: proc(self: ^Overbase, buf: []byte) -> (written: int, err: Error) {
         if !overbase__is_valid(self) do return 0, API_Error.Object_Invalid
 
@@ -90,9 +90,8 @@ package ode_ecs
         }
         snap_writer__write(&w, &hdr, size_of(hdr))
 
-        // The WHOLE items array: generations of freed and never-recreated
-        // slots drive expired-id detection and must round-trip. The freed
-        // list order matters too (LIFO reuse).
+        // The WHOLE items array: generations drive expired-id detection and
+        // must round-trip. The freed list order matters too (LIFO reuse).
         snap_writer__write(&w, raw_data(self.id_factory.items), self.id_factory.cap * size_of(oc.ix_gen))
         snap_writer__write(&w, raw_data(self.id_factory.freed), self.id_factory.freed_count * size_of(int))
         snap_writer__pad8(&w)
@@ -104,12 +103,10 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Deserialize
 
-    // Loads a snapshot into an already-initialized Overbase with cap >= the
-    // saved cap. All-or-nothing: the whole buffer is validated before
-    // anything is mutated. Safe to call whether zero or more Databases are
-    // currently attached to self — restoring the id-space this way is the
-    // deliberate, explicit way to roll back a shared entity-id space; unlike
-    // Database's own deserialize, this is the only call that touches it.
+    // Loads a snapshot into an already-initialized Overbase with cap >= saved.
+    // All-or-nothing: fully validated before mutating. Safe regardless of how
+    // many Databases are attached — this is the deliberate, explicit way to
+    // roll back a shared entity-id space (unlike Database's own deserialize).
     overbase__deserialize :: proc(self: ^Overbase, data: []byte) -> Error {
         if !overbase__is_valid(self) do return API_Error.Object_Invalid
 

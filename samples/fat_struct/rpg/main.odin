@@ -21,16 +21,12 @@ package ode_ecs_fat_struct_rpg
 
 //
 // Shared component
-//
-
     Description :: struct {
         text: string,
     }
 
 //
 // actors-side components: template reference + per-owner instance data
-//
-
     Item_Instance :: struct {
         template_id: ecs.entity_id, // key into item_templates
         count:       int,

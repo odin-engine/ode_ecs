@@ -11,14 +11,11 @@ package maps
     import "core:mem"
     import "core:testing"
 
-    // To test maps we need predictable hash values (like for key 0 hash should be 0, for key 1 hash should be 1, etc.)
-    // Set maps_testing to true in command line when you are runnig maps tests, like this:
+    // Predictable hash values for map tests (key 0 -> hash 0, key 1 -> hash 1, etc.):
     // odin test . -define:maps_testing=true
+    MAPS_TESTING :: #config(maps_testing, false)
 
-    MAPS_TESTING :: #config(maps_testing, false) // set to true to enable testing code
-
-    // Same switch as ode_core/ecs: -define:ECS_VALIDATIONS=false compiles out
-    // hot-path sanity asserts here too.
+    // Same switch as ode_core/ecs: also compiles out hot-path sanity asserts here.
     VALIDATIONS :: #config(ECS_VALIDATIONS, true)
 
 ///////////////////////////////////////////////////////////////////////////////

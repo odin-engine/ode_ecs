@@ -2,30 +2,15 @@
     2025 (c) Oleh, https://github.com/zm69
 
     Compares the speed of three ways to iterate the same entities doing the same per-row work:
-    View (sparse-dense Tables joined by a View, alignment *detected*), Group (the same Tables,
-    but *owned* — alignment enforced, no per-row check at all, see docs/group.md), and
-    Arch_Table (ODE_ECS's real archetype table — true per-column SoA storage, see
-    docs/arch_table.md).
+    View (alignment detected at runtime), Group (same tables but owned — alignment enforced, no
+    per-row check, see docs/group.md), and Arch_Table (true per-column SoA storage, see
+    docs/arch_table.md). Expect Arch_Table and Group to be fastest or close to it, since neither
+    pays a runtime alignment check; View can land close behind here because Group's packing of
+    its owned tables happens to also satisfy View's own alignment condition on the same tables.
 
-    An earlier version of this sample compared View against a hand-rolled archetype prototype
-    written before Arch_Table existed, which lost by ~2x for reasons specific to that
-    prototype (an interleaved AoS row instead of per-column storage, plus a map lookup per
-    field per entity in the hot loop) rather than anything inherent to archetypes. Arch_Table
-    fixes both, so expect it to land close to (or ahead of) View here — and Group, which pays
-    a row-swap cost on every membership change in exchange for never needing an alignment
-    check during iteration, should be the fastest or close to it.
-
-    NOTE: Group physically packs its owned tables' rows into a common aligned prefix as a 
-    side effect of maintaining membership — and since it owns the same 6 tables the View 
-    includes, that packing likely also satisfies the View's own (independently-detected) 
-    dense-alignment condition, pushing iterate_over_view onto its fast path more reliably 
-    than it would hit alone. In many other cases or most cases a View would be slower 
-    than an Arch_Table.
-    
     Run this sample with speed optimizations to see results closer to real-world performance:
 
     odin run . -o:speed
-
 */
 
 package ode_ecs_sample3
@@ -77,11 +62,8 @@ package ode_ecs_sample3
 
 //
 // Globals
-//
-    // ECS Database
     db: ecs.Database
 
-    // Component tables
     positions : ecs.Table(Position)
     ais : ecs.Table(AI)
     physics: ecs.Table(Physical)
@@ -90,11 +72,9 @@ package ode_ecs_sample3
     comps_3: ecs.Table(Component_3)
     comps_4: ecs.Table(Component_4)
 
-    // Views
     physical: ecs.View
 
-    // Owns the same 6 tables as `physical` above — same membership, enforced alignment
-    // instead of detected alignment. See docs/group.md.
+    // Owns the same 6 tables as `physical` — enforced alignment instead of detected. See docs/group.md.
     physical_group: ecs.Group
 
     // All possible components combinations for generating random entities
@@ -113,85 +93,67 @@ main :: proc() {
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
     //
     // Actual ODE_ECS sample starts here.
-    //
-
-        //
-        // Simple error handling
-        //
         err: ecs.Error
 
     //
     // Init
-    //
-
-        // Init database
         defer {
             err = ecs.terminate(&db)
             if err != nil do report_error(err)
         }
-        err = ecs.init(&db, 100_000, allocator) // Maximum 100K entities
+        err = ecs.init(&db, 100_000, allocator)
         if err != nil { report_error(err); return }
 
         // Init tables
-        err = ecs.table_init(&positions, &db, 100_000) // Maximum 100K position components
+        err = ecs.table_init(&positions, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&ais, &db, 100_000) // Maximum 20K AI components
+        err = ecs.table_init(&ais, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&physics, &db, 100_000) // Maximum 70K position components
+        err = ecs.table_init(&physics, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&comps_1, &db, 100_000) // Maximum 70K position components
+        err = ecs.table_init(&comps_1, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&comps_2, &db, 100_000) // Maximum 70K position components
+        err = ecs.table_init(&comps_2, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&comps_3, &db, 100_000) // Maximum 70K position components
+        err = ecs.table_init(&comps_3, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&comps_4, &db, 100_000) // Maximum 70K position components
+        err = ecs.table_init(&comps_4, &db, 100_000)
         if err != nil { report_error(err); return }
 
         // Init views
         err = ecs.view_init(&physical, &db, {&positions, &comps_1, &comps_2, &comps_3, &comps_4, &physics})
         if err != nil { report_error(err); return }
 
-        // Group: same 6 tables as `physical` above — same membership, so group_len will
-        // match view_len exactly. A table can be included in a View and owned by a Group
-        // at the same time (see Sample14), so this doesn't disturb `physical` at all.
+        // Same 6 tables as `physical` — a table can be owned by a Group and included in a View at once (see Sample14)
         err = ecs.group_init(&physical_group, &db, {&positions, &comps_1, &comps_2, &comps_3, &comps_4, &physics})
         if err != nil { report_error(err); return }
 
-        // Arch_Table is terminated automatically with the database, like every other table.
-        // All 6 distinct types, matching `physical`'s/`physical_group`'s 6 owned/included
-        // tables exactly — the archetype row is 264 bytes, but iteration only ever reads the
-        // Position/Physical columns (below), and since Arch_Table stores each column as its
-        // own separate dense array (true SoA), the other 4 columns cost nothing extra to skip.
+        // Same 6 types as `physical`/`physical_group`; iteration below only reads Position/Physical,
+        // and since Arch_Table stores columns SoA, the other 4 columns cost nothing extra to skip.
         err = ecs.arch_table__init(&arch, &db, cap = 100_000, component_types = {Position, Component, Component_2, Component_3, Component_4, Physical})
         if err != nil { report_error(err); return }
 
     //
     // Systems
-    //
-
         iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
             err: ecs.Error
             it: ecs.Iterator
@@ -200,9 +162,6 @@ main :: proc() {
             if err != nil { report_error(err); return }
 
             for _, pos, ph in ecs.next(&it, positions, physics) {
-
-                // Doing some calculations on components
-
                 pos.x += it.raw_index
                 pos.y += it.raw_index
 
@@ -213,7 +172,6 @@ main :: proc() {
 
         iterate_over_ai_table :: proc (table: ^ecs.Table(AI)) {
             for &ai, index in ecs.slice(table) {
-                // Doing some calculations on components
                 ai.neurons_count += index
             }
         }
@@ -226,9 +184,6 @@ main :: proc() {
             if err != nil { report_error(err); return }
 
             for _, pos, ph in ecs.next(&it, Position, Physical) {
-
-                // Doing some calculations on components — same workload as iterate_over_view
-
                 pos.x += it.index
                 pos.y += it.index
 
@@ -238,15 +193,11 @@ main :: proc() {
         }
 
         iterate_over_group :: proc(group: ^ecs.Group, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
-            // Alignment is enforced by the Group, not detected — no check needed, no nil case
-            // to fall back from (unlike View's slice, which returns nil when not aligned).
+            // Alignment is enforced by the Group, not detected — no check, no unaligned fallback needed
             pos_slice := ecs.slice(group, positions)
             ph_slice := ecs.slice(group, physics)
 
             for i in 0..<len(pos_slice) {
-
-                // Doing some calculations on components — same workload as iterate_over_view
-
                 pos_slice[i].x += i
                 pos_slice[i].y += i
 
@@ -256,7 +207,7 @@ main :: proc() {
         }
 
     //
-    // Game load, create 100_000 entities with random components
+    // Game load: create 100,000 entities with random components
     //
         create_entities_with_random_components_and_data(100_000, true)
 
@@ -264,7 +215,7 @@ main :: proc() {
     step_1_view_len: int
     for j:=0; j < EXECUTE_TIMES; j+=1 {
         //
-        //  Game loop, frame zero, iterating over table only
+        // Frame zero: iterate over table only
         //
         sw: time.Stopwatch
         time.stopwatch_start(&sw)
@@ -276,9 +227,8 @@ main :: proc() {
         _, _, _, tt.table[j] = time.precise_clock_from_stopwatch(sw)
 
         //
-        //  Game loop, frame one, iterating over view
+        // Frame one: iterate over view
         //
-
             step_1_view_len = ecs.view_len(&physical)
             time.stopwatch_reset(&sw)
             time.stopwatch_start(&sw)
@@ -290,9 +240,8 @@ main :: proc() {
             _, _, _, tt.view[j] = time.precise_clock_from_stopwatch(sw)
 
         //
-        //  Game loop, frame two, iterating over Arch_Table
+        // Frame two: iterate over Arch_Table
         //
-
             time.stopwatch_reset(&sw)
             time.stopwatch_start(&sw)
 
@@ -303,9 +252,8 @@ main :: proc() {
             _, _, _, tt.arch[j] = time.precise_clock_from_stopwatch(sw)
 
         //
-        //  Game loop, frame three, iterating over Group
+        // Frame three: iterate over Group
         //
-
             time.stopwatch_reset(&sw)
             time.stopwatch_start(&sw)
 
@@ -374,7 +322,6 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
         eid, err = ecs.database__create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // Randomly chose what components combo we want for entity
         combo := rand.choice(g_combo_choice[:])
 
         for j:=0; j<3; j+=1 {
@@ -445,7 +392,6 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
 
 //////////////////////////////////////////////////////////////////////////////////
 // Time tracking
-
     EXECUTE_TIMES :: 10
 
     Time_Track :: struct {

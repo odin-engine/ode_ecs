@@ -14,15 +14,11 @@ package ode_ecs
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Arch_Table — true-SoA archetype table: N type-erased columns sharing ONE
-// eid_to_rid / rid_to_eid index. A row (every column) is added/removed/moved
-// as a single unit — one swap relocates all N columns' bytes in one pass and
-// patches the shared index once, instead of Group's N separately-allocated
-// Table(T)s kept in lockstep via N separate table_raw__swap_rows calls.
+// Arch_Table — true-SoA archetype table: N type-erased columns sharing one
+// eid_to_rid/rid_to_eid index; a row (every column) moves as a single unit
+// in one swap, unlike Group's N separate table_raw__swap_rows calls.
+// Membership is whole-row, all-or-nothing (like Tag_Table, not per-component like Table).
 //
-// Membership is whole-row, all-or-nothing (closer to Tag_Table's add_tag/
-// remove_tag than to Table's per-component add_component/remove_component) —
-// an entity either has every column of the archetype or none of them.
 
     // eid_to_rid value for "entity has no row in this archetype"
     @(private)
@@ -43,12 +39,8 @@ package ode_ecs
         rid_to_eid: []entity_id,       // shared across ALL columns, len == cap, always full length (see arch_table__len)
         eid_to_rid: []u32,             // shared across ALL columns, len == entities_cap; ARCH_TABLE_NO_RID when absent
 
-        len: int,                      // live row count, [0, cap] — plain field, not a slice-length hijack (rid_to_eid
-                                        // indexes 0..<cap must stay valid even past the live span, e.g. when writing a
-                                        // freshly added row at index len, so rid_to_eid itself cannot be the len-carrier
-                                        // the way Table's `rows` is: Table has TWO slices, one hijacked (rows) and one
-                                        // always full-length (rid_to_eid) that the hijacked one indexes into. Arch_Table
-                                        // only has ONE shared index slice, so it can't be both without breaking bounds checks.
+        len: int,                      // live row count [0, cap] — plain field, not a slice-length hijack: unlike
+                                        // Table (rows hijacked, rid_to_eid full-length), Arch_Table has only one shared index slice.
 
         owner: ^Group,                 // Group ownership hook lands in a later phase; always nil for now
 
@@ -69,7 +61,6 @@ package ode_ecs
         subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
     }
 
-    // Is table valid and ready to use (initialized and everything is ok)
     arch_table__is_valid :: proc(self: ^Arch_Table) -> bool {
         if self == nil do return false
         if !shared_table__is_valid_internal(&self.shared) do return false
@@ -89,7 +80,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
             assert(cap < int(max(u32)), loc = loc) // row ids must fit the u32 eid_to_rid index
@@ -139,10 +130,8 @@ package ode_ecs
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
-        // subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-        // are allocated lazily, on first attach (see arch_table__attach_subscriber etc.)
-        // — most tables never gain a filtered/excluding/any_of subscriber, so this
-        // keeps them at zero cost.
+        // Lazily allocated on first attach (see arch_table__attach_subscriber) — keeps
+        // tables without filtered/excluding/any_of subscribers at zero cost.
 
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
@@ -259,21 +248,16 @@ package ode_ecs
     }
 
     @(private)
-    // Is packing (tail swap) currently deferred for this table — a table owned
-    // by a Group defers to the group's own pause state (rows must move in
-    // lock-step across every table the group owns, see table_raw__is_packing_paused
-    // for the identical Table-side logic); a standalone Arch_Table checks the
-    // database-wide flag or its own pause_packing.
+    // Deferred packing check: a Group-owned table defers to the group's pause state
+    // (rows move in lock-step across owned tables); standalone checks db-wide/self flag.
     arch_table__is_packing_paused :: #force_inline proc "contextless" (self: ^Arch_Table) -> bool {
         if self.owner != nil do return group__is_packing_paused(self.owner)
         return shared_table__is_packing_paused(cast(^Shared_Table) self)
     }
 
     @(private)
-    // Finds the column index whose component type is T; -1 if the archetype
-    // does not have this column. Linear scan over self.columns — cheap for
-    // realistic archetype column counts (a handful), avoids the hidden
-    // allocation a map[typeid]int would need.
+    // Column index for type T, -1 if absent. Linear scan — cheap for realistic
+    // archetype column counts, avoids the hidden allocation a map[typeid]int would need.
     arch_table__column_index :: proc "contextless" (self: ^Arch_Table, id: typeid) -> int {
         for &col, i in self.columns {
             if col.type_info.id == id do return i
@@ -282,14 +266,12 @@ package ode_ecs
     }
 
     @(private)
-    // Fast path for Arch_Iterator's nextN, which resolves col_idx once at init
-    // and caches it — no per-row column scan, no VALIDATIONS assert (so this can
-    // stay "contextless" and be called from the iterator's own contextless next).
+    // Fast path for Arch_Iterator's nextN (col_idx resolved once, cached) — no
+    // per-row scan, no VALIDATIONS assert, so it can stay contextless.
     arch_table__component_ptr_by_col :: #force_inline proc "contextless" (self: ^Arch_Table, #any_int row: int, #any_int col_idx: int, $T: typeid) -> ^T #no_bounds_check {
         col := &self.columns[col_idx]
-        // size_of(T) (a compile-time constant, T is already known here) instead
-        // of col.type_info.size (a runtime load) — lets the multiply fold into a
-        // constant shift, same trick table_raw__rid_to_ptr_sized documents.
+        // size_of(T) is compile-time (unlike col.type_info.size), so the multiply
+        // folds into a constant shift — same trick as table_raw__rid_to_ptr_sized.
         return cast(^T) rawptr(uintptr(raw_data(col.rows)) + uintptr(row) * uintptr(size_of(T)))
     }
 
@@ -324,9 +306,8 @@ package ode_ecs
         }
     }
 
-    // Components of one column in row order as one contiguous slice — the
-    // archetype's own rows are already packed, so (unlike View's slice)
-    // this needs no alignment check.
+    // One column's components as a contiguous slice, row order — archetype rows
+    // are already packed, so (unlike View's slice) no alignment check needed.
     @(require_results)
     arch_table__dense_slice :: proc(self: ^Arch_Table, $T: typeid) -> []T {
         idx := arch_table__column_index(self, typeid_of(T))
@@ -349,9 +330,8 @@ package ode_ecs
         rid := self.eid_to_rid[eid.ix]
 
         if rid != ARCH_TABLE_NO_RID {
-            // Notify subscribed views anyway — recovers a view membership that
-            // a previous add failed to register (e.g. view was at cap), same as
-            // table_raw__add_component_sized's already-exists path.
+            // Notify subscribed views anyway — recovers view membership a previous add
+            // failed to register (e.g. view was at cap); same as table_raw__add_component_sized.
             for view in self.subscribers.items {
                 if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
             }
@@ -381,10 +361,8 @@ package ode_ecs
 
         self.len += 1
 
-        // Group maintenance: if the entity now has every owned component, swap
-        // its rows into the group prefix (deferred while tail swap is paused).
-        // No component pointer to re-derive here (unlike Table's add, which
-        // returns one) — arch_table__add_entity is whole-row, no-op return.
+        // Group maintenance: swap into the group prefix if the entity now has every
+        // owned component (deferred while tail swap paused). No pointer to re-derive here.
         if self.owner != nil do group__on_add(self.owner, eid)
 
         for view in self.subscribers.items {
@@ -420,9 +398,8 @@ package ode_ecs
         return eid, nil
     }
 
-    // Removes `target_eid`'s row (every column) via a single tail-swap across
-    // all columns — the entire point of Arch_Table vs. N Group-owned tables,
-    // which would pay N separate swaps here.
+    // Removes target_eid's row (every column) via one tail-swap across all
+    // columns — vs. N separate swaps for N Group-owned tables.
     arch_table__remove_entity :: proc(self: ^Arch_Table, target_eid: entity_id, loc := #caller_location) -> (err: Error) {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -440,10 +417,9 @@ package ode_ecs
         // below changes the pause state.
         paused := arch_table__is_packing_paused(self)
 
-        // Group maintenance: a member losing an owned component leaves the group —
-        // swap its row out of the prefix (in every owned table) before this
-        // table's own tail swap runs. Members sit at rid < owner.len by invariant.
-        // While tail swap is paused rows must not move: mark dirty, rebuild on resume.
+        // Group maintenance: losing an owned component evicts the member — swap its
+        // row out of the prefix before this table's tail swap runs (members sit at
+        // rid < owner.len). Paused: mark dirty and rebuild on resume instead of moving rows.
         if self.owner != nil && int(target_rid) < self.owner.len {
             if paused {
                 self.owner.dirty = true
@@ -653,10 +629,9 @@ package ode_ecs
     }
 
     @(private)
-    // Swap two live rows (every column's bytes + both index directions) and
-    // notify subscribed views of the new row ids. One call moves the WHOLE
-    // archetype row — contrast with Group, which pays one table_raw__swap_rows
-    // call per owned table for the same entity transition.
+    // Swaps two live rows (all columns + both index directions) and notifies
+    // subscribed views. One call moves the whole archetype row — contrast with
+    // Group's one table_raw__swap_rows call per owned table.
     arch_table__swap_rows :: proc(self: ^Arch_Table, #any_int rid_a: int, #any_int rid_b: int) #no_bounds_check {
         if rid_a == rid_b do return
 
@@ -686,14 +661,9 @@ package ode_ecs
     }
 
     @(private)
-    // Type-erased add for Command_Buffer replay (see shared_table__add_component's
-    // Table_Type.Arch_Table case and command_buffer__arch_add_entity1..4) — `data`,
-    // if not nil, is a packed payload blob laid out per col_payload_offsets.
-    // "Last write wins": if the row already exists, `data` overwrites it (mirrors
-    // table_raw__add_component_sized's already-exists path) instead of being
-    // dropped — arch_table__add_entity already ran the full membership-notify
-    // dance for both the new-row and already-exists cases, so only the data copy
-    // (+ filter rerun on the overwrite path) is left to do here.
+    // Type-erased add for Command_Buffer replay — `data`, if not nil, is a packed
+    // payload blob laid out per col_payload_offsets. "Last write wins": overwrites
+    // an existing row instead of dropping it; membership notify already ran in arch_table__add_entity.
     arch_table__add_entity_from_payload :: proc(self: ^Arch_Table, eid: entity_id, data: rawptr) -> (component: rawptr, err: Error) {
         aerr := arch_table__add_entity(self, eid)
         if aerr != nil && aerr != API_Error.Component_Already_Exist do return nil, aerr
@@ -771,10 +741,8 @@ package ode_ecs
     }
 
     @(private)
-    // After a component was removed from this table (eid_to_bits already updated),
-    // a view excluding this table may newly match the entity. Skipped while the
-    // entity itself is being destroyed — later removals would just evict it again.
-    // #force_inline: see table_base__notify_excluding_views.
+    // A view excluding this table may newly match after a component removal here.
+    // Skipped mid-destroy (later removals would just evict it again). #force_inline: see table_base__notify_excluding_views.
     arch_table__notify_excluding_views :: #force_inline proc(self: ^Arch_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {

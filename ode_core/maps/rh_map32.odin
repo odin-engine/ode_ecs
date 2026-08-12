@@ -15,12 +15,9 @@ package maps
 ///////////////////////////////////////////////////////////////////////////////
 // Rh_Map32 - Robin Hood map with 8-byte items (u32 key -> u32 value).
 //
-// Robin Hood hashing with 8-byte items, so many probes fit in one cache line
-// and the memory footprint stays small.
-// Made for eid.ix -> row-id indexes (Compact_Table): keys and values are
-// bounded by entities/table capacity, which must fit in u32.
-// RH_MAP32_DELETED (max(u32)) is reserved — it is both the empty-slot key
-// marker and the "not found" return value.
+// 8-byte items keep many probes in one cache line and the footprint small.
+// Made for eid.ix -> row-id indexes (Compact_Table), so keys/values fit u32.
+// RH_MAP32_DELETED (max(u32)) doubles as the empty-slot marker and "not found".
 
     RH_MAP32_DELETED :: max(u32)
 
@@ -51,7 +48,7 @@ package maps
     rh_map32__init :: proc(self: ^Rh_Map32, #any_int capacity: int, allocator := context.allocator, loc := #caller_location) -> (err: oc.Error) {
         assert(self != nil, loc = loc)
         assert(capacity > 1, loc = loc)
-        assert(capacity < int(max(u32)), loc = loc) // keys/values must fit in u32
+        assert(capacity < int(max(u32)), loc = loc) // must fit in u32
 
         if !math.is_power_of_two(capacity) do return oc.Core_Error.Capacity_Is_Not_Power_Of_2
         self.capacity = capacity
@@ -64,8 +61,7 @@ package maps
 
         rh_map32__clear(self)  // requires self.capacity to be set
 
-        // derive from self.capacity (may have been bumped to the 8 minimum above),
-        // otherwise part of the allocated items would never be probed
+        // derive from self.capacity (may have been bumped to the 8 minimum above)
         when MAPS_TESTING {
             self.half_capacity = self.capacity
         } else {
@@ -92,26 +88,22 @@ package maps
         return nil
     }
 
-    // Low-bits Fibonacci hash for power-of-2 capacity. Deliberately the low bits:
-    // entity indexes are dense consecutive ints and (k * odd_constant) mod 2^n is a
-    // bijection on any aligned power-of-2 key range — zero collisions for the common
-    // key distributions (see the measured dead ends in benchmarks/main.odin).
+    // Low-bits Fibonacci hash for power-of-2 capacity: (k * odd_constant) mod 2^n
+    // is a bijection on dense consecutive keys, so zero collisions for entity indexes.
     @(private)
     rh_map32__hash :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32) -> int {
         when MAPS_TESTING {
-            // For testing we need more predictable hash values
-            return int(key) & self.mask
+            return int(key) & self.mask // predictable hash for tests
         } else {
             return cast(int)((u64(key) * 11400714819323198485) & u64(self.mask))
         }
     }
 
-    // Insert; key must be < RH_MAP32_DELETED. 
+    // Insert; key must be < RH_MAP32_DELETED.
     // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
     rh_map32__add :: proc(self: ^Rh_Map32, key: u32, value: u32) -> (err: oc.Core_Error) #no_bounds_check {
 
-        // if load factor >= 0.5
-        if self.count >= self.half_capacity {
+        if self.count >= self.half_capacity { // load factor >= 0.5
             return oc.Core_Error.Container_Is_Full
         }
 
@@ -127,8 +119,7 @@ package maps
                 return oc.Core_Error.None
             }
 
-            // Update existing key
-            if self.items[idx].key == key {
+            if self.items[idx].key == key { // update existing key
                 self.items[idx].value = item.value
                 return oc.Core_Error.None
             }
@@ -136,12 +127,9 @@ package maps
             existing_key := self.items[idx].key
             existing_distance := (idx - rh_map32__hash(self, existing_key)) & self.mask
 
-            if existing_distance < probe_distance {
-                // Robin Hood swap
+            if existing_distance < probe_distance { // Robin Hood swap
                 temp_item := self.items[idx]
-
                 self.items[idx] = item
-
                 item = temp_item
                 probe_distance = existing_distance
             }
@@ -149,26 +137,18 @@ package maps
             idx = (idx + 1) & self.mask
             probe_distance += 1
 
-            // No mid-probe bail-out: count < half_capacity (checked on entry)
-            // guarantees an empty slot exists, so the loop always terminates.
-            // Returning here after a Robin Hood swap would drop the displaced
-            // item and corrupt the map.
+            // No mid-probe bail-out: count < half_capacity guarantees an empty
+            // slot exists, and bailing after a swap would drop the displaced item.
         }
     }
 
-    // Single-probe get-or-insert: one Robin Hood walk that either finds an
-    // existing key (found=true, map unmodified) or, when `can_insert` is true,
-    // inserts `insert_value` at the walk's natural point (same placement as
-    // rh_map32__add) and reports found=false. Saves the second full probe that
-    // a separate get() then conditional add() pays on every miss — the walk to
-    // the empty slot is identical in both, so add() was re-doing work get()
-    // had already done. `can_insert` lets a caller gate insertion on its own
-    // external capacity (e.g. Compact_Table's raw.len < cap) without a second
-    // probe to re-check it; err is only ever Container_Is_Full, and only when
-    // an insert was actually attempted (can_insert=true) but this map's own
-    // load-factor limit blocked it — mirrors rh_map32__add's load check.
-    // Returns Core_Error (not the wider oc.Error) — see rh_map32__add's doc
-    // comment for why (this proc never allocates either).
+    // Single-probe get-or-insert: one walk either finds an existing key
+    // (found=true, unmodified) or, if can_insert, inserts at the walk's
+    // natural point and reports found=false — avoids the redundant second
+    // probe a separate get()+add() would pay. can_insert lets a caller gate
+    // insertion on external capacity; err is Container_Is_Full only when an
+    // insert was attempted but this map's own load factor blocked it.
+    // Core_Error, not oc.Error — never allocates (see rh_map32__add).
     rh_map32__get_or_insert :: #force_inline proc(self: ^Rh_Map32, key: u32, insert_value: u32, can_insert: bool) -> (value: u32, found: bool, err: oc.Core_Error) #no_bounds_check {
         insertable := can_insert && self.count < self.half_capacity
 
@@ -239,9 +219,8 @@ package maps
         return RH_MAP32_DELETED, oc.DELETED_INDEX
     }
 
-    // Lookup returning (value, slot index); slot index is oc.DELETED_INDEX when
-    // the key is absent. The slot index feeds rh_map32__remove_at so callers
-    // that already looked a key up don't pay a second hash + probe to remove it.
+    // Returns (value, slot index); index is oc.DELETED_INDEX when absent.
+    // Feeds rh_map32__remove_at so callers avoid a second hash+probe to remove.
     rh_map32__get_with_index :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32) -> (u32, int) {
         ix := rh_map32__hash(self, key)
 
@@ -257,8 +236,7 @@ package maps
         return val
     }
 
-    // Returns Core_Error (not the wider oc.Error) — see rh_map32__add's doc
-    // comment for why (this proc never allocates either).
+    // Core_Error, not oc.Error — never allocates (see rh_map32__add).
     rh_map32__update :: proc(self: ^Rh_Map32, key: u32, new_value: u32) -> (err: oc.Core_Error) {
         _, ix := rh_map32__get_with_index(self, key)
 
@@ -271,16 +249,14 @@ package maps
         return oc.Core_Error.None
     }
 
-    // Remove the item at a slot index previously returned by
-    // rh_map32__get_with_index for a present key — runs the backward shift
-    // without re-hashing or re-probing. The index is only valid until the next
-    // structural map change (add/remove); value-only updates don't move slots.
+    // Remove the item at a slot index from rh_map32__get_with_index for a
+    // present key — backward shift without re-hashing. Index is only valid
+    // until the next add/remove; value-only updates don't move slots.
     // #no_bounds_check: indexes are always masked with capacity - 1, capacity == len(items)
     rh_map32__remove_at :: proc(self: ^Rh_Map32, #any_int idx: int) #no_bounds_check {
         idx := idx
 
-        // Backward shift
-        next_idx := (idx + 1) & self.mask
+        next_idx := (idx + 1) & self.mask // backward shift
         for self.items[next_idx].key != RH_MAP32_DELETED {
             home := rh_map32__hash(self, self.items[next_idx].key)
             if ((next_idx - home) & self.mask) == 0 {
@@ -296,8 +272,7 @@ package maps
         self.count -= 1
     }
 
-    // Delete. Returns Core_Error (not the wider oc.Error) — see
-    // rh_map32__add's doc comment for why (this proc never allocates either).
+    // Core_Error, not oc.Error — never allocates (see rh_map32__add).
     rh_map32__remove :: proc(self: ^Rh_Map32, key: u32) -> oc.Core_Error {
         _, idx := rh_map32__get_with_index(self, key)
         if idx == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
@@ -327,9 +302,8 @@ package maps
 
     @(test)
     rh_map32__test :: proc(t: ^testing.T) {
-        // This test asserts exact slot placement, which needs the predictable
-        // identity hash. Skip (don't fail) in production-hash mode; behavioral
-        // coverage for that mode lives in rh_map32__behavior__test.
+        // Needs the predictable identity hash for exact slot placement; skip
+        // in production-hash mode (behavioral coverage lives in rh_map32__behavior__test).
         when !MAPS_TESTING {
             log.warn("rh_map32__test skipped: slot-placement test needs -define:maps_testing=true")
             return
@@ -343,9 +317,8 @@ package maps
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
 
         //
-        // Make sure we are using the simplified hash function for testing
+        // make sure we are using the simplified hash function for testing
         //
-
         testing.expect(t, rh_map32__hash(&Rh_Map32{ capacity = 16, mask = 15 }, 0) == 0)
         testing.expect(t, rh_map32__hash(&Rh_Map32{ capacity = 16, mask = 15 }, 17) == 1)
 
@@ -470,10 +443,9 @@ package maps
         testing.expect(t, rh_map32__terminate(&map1, allocator) == nil)
     }
 
-    // Behavioral test: asserts observable behavior only (never slot placement),
-    // so it runs in BOTH modes. Without -define:maps_testing=true this is what
-    // exercises the production Fibonacci hash, the 0.5 load factor and the
-    // min-capacity-8 bump.
+    // Asserts observable behavior only (never slot placement), so it runs in
+    // both modes; without -define:maps_testing=true it exercises the
+    // production Fibonacci hash, the 0.5 load factor, and the min-capacity-8 bump.
     @(test)
     rh_map32__behavior__test :: proc(t: ^testing.T) {
         // Log into console when panic happens

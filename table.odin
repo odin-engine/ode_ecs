@@ -27,13 +27,11 @@ package ode_ecs
         type_info: ^runtime.Type_Info,
         rid_to_eid: []entity_id,
         // eid.ix -> row id (TABLE_NO_RID when absent); u32 instead of a pointer
-        // halves this entities_cap-sized array. The component address is derived
-        // as &rows[rid] on lookup, so a tail swap patches a rid, not a pointer.
+        // halves this entities_cap-sized array. Component address is &rows[rid].
         eid_to_rid: []u32,
 
         // Group that owns this table (at most one), nil when not owned.
-        // See group.odin: the owner keeps group members in the aligned prefix
-        // [0, owner.len) of rows, so add/remove paths below notify it.
+        // Owner keeps group members in the aligned prefix [0, owner.len) of rows.
         owner: ^Group,
 
         cap: int,
@@ -84,10 +82,8 @@ package ode_ecs
 
         self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
 
-        // if you need to optimize memory usage, use Tiny_Table if your table cap is less or equal than TINY_TABLE__ROW_CAP,
-        // and use Compact_Table if you want to save memory and your table cap is less than db.overbase.id_factory.cap / 4 but greater than TINY_TABLE__ROW_CAP
-        // in other cases or if you do not care about memory usage, use Table
-        // db.overbase.id_factory.cap is database entities cap
+        // Use Tiny_Table when cap <= TINY_TABLE__ROW_CAP, Compact_Table when cap is
+        // small relative to db.overbase.id_factory.cap (entities cap), else Table.
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
@@ -186,13 +182,10 @@ package ode_ecs
     }
 
     @(private)
-    // After a component was removed from this table (eid_to_bits already updated),
-    // a view excluding this table may newly match the entity. Skipped while the
-    // entity itself is being destroyed — later removals would just evict it again.
-    // #force_inline: this is a real proc call at every remove_component call site
-    // (unlike the inline subscribers/subscribers_any_of loops next to it) — inlining
-    // collapses the empty-subscribers_excluding case (the common one) down to the
-    // Dense_Arr's single length check instead of paying a call/return every time.
+    // After a component is removed, a view excluding this table may newly match the
+    // entity. Skipped while the entity is being destroyed — later removals would just
+    // evict it again. #force_inline collapses the common empty-subscribers case to a
+    // single length check instead of a call/return.
     table_base__notify_excluding_views :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
@@ -210,12 +203,9 @@ package ode_ecs
     }
 
     @(private)
-    // After a component was removed from this table (eid_to_bits already updated), a
-    // view any_of-ing this table may have just lost its only qualifying table for this
-    // entity — recheck full membership and evict if so. Unlike notify_excluding_views,
-    // this only ever removes (view__remove_record is already a no-op when the entity
-    // isn't a member), so it needs no destroying_eid_ix guard: redundant calls during
-    // database__destroy_entity's per-table removal loop are harmless.
+    // After a component is removed, an any_of view may have lost its only qualifying
+    // table for this entity — recheck and evict if so. Only ever removes (a no-op if
+    // not a member), so needs no destroying_eid_ix guard, unlike notify_excluding_views.
     // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_any_of_views :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         for view in self.subscribers_any_of.items {
@@ -224,10 +214,9 @@ package ode_ecs
     }
 
     @(private)
-    // A component was freshly added to this table for eid — every watching
-    // Sync_Channel gets a structural "added" event AND has eid marked touched
-    // (an add with no follow-up get_component_mut would otherwise record the
-    // structural event but never transmit the component's initial values).
+    // A component was added — every watching Sync_Channel gets a structural "added"
+    // event AND has eid marked touched, so its initial value transmits even without
+    // a follow-up get_component_mut call.
     // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_sync_add :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         for ch in self.sync_watchers.items {
@@ -237,9 +226,8 @@ package ode_ecs
     }
 
     @(private)
-    // A component was removed from this table for eid — every watching
-    // Sync_Channel gets a structural "removed" event (which also zeroes that
-    // channel's shadow slot for eid, see sync_channel__notify_structural).
+    // A component was removed — every watching Sync_Channel gets a structural
+    // "removed" event, which also zeroes that channel's shadow slot for eid.
     // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_sync_remove :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         for ch in self.sync_watchers.items {
@@ -248,8 +236,7 @@ package ode_ecs
     }
 
     @(private)
-    // eid's component in this table may have been written through — mark it
-    // touched in every watching Sync_Channel so the next collect_delta diffs it.
+    // Mark eid touched in every watching Sync_Channel so the next collect_delta diffs it.
     // #force_inline: see table_base__notify_excluding_views.
     table_base__mark_touched :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         for ch in self.sync_watchers.items {
@@ -300,11 +287,9 @@ package ode_ecs
         return table_raw__rid_to_ptr_sized(self, rid, self.type_info.size)
     }
 
-    // elem_size as an explicit parameter (instead of a self.type_info.size field
-    // read) lets a #force_inline caller that knows T at compile time (size_of(T)
-    // is a constant) fold the multiply into a shift; callers that only have a
-    // type-erased ^Table_Raw (Command_Buffer replay, Group) pass self.type_info.size
-    // and get identical codegen to the non-sized path.
+    // elem_size is an explicit parameter so a #force_inline caller that knows T at
+    // compile time folds the multiply into a shift; type-erased callers just pass
+    // self.type_info.size and get identical codegen.
     @(private)
     table_raw__rid_to_ptr_sized :: #force_inline proc "contextless" (self: ^Table_Raw, #any_int rid: int, elem_size: int) -> rawptr {
         return rawptr(uintptr(raw_data(self.rows)) + uintptr(rid) * uintptr(elem_size))
@@ -312,9 +297,8 @@ package ode_ecs
 
     @(private)
     // Swap two live rows (component data + both index directions) and notify
-    // subscribed views of the new row ids. Used by group maintenance
-    // (group.odin); must not be called while tail swap is paused (rows must
-    // stay put) — group hooks defer to a rebuild instead.
+    // subscribed views of the new row ids. Used by group maintenance; must not be
+    // called while tail swap is paused — group hooks defer to a rebuild instead.
     table_raw__swap_rows :: proc(self: ^Table_Raw, #any_int rid_a: int, #any_int rid_b: int) #no_bounds_check {
         if rid_a == rid_b do return
 
@@ -380,10 +364,9 @@ package ode_ecs
     }
 
     @(private)
-    // Is packing (tail swap) currently deferred for this table — a table
-    // owned by a Group defers to the group's own pause state (rows must move
-    // in lock-step across every table the group owns); a standalone table
-    // checks the database-wide flag or its own pause_packing.
+    // Is packing (tail swap) currently deferred for this table — an owned table
+    // defers to the group's pause state (rows must move in lock-step); a standalone
+    // table checks the database-wide flag or its own pause_packing.
     table_raw__is_packing_paused :: #force_inline proc "contextless" (self: ^Table_Raw) -> bool {
         if self.owner != nil do return group__is_packing_paused(self.owner)
         return shared_table__is_packing_paused(cast(^Shared_Table) self)
@@ -408,20 +391,16 @@ package ode_ecs
 
         target_rid := self.eid_to_rid[target_eid.ix]
 
-        // Check if component exists
         if target_rid == TABLE_NO_RID do return oc.Core_Error.Not_Found
 
         T_size := elem_size
         target := table_raw__rid_to_ptr_sized(self, target_rid, elem_size)
 
-        // Cached once: nothing between here and the deferred-tail-swap check
-        // below changes the pause state, so a second call would just re-chase
-        // self.owner.db.tail_swap_paused / pause_packing for the same answer.
+        // Cached once — nothing below changes the pause state before it's used.
         paused := table_raw__is_packing_paused(self)
 
         // Group maintenance: a member losing an owned component leaves the group —
-        // swap its rows out of the prefix (in every owned table) before this
-        // table's own tail swap runs. Members sit at rid < owner.len by invariant.
+        // swap its rows out of the prefix before this table's own tail swap runs.
         // While tail swap is paused rows must not move: mark dirty, rebuild on resume.
         if self.owner != nil && int(target_rid) < self.owner.len {
             if paused {
@@ -473,7 +452,6 @@ package ode_ecs
 
         // Replace removed component with tail
         if int(target_rid) == tail_rid {
-            // Remove indexes
             self.eid_to_rid[target_eid.ix] = TABLE_NO_RID
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
 
@@ -483,17 +461,14 @@ package ode_ecs
             }
         }
         else {
-            // DATA COPY
             mem.copy(target, tail, T_size)
 
-            // Update tail indexes
             self.eid_to_rid[tail_eid.ix] = target_rid
             self.eid_to_rid[target_eid.ix] = TABLE_NO_RID
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
 
-            // Notify subscribed views
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
@@ -505,14 +480,11 @@ package ode_ecs
             }
         }
 
-        // Zero tail. Deliberate cost on every removal (all four table types):
-        // it upholds the contract that a freshly added component reads as
-        // zero-initialized. Dropping it would shave the remove path but leak
-        // stale component data into future adds.
+        // Zero tail — upholds the contract that a freshly added component reads as
+        // zero-initialized. Dropping this would leak stale data into future adds.
         mem.zero(tail, T_size)
         raw.len -= 1
 
-        // Update eid_to_bits in db
         database__remove_component(self.db, target_eid, self.id)
 
         table_base__notify_sync_remove(self, target_eid)
@@ -531,40 +503,28 @@ package ode_ecs
     }
 
     @(private)
-    // Adds (or finds) the entity's row and returns a pointer to the component.
-    // If `data` is not nil it is copied into the component BEFORE the group hook
-    // and subscriber notifications run (view filters read component data through
-    // the row refs), and it also overwrites the existing value on the
-    // Component_Already_Exist path — "last write wins", used by Command_Buffer.
-    // elem_size is an explicit parameter (rather than a self.type_info.size field
-    // read) so that a #force_inline caller which knows T at compile time
-    // (table__add_component passing size_of(T)) gets the multiply folded into a
-    // constant/shift; table_raw__add_component above preserves the old runtime-size
-    // behavior byte-for-byte for callers that only have a type-erased ^Table_Raw.
-    // #no_bounds_check: callers validate eid via database__is_entity_correct,
-    // len(eid_to_rid) == db.overbase.id_factory.cap; row indexes derive from raw.len < cap
+    // Adds (or finds) the entity's row and returns a pointer to the component. If
+    // `data` is not nil it is copied in before notifications run, and overwrites the
+    // existing value on the Component_Already_Exist path — "last write wins", used
+    // by Command_Buffer. elem_size is explicit so a #force_inline caller that knows
+    // T at compile time gets the multiply folded into a constant/shift.
+    // #no_bounds_check: callers validate eid; row indexes derive from raw.len < cap.
     table_raw__add_component_sized :: #force_inline proc(self: ^Table_Raw, eid: entity_id, elem_size: int, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         rid := self.eid_to_rid[eid.ix]
 
-        // Check if component already exist
         if rid == TABLE_NO_RID {
             // Capacity only matters when actually inserting — re-adding an
             // existing component on a full table must still report Component_Already_Exist
             if raw.len >= self.cap do return nil, oc.Core_Error.Container_Is_Full
 
-            // Get component
             component = table_raw__rid_to_ptr_sized(self, raw.len, elem_size)
             if data != nil do mem.copy(component, data, elem_size)
 
-            // Update eid_to_rid
             self.eid_to_rid[eid.ix] = u32(raw.len)
-
-            // Update rid_to_eid
             self.rid_to_eid[raw.len] = eid
 
-            // Update eid_to_bits in db
             database__add_component(self.db, eid, self.id)
 
             table_base__notify_sync_add(self, eid)
@@ -583,11 +543,9 @@ package ode_ecs
             if data != nil {
                 mem.copy(component, data, elem_size)
                 table_base__mark_touched(self, eid)
-                // The overwritten value can flip a view's filter verdict either
-                // way; the plain add-notify below short-circuits on existing
-                // members, so re-run filters explicitly (Command_Buffer
-                // "last write wins" path — the only caller passing data here
-                // for an existing component).
+                // Overwrite can flip a view's filter verdict; the add-notify below
+                // short-circuits on existing members, so re-run filters explicitly
+                // (Command_Buffer "last write wins" path).
                 for view in self.subscribers_with_filter.items {
                     if !view.suspended do view__rerun_filter(view, eid)
                 }
@@ -733,7 +691,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Table
 
-    // Components table
     Table :: struct($T: typeid) {
         using base: Table_Base,
         // table_record_id => component
@@ -752,7 +709,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
             assert(cap < int(max(u32)), loc = loc) // row ids must fit the u32 eid_to_rid index
@@ -872,18 +829,9 @@ package ode_ecs
         return table_base__cap(self)
     }
 
-    // Live rows in row order as one contiguous slice — this is exactly the
-    // `rows` field itself (already length-bounded to the live row count, not
-    // capacity), returned through a call rather than field access so a caller's
-    // `for &p in table__slice(&t)` compiles as a tight register-resident
-    // sweep. `for &p in t.rows` directly is NOT equivalent codegen: since `rows`
-    // is a field on a live struct, the optimizer can't prove a write through
-    // the loop's element pointer doesn't alias `t` itself, and conservatively
-    // reloads the `rows` pointer from `t` after every store — measured ~30-40%
-    // slower on a 1M-entity single-component sweep. Returning the slice by
-    // value from a call (inlined or not) gives the caller a fresh local with
-    // no such aliasing concern, closing the gap. Mirrors compact_table__slice /
-    // tiny_table__slice / arch_table__dense_slice for the other table types.
+    // Live rows as one contiguous slice. Return via call, not direct field access —
+    // `for &p in t.rows` can't be proven non-aliasing by the optimizer and reloads
+    // the pointer every store (~30-40% slower measured).
     @(require_results)
     table__slice :: #force_inline proc "contextless" (self: ^Table($T)) -> []T {
         return self.rows
@@ -908,11 +856,8 @@ package ode_ecs
     }
 
     // Same as table__get_component_by_entity, but marks eid touched in every
-    // Sync_Channel watching this table (see sync.odin) — use this instead of
-    // get_component whenever you intend to WRITE through the returned pointer,
-    // so the next collect_delta picks up the change. Purely additive: costs
-    // nothing beyond the one extra call when no channel is watching (empty
-    // Dense_Arr loop).
+    // Sync_Channel watching this table — use whenever you intend to WRITE through
+    // the returned pointer, so the next collect_delta picks up the change.
     @(require_results)
     table__get_component_mut :: proc (self: ^Table($T), eid: entity_id) -> ^T {
         when VALIDATIONS {
@@ -969,7 +914,8 @@ package ode_ecs
        return table_base__memory_usage(cast(^Table_Base) self)
     }
  
-    // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
+    // Component data for entity `eid`` is copied into `dest` table from `src`
+    // table and linked to enitity `eid`
     table__copy_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
         // Validate eid once per db (src/dest may belong to different Databases)
         // instead of the get/get/add path re-validating dest three times over.
@@ -977,7 +923,7 @@ package ode_ecs
         database__is_entity_correct(dest.db, eid) or_return
 
         src_component = cast(^T) table_raw__get_component_by_entity(cast(^Table_Raw) src, eid)
-        if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found // component not found
+        if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found
 
         dest_component = cast(^T) table_raw__get_component_by_entity(cast(^Table_Raw) dest, eid) // if it exists we will overwrite data
         if dest_component == nil {
@@ -986,13 +932,13 @@ package ode_ecs
             dest_component = cast(^T) c
         }
 
-        // copy data
         dest_component^ = src_component^
 
         return dest_component, src_component, nil
     }
 
-    // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
+    // Component data for entity `eid`` is moved into `dest` table from `src` 
+    // table and linked to enitity `eid`
     table__move_component :: proc(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
         dest_component, _ = table__copy_component(dest, src, eid) or_return
 

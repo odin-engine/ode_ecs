@@ -14,8 +14,6 @@ package ode_ecs
     import oc "ode_core"
     import oc_maps "ode_core/maps"
 
-
-///////////////////////////////////////////////////////////////////////////////
 // Tag_Table
 
     Tag_Table :: struct {
@@ -35,14 +33,12 @@ package ode_ecs
         subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
         subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
 
-        // Sizes sync_watchers, lazily allocated on first sync_register regardless of
-        // SYNC_ENABLED. Structural-only (add_tag/remove_tag presence) — a Tag_Table
-        // carries no component data, so there's no field-level diffing here.
+        // sync_channels_cap sizes sync_watchers, lazily allocated on first sync_register.
+        // Structural-only (add_tag/remove_tag) — a Tag_Table carries no component data to diff.
         sync_channels_cap: int,
         sync_watchers: oc.Dense_Arr(^Sync_Channel),
     }
 
-    // It table valid and ready to use (initialized and everything is ok)
     tag_table__is_valid :: proc(self: ^Tag_Table) -> bool {
         if self == nil do return false
         if !shared_table__is_valid_internal(&self.shared) do return false
@@ -61,7 +57,7 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
             assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
@@ -76,10 +72,8 @@ package ode_ecs
         // load factor 0.5 and make it power of two
         oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
-        // See table__init's identical comment: database__attach_table is
-        // capacity-limited and must not leak the allocations above on
-        // failure. Can't reuse tag_table__terminate here — it requires
-        // state == Normal, which self isn't yet.
+        // database__attach_table is capacity-limited and must not leak the allocations above
+        // on failure. Can't reuse tag_table__terminate here — it requires state == Normal.
         id, aerr := database__attach_table(db, self)
         if aerr != nil {
             delete(self.rows, db.allocator)
@@ -129,13 +123,11 @@ package ode_ecs
         return nil
     }
 
-    // Memory usage in bytes
-    tag_table__memory_usage :: proc (self: ^Tag_Table) -> int {  
+    tag_table__memory_usage :: proc (self: ^Tag_Table) -> int {
         total := size_of(self^)
 
         if self.rows != nil {
-            // cap, not len(self.rows) — the slice's len field tracks the live
-            // row span, but all cap slots are allocated
+            // cap, not len(self.rows) — len tracks the live row span, but all cap slots are allocated
             total += size_of(entity_id) * self.cap
         }
 
@@ -145,9 +137,8 @@ package ode_ecs
         return total
     }
 
-    // Row-slot count, including holes left by removals while packing is
-    // paused (same semantics as the other tables) — so `for rid in 0..<len`
-    // with an is_not_set skip visits every live tag even mid-pause.
+    // Row-slot count, including holes left while packing is paused (same semantics as the
+    // other tables) — `for rid in 0..<len` with an is_not_set skip visits every live tag.
     tag_table__len :: #force_inline proc "contextless" (self: ^Tag_Table) -> int {
         return len(self.rows)
     }
@@ -156,11 +147,8 @@ package ode_ecs
         return self.cap
     }
 
-    // Tagged entities in row order as one contiguous slice — `rows` itself is
-    // already the full row-slot span (see tag_table__len's doc comment on
-    // holes-while-paused). See table__slice's doc comment (table.odin)
-    // for why returning it by value from a call, rather than reading the
-    // `rows` field directly in a hot loop, matters for codegen.
+    // Tagged entities as one contiguous slice — `rows` is already the full row-slot span (see
+    // tag_table__len's holes-while-paused note). Returned by value from a call — see table__slice's doc comment (table.odin) for why that matters for codegen.
     @(require_results)
     tag_table__slice :: #force_inline proc "contextless" (self: ^Tag_Table) -> []entity_id {
         return self.rows
@@ -180,12 +168,9 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        // One probe serves both the existence check and the insert below —
-        // get_or_insert reuses the located slot instead of get() then add()
-        // re-walking the same chain. Capacity only matters when actually
-        // inserting — re-adding an existing tag on a full table must still be
-        // a no-op (see the same ordering in table__add_component), so the
-        // row-count cap gates can_insert rather than being checked up front.
+        // One probe serves both the existence check and insert — get_or_insert reuses the
+        // located slot instead of get()+add() re-walking the chain. Capacity only gates the
+        // actual insert, so re-adding an existing tag on a full table stays a no-op.
         _, found, gerr := oc_maps.rh_map32__get_or_insert(&self.eid_to_rid, u32(eid.ix), u32(raw.len), raw.len < self.cap)
 
         if found do return nil // already added
@@ -193,7 +178,6 @@ package ode_ecs
         if raw.len >= self.cap do return oc.Core_Error.Container_Is_Full
         if gerr != nil do return gerr
 
-        // Update rows
         #no_bounds_check {
             self.rows[raw.len] = eid
         }
@@ -236,11 +220,9 @@ package ode_ecs
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found
 
-        // One lookup serves both the existence check and the removal below —
-        // remove_at reuses the slot index instead of re-probing the key
+        // One lookup serves both the existence check and removal below — remove_at reuses the slot index instead of re-probing the key
         target_rid_u, target_slot := oc_maps.rh_map32__get_with_index(&self.eid_to_rid, u32(target_eid.ix))
 
-        // Check if exists
         if target_slot == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
 
         target_rid := int(target_rid_u)
@@ -281,7 +263,6 @@ package ode_ecs
         tail_rid := raw.len - 1
 
         if target_rid == tail_rid {
-            // Remove indexes
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rows[tail_rid].ix = DELETED_INDEX
@@ -300,16 +281,15 @@ package ode_ecs
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(tail_eid.ix), target_rid_u)
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
-            self.rows[target_rid] = tail_eid // copy eid from tail
+            self.rows[target_rid] = tail_eid
             self.rows[tail_rid].ix = DELETED_INDEX
 
             // Notify subscribed views
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    // tag columns carry no component data, but the notification also
-                    // feeds the dense safety net — the moved tag now occupies the
-                    // removed row's id
+                    // tag columns carry no component data, but this also feeds the dense safety
+                    // net — the moved tag now occupies the removed row's id.
                     view__update_component_rid(view, self, tail_eid, target_rid)
                 } else {
                     view__missed_update_for_member(view, target_eid)
@@ -396,9 +376,8 @@ package ode_ecs
 
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(moved_eid.ix), u32(front))
 
-            // keep subscriber rids current, same as the other tables' pack
-            // (tag columns carry no data, but see the remove_tag note on the
-            // dense safety net)
+            // keep subscriber rids current, same as the other tables' pack (tag columns carry
+            // no data, but see the remove_tag note on the dense safety net)
             for view in self.subscribers.items {
                 if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
                 else do view__missed_update_for_member(view, moved_eid)
@@ -529,7 +508,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_excluding_views. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__notify_excluding_views (also for the #force_inline rationale).
     tag_table__notify_excluding_views :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
@@ -546,7 +525,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_any_of_views. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__notify_any_of_views; #force_inline: see table_base__notify_excluding_views.
     tag_table__notify_any_of_views :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
         for view in self.subscribers_any_of.items {
             if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)

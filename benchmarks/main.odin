@@ -63,73 +63,61 @@
 
     Measured dead ends (do not re-attempt without new evidence):
     - Merging the id-factory entry with eid_to_bits into one per-entity record
-      (generic Ix_Gen_Factory item {id, bits}): neutral at CHURN_N=10K, clear
-      LOSS at 500K shuffled — churn +20%, churn_partial +50% (interleaved A/B).
-      The split arrays' independent loads already overlap (memory-level
-      parallelism), so co-locating saves no latency; meanwhile u128 alignment
-      pads the 24 B record to 32 B, inflating the hot footprint by a third.
+      ({id, bits}): neutral at CHURN_N=10K, clear LOSS at 500K shuffled — churn
+      +20%, churn_partial +50% (interleaved A/B). The split arrays' independent
+      loads already overlap (MLP), so co-locating saves no latency; meanwhile
+      u128 alignment pads the 24 B record to 32 B, a third more hot footprint.
     - An "unchecked" get_component that skips entity validation showed zero gain
-      at N=100K and N=1M — the validation load and the component lookup are
-      independent, so the CPU overlaps them (memory-level parallelism);
-      validation is effectively free.
+      at N=100K and N=1M — the validation load and the lookup are independent,
+      so the CPU overlaps them (MLP); validation is effectively free.
     - Per-column dense reads in Iterator (mask consulted when only some view
       columns are aligned): cost the fully-dense loop ~60% and gained the mixed
       loop nothing. Per-column alignment lives in slice instead.
     - Bits pre-filter on remove notifications (skip view__remove_record when
       view.bits can't be a subset of the entity's bits): churn 10.9 -> 12.0,
-      churn_partial 9.4 -> 10.2 ns/op at CHURN_N=500K shuffled — its own
-      best-case scenario. The per-view eid_to_ptr probes are independent loads
-      the CPU overlaps (memory-level parallelism); the bits test adds a
-      dependent branch that serializes the loop.
+      churn_partial 9.4 -> 10.2 ns/op at CHURN_N=500K shuffled, its own
+      best case. Per-view eid_to_ptr probes are independent loads the CPU
+      overlaps (MLP); the bits test adds a dependent branch that serializes
+      the loop.
     - Adaptive View eid_to_rid (Rh_Map32 backing for small views instead of the
-      entities_cap-sized array): churn_small_view 9.3 -> 11.5 ns/op (+23%) in the
-      map's own best-case scenario, and the array path paid +6% churn / +9%
+      entities_cap-sized array): churn_small_view 9.3 -> 11.5 ns/op (+23%) in
+      the map's own best case, and the array path paid +6% churn / +9%
       churn_partial for the backing-choice branch alone. At N=100K the 400 KB
-      array is L2-resident and its independent loads overlap (memory-level
-      parallelism); the map probe is a dependent hash->load->compare chain.
+      array is L2-resident with overlapping loads (MLP); the map probe is a
+      dependent hash->load->compare chain.
     - Rh_Map32 "high bits" Fibonacci hash ((k*C) >> shift instead of & mask):
       hits 1.48 -> 1.8 ns/op, misses 5.3 -> 6.0. Entity indexes are dense
-      consecutive ints, and the low-bits multiplicative hash is a bijection on
-      any aligned power-of-2 key range — zero collisions, strictly better than
+      consecutive ints, and the low-bits multiplicative hash is already a
+      bijection on any aligned power-of-2 key range — zero collisions, beating
       a "well-mixed" hash here. Likewise the Robin Hood probe-distance early
-      exit for misses: neutral at best (chains are already ~1 long), and the
-      extra per-probe hash pushed hit cost to 3.2 ns/op in one variant.
+      exit for misses was neutral at best (chains are already ~1 long) and cost
+      extra per-probe hash work in one variant (hit cost up to 3.2 ns/op).
     - #force_inline on the database__create_entity -> overbase__create_entity ->
-      oc.ix_gen_factory__new_id wrapper chain (Overbase split it across two
-      procs): no gain, create_entity ~3.7-4.0 ns/op either way, B lost 3/5
-      interleaved rounds. Unlike database__destroy_entity_local (a large,
-      branchy proc where the same trick gave a consistent 2.3-2.6% win, see
-      database.odin), this chain's callees are already tiny — the backend was
-      likely auto-inlining them regardless of the explicit hint.
-    - Merging Tiny_Table's tt_map__get + tt_map__add add_component path into a
-      single tt_map__find_item probe (mirroring the Rh_Map32 get_or_insert
-      change below): neutral in interleaved A/B, churn_tiny ~12.6-13.9 ns/op
-      either way with no consistent direction across 10 rounds.
-      TINY_TABLE__ROW_CAP=8 against a 32-slot map keeps chains so short
-      (~1 slot) that the second walk's cost is already in the noise floor —
-      unlike Rh_Map32's case, there was no auto-inlining-eligibility loss to
-      offset (tt_map__get/add were never separately call-site-bloating), so
-      there was nothing to gain by merging them. Reverted.
-    - A CORE_VALIDATIONS #config flag in ode_core (mirroring ecs.odin's
-      VALIDATIONS) gating ix_gen_factory__free_id's 4 checks and the explicit
-      runtime.bounds_check_error_loc calls in dense_arr__remove_by_index /
-      sparse_arr__remove_by_index / ix_gen_factory__get_id: zero gain on
-      destroy (8/32 tables) and get_random with the flag off vs on in
-      interleaved A/B (~21.7-21.8 ns/op and ~0.52-0.55 ns/op either way) —
-      same "validation is free, the CPU overlaps it" pattern as the
-      unchecked-get_component dead end above. Reverted; not worth the added
-      double-free corruption risk (skipping ix_gen_factory__free_id's
-      Already_Freed/Not_Found checks lets a duplicate free silently corrupt
-      the free list) for no measured benefit.
-    - #force_inline on table__get_component_by_entity / compact_table__ /
-      tiny_table__get_component_by_entity (2-line validate-then-delegate
-      wrappers): inconclusive in interleaved A/B — get_random and
-      get_random_compact overlapped both ways across 5 rounds (no consistent
-      winner), get_random_compact_miss leaned very slightly better inlined
-      but within the same noise band as the other two. Same pattern as the
-      create_entity wrapper-chain dead end above: these callees are already
-      tiny and single-call-site, so the backend was likely auto-inlining them
-      regardless of the hint. Reverted.
+      oc.ix_gen_factory__new_id wrapper chain: no gain, create_entity
+      ~3.7-4.0 ns/op either way, B lost 3/5 interleaved rounds. Unlike
+      database__destroy_entity_local (a large, branchy proc where the same
+      trick gave a consistent 2.3-2.6% win, see database.odin), this chain's
+      callees are already tiny and were likely auto-inlined regardless.
+    - Merging Tiny_Table's tt_map__get + tt_map__add into a single
+      tt_map__find_item probe (mirroring the Rh_Map32 get_or_insert change
+      below): neutral, churn_tiny ~12.6-13.9 ns/op either way with no
+      consistent direction across 10 rounds. TINY_TABLE__ROW_CAP=8 against a
+      32-slot map keeps chains so short (~1 slot) that the second walk is
+      already in the noise floor, and unlike Rh_Map32 there was no
+      auto-inlining loss to offset. Reverted.
+    - A CORE_VALIDATIONS #config flag in ode_core (mirroring VALIDATIONS)
+      gating ix_gen_factory__free_id's checks and the bounds_check_error_loc
+      calls in dense_arr/sparse_arr/ix_gen_factory: zero gain on destroy
+      (8/32 tables) and get_random either way (~21.7-21.8 and ~0.52-0.55 ns/op)
+      — same "validation is free" pattern as the unchecked-get_component dead
+      end above. Reverted: skipping the Already_Freed/Not_Found checks risks
+      a silent double-free for no measured benefit.
+    - #force_inline on table__/compact_table__/tiny_table__get_component_by_entity
+      (2-line validate-then-delegate wrappers): inconclusive across 5
+      interleaved rounds — get_random/get_random_compact had no consistent
+      winner, get_random_compact_miss leaned slightly inlined but within
+      noise. Same pattern as the create_entity chain above: already tiny,
+      single-call-site, likely auto-inlined regardless. Reverted.
 
     Measured wins / accepted costs (2026-07):
     - Tiny_Table remove: deriving the tail pointer as &rows[len-1] instead of a
@@ -144,50 +132,43 @@
       ns/op (-5%) at release flags, consistent across interleaved rounds.
     - destroy: ctz (count_trailing_zeros) set-bit extraction instead of Odin's
       full-domain `for id in bit_set` scan — neutral at TABLES_MULT=1 (the 128
-      register-resident bit tests were overlapping the removal work), kept for
-      the true O(components) iteration: at TABLES_MULT>1 the old form scanned
-      128*MULT positions per destroy, the ctz form touches only set bits and
-      each word once.
+      register-resident bit tests overlapped the removal work), kept for the
+      true O(components) iteration: at TABLES_MULT>1 the old form scanned
+      128*MULT positions per destroy, ctz touches only set bits, each word once.
     - iter_arch_it was ~1.8-1.9x iter_dense_it (0.73-0.81 vs 0.38-0.43 ns/op)
-      when this scenario was first added; root-caused and fixed in two steps
-      (interleaved A/B, both reproducible across 3-5 rounds):
+      when first added; root-caused and fixed in two steps (interleaved A/B,
+      reproducible across 3-5 rounds):
         1. arch_table__component_ptr_by_col used col.type_info.size (a runtime
-           load) for the byte-offset multiply instead of size_of(T) (a
-           compile-time constant available since T is already a $T poly
-           param) — same trick table_raw__rid_to_ptr_sized documents. Fixed:
-           0.73 -> 0.53 ns/op (-27%).
-        2. arch_iterator__next1..7 (and the 0-arg next) paid a per-row
-           is_not_set(rid_to_eid[index]) load+branch to skip holes left by
-           pause_packing — necessary when holes exist, pure overhead when
-           they don't (the common case). Table's View-based Iterator never
-           pays this: View.rows is kept hole-free by construction, so
-           Iterator only compares a counter, no per-row memory read. Guarded
-           the hole-skip loop behind `if it.table.holes_count > 0` (checked
-           once per call): 0.53 -> 0.42 ns/op (-21%, matches iter_dense_it).
-           #force_inline on the next-family procs (tried first) made no
-           measurable difference — already auto-inlined under -o:speed, same
-           pattern as the create_entity wrapper-chain dead end above.
+           load) instead of size_of(T) (a compile-time constant, since T is
+           already a $T poly param) for the byte-offset multiply — same trick
+           table_raw__rid_to_ptr_sized documents. Fixed: 0.73 -> 0.53 (-27%).
+        2. arch_iterator__next1..7 paid a per-row is_not_set(rid_to_eid[index])
+           load+branch to skip holes left by pause_packing — necessary when
+           holes exist, pure overhead otherwise (the common case). Table's
+           View-based Iterator never pays this: View.rows is kept hole-free by
+           construction, so it only compares a counter. Guarded the hole-skip
+           loop behind `if it.table.holes_count > 0`: 0.53 -> 0.42 (-21%,
+           matches iter_dense_it). #force_inline on the next-family procs
+           (tried first) made no measurable difference — already auto-inlined
+           under -o:speed, same pattern as the create_entity chain above.
       Net: 0.73-0.81 -> 0.42 ns/op (~45% faster), parity with iter_dense_it.
     - Group ownership of Arch_Table (Phase 4): extending group__swap_in/
-      swap_out (loop over self.tables, then self.arch_tables — empty for
-      every pre-existing Table-only group) and group__on_add (added a
+      swap_out (loop over self.tables, then self.arch_tables — empty for every
+      pre-existing Table-only group) and group__on_add (added a
       len(self.tables) > 0 branch before indexing self.tables[0], to also
-      handle an Arch_Table-only group) regressed churn_vel (group) by ~6%
-      AND churn_vel (no group) by ~3% — reproducible in both call orders,
-      confirmed not noise. Root cause: these three procs were not
-      #force_inline; growing their bodies pushed them past Odin's automatic
-      (unhinted) inlining threshold at their call site in
-      table_raw__add_component_sized/remove_component_sized — and losing
-      that inlining changes those two callers' own generated code for EVERY
-      caller (owned and unowned tables alike), which is why even the
-      no-group scenario regressed despite never calling into Group at all.
-      Fix: mark group__swap_in/swap_out/on_add #force_inline — restored
-      exact parity with the pre-Phase-4 baseline in both scenarios,
-      interleaved A/B, 3+ rounds each direction. Unlike the iter_arch_it
-      #force_inline attempt above (which changed nothing because those procs
-      were already small enough to auto-inline), here the hint was load-
-      bearing: these procs grew just past whatever size/complexity threshold
-      the compiler uses for automatic (non-forced) inlining decisions.
+      handle an Arch_Table-only group) regressed churn_vel (group) by ~6% AND
+      churn_vel (no group) by ~3% — reproducible both call orders, not noise.
+      Root cause: these three procs weren't #force_inline; growing their
+      bodies pushed them past Odin's automatic inlining threshold at their
+      call site in table_raw__add/remove_component_sized, which changed those
+      callers' generated code for EVERY caller — why even the no-group
+      scenario regressed despite never touching Group. Fix: mark
+      group__swap_in/swap_out/on_add #force_inline — restored exact parity
+      with the pre-Phase-4 baseline, interleaved A/B, 3+ rounds each
+      direction. Unlike the iter_arch_it #force_inline attempt above (which
+      changed nothing, already small enough to auto-inline), here the hint
+      was load-bearing: these procs grew just past the compiler's automatic
+      (non-forced) inlining threshold.
 */
 package ode_ecs_benchmarks
 

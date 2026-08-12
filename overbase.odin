@@ -10,13 +10,11 @@ package ode_ecs
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Overbase — a shareable entity ID space. One or more Databases can attach to
-// the same Overbase (via database__init or database__init_from_overbase) so
-// that the same entity_id refers to the same logical entity across all of
-// them. Entity lifecycle (create_entity/destroy_entity) is fully owned by
-// Overbase: destroying an entity removes its components from every attached
-// Database before the id is freed for reuse, so a recycled index never
-// resurfaces stale data in a Database that wasn't told the entity died.
+// Overbase — a shareable entity ID space. Databases attach via database__init
+// or database__init_from_overbase so entity_id refers to the same logical
+// entity across all of them. Entity lifecycle is fully owned by Overbase:
+// destroying an entity removes its components from every attached Database
+// before the id is freed, so a recycled index never resurfaces stale data.
 
     Overbase :: struct {
         allocator: runtime.Allocator,
@@ -28,11 +26,9 @@ package ode_ecs
         // notified in database__destroy_entity_local order when an entity dies.
         databases: oc.Dense_Arr(^Database),
 
-        // Fast path for the common case (exactly one Database attached, the
-        // overwhelming majority of Overbases — every plain ecs.init-created
-        // Database has one): mirrors databases.items[0], nil whenever the
-        // count isn't exactly 1. Lets destroy_entity skip the Dense_Arr walk
-        // (length load + loop) entirely instead of iterating a 1-element slice.
+        // Fast path for the common case (exactly one Database attached — true
+        // for every plain ecs.init-created Database): mirrors databases.items[0],
+        // nil otherwise. Lets destroy_entity skip the Dense_Arr walk entirely.
         // Maintained by overbase__attach_database / overbase__detach_database.
         primary_database: ^Database,
     }
@@ -93,17 +89,14 @@ package ode_ecs
     }
 
     // The canonical entity-destroy implementation. Removes the entity's
-    // components from every Database attached to this Overbase (recursively,
-    // for descendants when destroy_children is set — see
-    // database__destroy_entity_local), then frees the id.
+    // components from every attached Database (recursively for descendants
+    // when destroy_children is set — see database__destroy_entity_local),
+    // then frees the id.
     //
-    // #force_inline: this and database__destroy_entity are both thin one-line
-    // wrappers around overbase__destroy_entity_impl (which cannot itself be
-    // force_inline — it recurses for destroy_children); inlining them collapses
-    // the call chain to a single proc. With exactly one Database attached
-    // (primary_database != nil), destroy_entity's only added cost over the
-    // pre-Overbase implementation is the validity/id-free bookkeeping already
-    // done today — the Dense_Arr walk is skipped entirely.
+    // #force_inline: collapses the wrapper chain (this + database__destroy_entity)
+    // around overbase__destroy_entity_impl into one proc; with a single
+    // Database attached, cost over the pre-Overbase implementation is just
+    // the existing validity/id-free bookkeeping — the Dense_Arr walk is skipped entirely.
     overbase__destroy_entity :: #force_inline proc(self: ^Overbase, eid: entity_id, destroy_children := false) -> Error {
         return overbase__destroy_entity_impl(self, eid, destroy_children, tolerate_expired = false)
     }
@@ -137,9 +130,8 @@ package ode_ecs
 
     @(private)
     // A descendant discovered via one Database's relations table may already
-    // have been fully destroyed (id freed + cleaned from every attached
-    // Database) by another Database's relations cascade — see
-    // database__destroy_entity_local. tolerate_expired turns that harmless
+    // be fully destroyed by another Database's relations cascade (see
+    // database__destroy_entity_local). tolerate_expired turns that harmless
     // race into a no-op instead of propagating Entity_Id_Expired.
     overbase__destroy_entity_impl :: proc(self: ^Overbase, eid: entity_id, destroy_children: bool, tolerate_expired: bool) -> Error {
         when VALIDATIONS {

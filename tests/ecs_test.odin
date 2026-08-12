@@ -30,12 +30,9 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Sync — off by default (see ecs.SYNC_ENABLED's doc comment); this locks in
-// the graceful-degradation contract under the config that actually ships by
-// default. Gated the opposite way from sync_test.odin's own tests: this one
-// only makes sense (and only compiles as a real assertion) when the feature
-// is NOT compiled in — with -define:ECS_SYNC_ENABLED=true it would fail,
-// since registration would then genuinely succeed.
+// Sync is off by default; registration must report Sync_Feature_Disabled.
+// Only compiles when the feature is NOT enabled (opposite gate from
+// sync_test.odin) — with ECS_SYNC_ENABLED=true this assertion would fail.
     when !ecs.SYNC_ENABLED {
         @(test)
         sync_register_disabled_by_default__test :: proc(t: ^testing.T) {
@@ -67,12 +64,11 @@ package ode_ecs__tests
         // Prepare
         //
 
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            context.allocator = mem.panic_allocator()
             
             ecs_1: ecs.Database
             ais: ecs.Table(AI)
@@ -119,13 +115,9 @@ package ode_ecs__tests
             testing.expect(t, ecs_1.tables.has_nil_item == true)
     }
 
-    // database__init/init_from_overbase's tables_cap/views_cap/tiny_tables_cap
-    // let each Database instance size its own bookkeeping independently of the
-    // compile-time TABLES_CAP/VIEWS_CAP/TINY_TABLES_CAP ceilings. tables_cap/
-    // views_cap are only an INITIAL size — db.tables/db.views grow on demand
-    // (doubling via sparse_arr__resize) instead of failing once exceeded.
-    // tiny_tables_cap has no such growth (a genuinely fixed-size pool), so it
-    // still fails at Container_Is_Full.
+    // tables_cap/views_cap are only an INITIAL size — db.tables/db.views grow
+    // on demand instead of failing once exceeded. tiny_tables_cap has no such
+    // growth (a genuinely fixed-size pool), so it still fails at Container_Is_Full.
     @(test)
     per_database_caps__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -136,9 +128,7 @@ package ode_ecs__tests
 
         db: ecs.Database
         defer ecs.terminate(&db)
-        // tables_cap = 3: Tiny_Table also consumes a table_id (same shared
-        // id space as Table/Compact_Table/Tag_Table, via database__attach_table),
-        // so t1 + t2 + tt1 below need 3, not 2.
+        // Tiny_Table consumes a table_id too (shared id space), so t1+t2+tt1 need 3.
         testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator, tables_cap = 3, views_cap = 2, tiny_tables_cap = 1) == nil)
 
         t1: ecs.Table(Position)
@@ -152,18 +142,14 @@ package ode_ecs__tests
         defer ecs.tiny_table__terminate(&tt1)
         testing.expect(t, ecs.tiny_table__init(&tt1, &db) == nil) // 3rd (and last) table_id, and tiny_tables_cap's only slot
 
-        // tables_cap == 3 already used up by t1/t2/tt1 — a 4th table_id grows
-        // db.tables (doubling) instead of failing.
+        // tables_cap already used up by t1/t2/tt1 — a 4th table_id grows db.tables instead of failing.
         t3: ecs.Table(Position)
         defer ecs.table_terminate(&t3)
         testing.expect(t, ecs.table_init(&t3, &db, 10) == nil)
         testing.expect(t, db.tables.cap > 3, "tables array should have grown past its initial cap")
 
-        // tiny_tables_cap == 1 already used up by tt1's subscriber slot — a 2nd
-        // Tiny_Table must not fit (fails at that check, before ever touching
-        // table ids). Tiny_Table's pooled subscriber-slot allocation is a
-        // separate, genuinely fixed-size mechanism untouched by db.tables/
-        // views/groups growth, so this still correctly fails.
+        // tiny_tables_cap's only slot is used up by tt1 — a 2nd Tiny_Table still
+        // fails, since that pool is genuinely fixed-size, unlike db.tables/views.
         tt2: ecs.Tiny_Table(AI)
         testing.expect(t, ecs.tiny_table__init(&tt2, &db) == oc.Core_Error.Container_Is_Full)
 
@@ -174,17 +160,15 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_init(&v1, &db, {&t1}) == nil)
         testing.expect(t, ecs.view_init(&v2, &db, {&t1}) == nil)
 
-        // views_cap == 2 already used up by v1/v2 — a 3rd view grows db.views
-        // (doubling) instead of failing.
+        // views_cap already used up by v1/v2 — a 3rd view grows db.views instead of failing.
         v3: ecs.View
         defer ecs.view_terminate(&v3)
         testing.expect(t, ecs.view_init(&v3, &db, {&t1}) == nil)
         testing.expect(t, db.views.cap > 2, "views array should have grown past its initial cap")
     }
 
-    // db.tables/db.views/db.groups each grow (double via resize) independently
-    // once their own initial cap is exceeded — filling one must not grow the
-    // others.
+    // db.tables/db.views/db.groups each grow independently — filling one must
+    // not grow the others.
     @(test)
     database__arrays_grow_independently__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -255,13 +239,9 @@ package ode_ecs__tests
         testing.expect(t, db.groups.cap > groups_cap_before, "groups should have grown")
     }
 
-    // Table ids are Uni_Bits bit indices — a compile-time-fixed bit_set sized
-    // exactly BIT_SET_VALUES_CAP * TABLES_MULT (NOT TABLES_CAP, which is just
-    // db.tables' independently-configurable initial/default size) — so
-    // db.tables growth must clamp at that true ceiling instead of growing
-    // past it. This test forces genuine exhaustion at the real ceiling
-    // (unlike per_database_caps__test's small initial tables_cap, which now
-    // just grows).
+    // Table ids are bit indices into a compile-time-fixed bit_set (sized
+    // BIT_SET_VALUES_CAP * TABLES_MULT, NOT the configurable tables_cap) — so
+    // db.tables growth must clamp at that true ceiling instead of growing past it.
     @(test)
     database__tables_growth_clamps_at_id_ceiling__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -272,8 +252,8 @@ package ode_ecs__tests
 
         db: ecs.Database
         defer ecs.terminate(&db)
-        // Small initial tables_cap so growth kicks in almost immediately, but
-        // the true table-id ceiling below is unaffected by this param.
+        // small initial tables_cap so growth kicks in immediately; the true
+        // ceiling below is unaffected by this param
         testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator, tables_cap = 2, views_cap = 2, tiny_tables_cap = 1) == nil)
 
         table_id_cap :: ecs.BIT_SET_VALUES_CAP * ecs.TABLES_MULT
@@ -284,22 +264,15 @@ package ode_ecs__tests
         }
         testing.expect(t, db.tables.cap == table_id_cap, "tables must have grown exactly up to, and no further than, the true table-id ceiling")
 
-        // The true ceiling is genuinely exhausted now — one more table_id
-        // must fail, exactly as it does today at any hard cap.
+        // ceiling genuinely exhausted now — one more table_id must fail
         one_too_many: ecs.Tag_Table
         testing.expect(t, ecs.tag_table__init(&one_too_many, &db, 10) == oc.Core_Error.Container_Is_Full)
     }
 
-    // view_init's table-subscription loop (after it's already attached to the
-    // database) is capacity-limited by each included table's own subscriber
-    // capacity. For Table/Compact_Table/Arch_Table/Tag_Table that list now
-    // grows on demand (dense_arr__add_growing), so it can't be exhausted under
-    // normal conditions anymore — Tiny_Table still has a hard, fixed
-    // TINY_TABLE__VIEWS_CAP ceiling (a pooled fixed array, not a growable
-    // Dense_Arr), so it's used here to force the failure. A failure here must
-    // leave the failed View fully torn down (Not_Initialized, no leaked
-    // allocations, not left dangling in the database's views), not a
-    // half-subscribed live-looking object.
+    // Tiny_Table has a hard, fixed TINY_TABLE__VIEWS_CAP subscriber ceiling
+    // (unlike the other table types, whose subscriber lists grow on demand),
+    // so it's used here to force view_init to fail mid-subscribe. The failed
+    // View must come back fully torn down, not half-subscribed.
     @(test)
     view_init_subscriber_cap_rollback__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -322,9 +295,8 @@ package ode_ecs__tests
 
         views_before := oc.sparse_arr__len(&db.views)
 
-        // one more view attaches to the database fine (views_cap has room), but
-        // t1's TINY_TABLE__VIEWS_CAP subscriber slots are already full — the
-        // subscribe loop must fail, and the view must come back fully torn down.
+        // views_cap has room, but t1's subscriber slots are already full — the
+        // subscribe loop must fail and the view must come back fully torn down.
         v_extra: ecs.View
         testing.expect(t, ecs.view_init(&v_extra, &db, {&t1}) == oc.Core_Error.Container_Is_Full)
         testing.expect(t, ecs.is_valid(&v_extra) == false)
@@ -339,16 +311,9 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(&views[0]) == 1)
     }
 
-    // database__init asserts (under VALIDATIONS) that tables_cap does not
-    // exceed the compile-time TABLES_CAP ceiling — table ids are bit-indexed
-    // into Uni_Bits, whose width is fixed via ECS_TABLES_MULT. No dedicated
-    // test here: the assert fires before the graceful
-    // API_Error.Tables_Cap_Exceeds_Compile_Time_Limit return is ever reached
-    // under the default VALIDATIONS=true, so testing.expect can't observe the
-    // graceful path, and catching the expected debug-mode assert itself hangs
-    // in this project's sandboxed test environment (see sync.odin's header
-    // comment for the same issue found earlier) — covered by manual
-    // verification only.
+    // database__init's tables_cap-exceeds-TABLES_CAP path asserts before the
+    // graceful API_Error can be observed, and catching the assert hangs this
+    // project's sandboxed test env — covered by manual verification only.
 
     // Issue #8: terminate() then init() on the same structs must work without
     // zeroing them first. terminate must leave each object Not_Initialized.
@@ -361,7 +326,7 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
             db: ecs.Database
             positions: ecs.Table(Position)
@@ -394,13 +359,11 @@ package ode_ecs__tests
                 testing.expect(t, ecs.view_len(view) == 1)
             }
 
-            // First cycle.
             run_cycle(t, &db, &positions, &is_alive, &view, allocator)
 
-            // Terminate everything (db terminates its tables + view internally).
+            // db.terminate cascades to its tables + view internally.
             testing.expect(t, ecs.terminate(&db) == nil)
 
-            // States must be reset so the same structs can be re-init'd.
             testing.expect(t, db.state == ecs.Object_State.Not_Initialized)
             testing.expect(t, positions.state == ecs.Object_State.Not_Initialized)
             testing.expect(t, is_alive.state == ecs.Object_State.Not_Initialized)
@@ -415,13 +378,11 @@ package ode_ecs__tests
     attaching_detaching_views__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            context.allocator = mem.panic_allocator()
             
             ecs_1: ecs.Database
             ais: ecs.Table(AI)
@@ -481,12 +442,11 @@ package ode_ecs__tests
         // Prepare
         //
 
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            context.allocator = mem.panic_allocator()
             
             ecs_1: ecs.Database
 
@@ -537,13 +497,11 @@ package ode_ecs__tests
     adding_removing_components__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            context.allocator = mem.panic_allocator()
             
             ecs_1: ecs.Database
             ais: ecs.Table(AI)
@@ -1078,13 +1036,11 @@ package ode_ecs__tests
     views_subscribing_for_updates__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            context.allocator = mem.panic_allocator()
             
             ecs_1: ecs.Database
             ais: ecs.Table(AI)
@@ -1189,19 +1145,11 @@ package ode_ecs__tests
 
         //
         // Prepare
-        //
-            // // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
-            // Replace default allocator with a panic allocator to make sure that  
-            // no allocations happen outside of provided allocator
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
-
-        //
-        //  Test starts here
-        //
 
         db: ecs.Database
         table: ecs.Table(Position)
@@ -1213,20 +1161,16 @@ package ode_ecs__tests
 
         ENTITIES_CAP :: 10
         
-        // Init db
         defer ecs.terminate(&db)
         err = ecs.init(&db, ENTITIES_CAP, allocator)
         testing.expect(t, err == nil)
 
-        // Init table
         err = ecs.table_init(&table, &db, ENTITIES_CAP)
         testing.expect(t, err == nil)
 
-        // Init view
         err = ecs.view_init(&view, &db, {&table})
         testing.expect(t, err == nil)
 
-        // Fill table
         for i := 0; i < ENTITIES_CAP; i+=1 {
             eid, err = ecs.create_entity(&db)
             testing.expect(t, err == nil)
@@ -1244,14 +1188,12 @@ package ode_ecs__tests
         it: ecs.Iterator
         ecs.iterator_init(&it, &view)
 
-        // Default full range
         for i=0; ecs.iterator_next(&it); i+=1 {
             testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
         }
 
-        testing.expect(t, i == ENTITIES_CAP) // making sure it was full range
+        testing.expect(t, i == ENTITIES_CAP) // full range
 
-        // [0, 5] range
         start_row : int = 0
         end_row : int = 5
         ecs.iterator_init(&it, &view, start_row, end_row)
@@ -1259,7 +1201,6 @@ package ode_ecs__tests
             testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
         }
 
-        // [4, ENTITIES_CAP] range
         start_row = 4
         end_row = ENTITIES_CAP
         ecs.iterator_init(&it, &view, start_row, end_row)
@@ -1267,7 +1208,6 @@ package ode_ecs__tests
             testing.expect(t, ecs.get_component(&table, &it) == &table.rows[i])
         }
 
-        // [3, 8] range
         start_row = 3
         end_row = 8
         ecs.iterator_init(&it, &view, start_row, end_row)
@@ -1281,13 +1221,11 @@ package ode_ecs__tests
     table__filter__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
+            context.allocator = mem.panic_allocator()
             
         //
         // Test rerunning filters for entities

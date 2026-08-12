@@ -1,11 +1,10 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    Tests for Group ownership of Arch_Table (group.odin Phase 4): a Group can
-    own a mix of Table($T) and Arch_Table — the same aligned-prefix invariant
-    holds across both kinds, maintained via arch_table__swap_rows (one call
-    moves every owned column of an Arch_Table row) instead of Group paying a
-    separate table_raw__swap_rows per Table($T) column.
+    Tests for Group ownership of Arch_Table: a Group can own a mix of
+    Table($T) and Arch_Table — the same aligned-prefix invariant holds
+    across both, maintained via arch_table__swap_rows (one call moves every
+    owned column of an Arch_Table row).
 */
 
 package ode_ecs__tests
@@ -17,8 +16,6 @@ package ode_ecs__tests
     import ecs ".."
 
     Group_Speed :: struct { value: f64 }
-
-///////////////////////////////////////////////////////////////////////////////
 
     @(test)
     group__owns_arch_table_only__test :: proc(t: ^testing.T) {

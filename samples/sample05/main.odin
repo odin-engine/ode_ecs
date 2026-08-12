@@ -51,31 +51,26 @@ main :: proc() {
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
-        context.allocator = oc.mem_track__init(&mem_track, context.allocator)  
+        context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
     //
     // Actual ODE_ECS sample starts here.
     //
-        // Simple error handling
         err: ecs.Error
-    
-        // Database
+
         db : ecs.Database
 
        // Init database
-        defer { 
+        defer {
             err = ecs.terminate(&db) 
             if err != nil do report_error(err)
         }
@@ -83,25 +78,21 @@ main :: proc() {
         ENTITIES_CAP :: 200_000
         COMPONENTS_CAP :: 10_000
 
-        // 100k entities !!!
-        err = ecs.init(&db, ENTITIES_CAP, allocator) 
+        err = ecs.init(&db, ENTITIES_CAP, allocator)
         if err != nil { report_error(err); return }
 
-        // Table and Compact_Table
         table : ecs.Table(Health)
         compact_table : ecs.Compact_Table(Health)
 
         large_table : ecs.Table(Health)
         large_compact_table : ecs.Compact_Table(Health)
 
-        // Init table and compact_table
         err = ecs.table__init(&table, &db, COMPONENTS_CAP)
         if err != nil { report_error(err); return }
 
         err = ecs.compact_table__init(&compact_table, &db, COMPONENTS_CAP)
         if err != nil { report_error(err); return }
 
-        // Init table and compact_table
         err = ecs.table__init(&large_table, &db, ENTITIES_CAP)
         if err != nil { report_error(err); return }
 
@@ -129,20 +120,16 @@ main :: proc() {
                 //
 
                 if i < COMPONENTS_CAP {
-                    // create table component
                     component, err = ecs.add_component(&table, eid)
                     if err != nil { report_error(err); return }
 
-                    // fill component with "random" values
                     component.hp = i
                     component.max_hp = ENTITIES_CAP
 
-                    // create compact_table component
                     component, err = ecs.add_component(&compact_table, eid)
                     if err != nil { report_error(err); return }
 
-                    // fill component with "random" values
-                    component.hp = i   
+                    component.hp = i
                     component.max_hp = ENTITIES_CAP
                 }
 
@@ -150,20 +137,16 @@ main :: proc() {
                 // fill large tables
                 //
 
-                // create table component
                 component, err = ecs.add_component(&large_table, eid)
                 if err != nil { report_error(err); return }
 
-                // fill component with "random" values
                 component.hp = i
                 component.max_hp = ENTITIES_CAP
 
-                // create compact_table component
                 component, err = ecs.add_component(&large_compact_table, eid)
                 if err != nil { report_error(err); return }
 
-                // fill component with "random" values
-                component.hp = i   
+                component.hp = i
                 component.max_hp = ENTITIES_CAP
             }
 
@@ -179,7 +162,7 @@ main :: proc() {
             for &comp, index in ecs.slice(&table) {
                 eid = ecs.get_entity(&table, index)
 
-                comp.hp += eid.ix  // random operation over component
+                comp.hp += eid.ix
                 comp.max_hp += eid.ix
             }
 
@@ -196,7 +179,7 @@ main :: proc() {
             for &comp, index in ecs.slice(&compact_table) {
                 eid = ecs.get_entity(&compact_table, index)
 
-                comp.hp += eid.ix  // random operation over component
+                comp.hp += eid.ix
                 comp.max_hp += eid.ix
             }
 
@@ -213,7 +196,7 @@ main :: proc() {
             for &comp, index in ecs.slice(&large_table) {
                 eid = ecs.get_entity(&large_table, index)
 
-                comp.hp += eid.ix  // random operation over component
+                comp.hp += eid.ix
                 comp.max_hp += eid.ix
             }
 
@@ -230,7 +213,7 @@ main :: proc() {
             for &comp, index in ecs.slice(&large_compact_table) {
                 eid = ecs.get_entity(&large_compact_table, index)
 
-                comp.hp += eid.ix  // random operation over component
+                comp.hp += eid.ix
                 comp.max_hp += eid.ix
             }    
         
@@ -273,10 +256,9 @@ main :: proc() {
         }
 
         
-        // The 8-row tables are too small to time in a single pass (the cost is below the
-        // timer's noise floor), so we repeat each loop REPEAT times. The reported "Loop time"
-        // for these is the TOTAL over REPEAT passes. `rep` is folded into the work so the
-        // optimizer cannot collapse the identical passes.
+        // 8-row tables are too fast to time in a single pass, so we repeat REPEAT times.
+        // Loop times below are totals over REPEAT passes; `rep` is folded into the work
+        // so the optimizer can't collapse the identical passes.
         REPEAT :: 1_000_000
 
         //
@@ -286,17 +268,13 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            // ecs.slice bound once, outside the repeat loop —
-            // rebinding it fresh each rep would still beat reading tiny_table.rows
-            // directly inside the loop (see table__slice's doc comment for
-            // why), but there's no reason to pay even that when the table's rows
-            // don't change across repeats.
+            // ecs.slice bound once outside the repeat loop; rows don't change across repeats.
             tiny_dense := ecs.slice(&tiny_table)
             for rep := 0; rep < REPEAT; rep += 1 {
                 for &comp, index in tiny_dense {
                     eid = ecs.get_entity(&tiny_table, index)
 
-                    comp.hp += eid.ix + rep  // random operation over component
+                    comp.hp += eid.ix + rep
                     comp.max_hp += eid.ix
                 }
             }
@@ -317,7 +295,7 @@ main :: proc() {
                 for &comp, index in compact8_dense {
                     eid = ecs.get_entity(&compact_table8, index)
 
-                    comp.hp += eid.ix + rep  // random operation over component
+                    comp.hp += eid.ix + rep
                     comp.max_hp += eid.ix
                 }
             }
@@ -337,7 +315,7 @@ main :: proc() {
                 for &comp, index in table8_dense {
                     eid = ecs.get_entity(&table8, index)
 
-                    comp.hp += eid.ix + rep  // random operation over component
+                    comp.hp += eid.ix + rep
                     comp.max_hp += eid.ix
                 }
             }

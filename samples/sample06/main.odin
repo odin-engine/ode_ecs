@@ -28,27 +28,22 @@ main :: proc() {
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
-        context.allocator = oc.mem_track__init(&mem_track, context.allocator)  
+        context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
     //
     // Actual ODE_ECS sample starts here.
     //
-        // Simple error handling
         err: ecs.Error
-    
-        // Database
+
         db : ecs.Database
 
        // Init database
@@ -90,7 +85,6 @@ main :: proc() {
         err = ecs.tag(&is_alive_table, bird)
         if err != nil { report_error(err); return }
 
-        // iterate over entities tagged in is_alive_table
         fmt.println("Tagged entities:")
         for eid in ecs.slice(&is_alive_table) {
             fmt.println("Entity tagged in `is_alive_table`:", eid)
@@ -119,7 +113,6 @@ main :: proc() {
         fmt.println("Is bird alive:",  is_bird_alive)
         fmt.println("Is chair alive:", is_chair_alive)
 
-        // Remove some tags
         ecs.untag(&is_alive_table, human)
         ecs.untag(&is_alive_table, chair)
 
@@ -203,8 +196,7 @@ main :: proc() {
             eid := ecs.get_entity(row)
             data := (^My_User_Data)(user_data)
 
-            // using entities saved in user data
-            if eid == data.human_eid || eid == data.chair_eid do return true 
+            if eid == data.human_eid || eid == data.chair_eid do return true
 
             return false
         }
@@ -268,9 +260,8 @@ main :: proc() {
         err = ecs.tiny_table__init(&movement_table, &db)
         if err != nil { report_error(err); return } 
 
-        movement: ^Movement // component
+        movement: ^Movement
 
-        // Add Movement component for human and bird            
         movement, err = ecs.tiny_table__add_component(&movement_table, human)
         if err != nil { report_error(err); return } 
 
@@ -306,7 +297,6 @@ main :: proc() {
             eid := ecs.get_entity(row)
             movement_table := (^Movement_User_Data)(user_data).movement_table
 
-            // get Movement component
             movement := ecs.get_component(movement_table, row)
 
             if movement == nil do return false
@@ -329,7 +319,6 @@ main :: proc() {
         err = ecs.iterator_init(&it4, &view4)
         if err != nil { report_error(err); return }
 
-        // Print list of moving entities (not idle)
         fmt.println()
         fmt.println(ecs.view_len(&view4), "entities are moving (not idle):")
         for ecs.next(&it4) {
@@ -366,11 +355,11 @@ main :: proc() {
             }
         }
 
-        
-        // If we re-iterate again, view is not updated, we need to rerun filter for entities that changed
+
+        // Re-iterating won't reflect the change; filters must be rerun explicitly.
         ecs.view__rerun_filter(&view4, human)
 
-        // Rerun filter for all views that has this component and entity
+        // Or rerun for every view watching this table, for a given entity
         ecs.tiny_table__rerun_views_filters(&movement_table, chair)
 
         fmt.println()
@@ -390,8 +379,7 @@ main :: proc() {
 
     ///////////////////////////////////////////////////////////////////////////////
     // View excludes example: "has Movement but is NOT tagged in is_alive_table".
-    // Unlike a filter proc, an excludes list is auto-maintained — tagging/untagging
-    // updates the view, no rerun needed.
+    // Unlike a filter proc, excludes are auto-maintained — no rerun needed.
     //
         view5: ecs.View
 
@@ -437,8 +425,8 @@ main :: proc() {
 
     ///////////////////////////////////////////////////////////////////////////////
     // View any_of example (OR): "has Movement AND (is flying OR is heavy)".
-    // Like excludes, any_of is auto-maintained and not a filter — no rerun needed,
-    // and losing only ONE of several matching any_of tags does not evict a member.
+    // Like excludes, any_of is auto-maintained — losing only ONE matching tag
+    // does not evict a member that still matches through another.
     //
         is_flying_table: ecs.Tag_Table
         is_heavy_table:  ecs.Tag_Table
@@ -457,8 +445,8 @@ main :: proc() {
         err = ecs.view_init(&view6, &db, {&movement_table}, any_of = {&is_flying_table, &is_heavy_table})
         if err != nil { report_error(err); return }
 
-        // Entities/tags already existed before view6 was created — populate it once
-        // (a view created up front instead would stay live automatically, no rebuild needed)
+        // Entities/tags already existed before view6 was created, so populate it once
+        // (a view created up front would instead stay live automatically).
         err = ecs.rebuild(&view6)
         if err != nil { report_error(err); return }
 
@@ -482,8 +470,7 @@ main :: proc() {
         err = ecs.tag(&is_heavy_table, human)
         if err != nil { report_error(err); return }
 
-        // Untag chair's ONLY matching any_of tag — it leaves the view; human and
-        // bird each still match through their own any_of tag
+        // Untag chair's ONLY matching any_of tag — it leaves the view; human and bird still match
         err = ecs.untag(&is_heavy_table, chair)
         if err != nil { report_error(err); return }
 

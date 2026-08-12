@@ -19,8 +19,8 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Re-init (issue #8) must not leak state from the previous life
 
-    // view__init must clear `bits`: a view re-init'd over a DIFFERENT table
-    // set used to keep the old tables' bits OR-ed in and stopped matching.
+    // regression: view__init must clear `bits` — a re-init over a different
+    // table set used to keep old bits OR-ed in and stopped matching.
     @(test)
     view_reinit_resets_bits__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -58,8 +58,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.terminate(&db) == nil)
     }
 
-    // view__init must clear `suspended`: a view suspended in a previous life
-    // used to stay silently dead after re-init.
+    // regression: view__init must clear `suspended` — it used to stay
+    // silently dead after re-init.
     @(test)
     view_reinit_resets_suspended__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -94,9 +94,9 @@ package ode_ecs__tests
         testing.expect(t, ecs.terminate(&db) == nil)
     }
 
-    // database__init and database__clear must reset `tail_swap_paused`:
-    // a database terminated (or cleared) while paused used to keep removals
-    // on the deferred-hole path.
+    // regression: init/clear must reset `tail_swap_paused` — a database
+    // terminated (or cleared) while paused used to keep removals on the
+    // deferred-hole path.
     @(test)
     database_reinit_resets_tail_swap_pause__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -134,11 +134,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.terminate(&db) == nil)
     }
 
-    // A database-wide resume must not silently clear an independently-paused
-    // table: it still packs the table (safe, matches pack's "mid-pause"
-    // guarantee), but the table's own pause_packing flag survives so a later
-    // removal on it still defers — one actor's database-wide resume must not
-    // break another actor's independent table-level pause.
+    // A database-wide resume packs an independently-paused table (safe, matches
+    // pack's mid-pause guarantee) but must not clear the table's own pause flag.
     @(test)
     table_pause_survives_database_resume__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -172,8 +169,7 @@ package ode_ecs__tests
         testing.expect(t, positions.holes_count == 0)
         testing.expect(t, ecs.table_len(&positions) == 2)
 
-        // ...but does not clear the table's own pause: a later removal on it
-        // still defers via a hole instead of tail-swapping
+        // ...but the table's own pause survives: a later removal still defers
         testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
         testing.expect(t, positions.holes_count == 1)
         testing.expect(t, ecs.table_len(&positions) == 2) // row span unchanged: hole, not tail-swapped
@@ -184,9 +180,7 @@ package ode_ecs__tests
     }
 
     // Same as table_pause_survives_database_resume__test, but for a Group:
-    // a database-wide resume packs the group's owned tables (rebuild is a
-    // deferred no-op while the group is still independently paused) without
-    // clearing the group's own pause_packing.
+    // resume packs owned tables without clearing the group's own pause.
     @(test)
     group_pause_survives_database_resume__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -221,8 +215,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.remove_component(&vel, eids[1]) == nil)
         testing.expect(t, ecs.slice(&group, &pos) == nil)
 
-        // db-wide resume packs owned tables but the group stays dirty: it is
-        // still independently paused, so group__rebuild re-defers
+        // db-wide resume packs owned tables but group__rebuild re-defers: the
+        // group is still independently paused
         testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, db.tail_swap_paused == false)
         testing.expect(t, ecs.slice(&group, &pos) == nil, "group must still be dirty: its own pause survived")
@@ -232,9 +226,8 @@ package ode_ecs__tests
         group__verify(t, &group, &pos, &vel)
     }
 
-    // Shared_Table.pause_packing must be reset on re-init (issue #8 pattern),
-    // but preserved across a data-only clear() — clear resets row data, not
-    // caller-set mode.
+    // regression: pause_packing must reset on re-init (issue #8 pattern) but
+    // survive a data-only clear() — clear resets row data, not caller-set mode.
     @(test)
     table_pause_packing_reinit_clear__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -265,8 +258,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.terminate(&db) == nil)
     }
 
-    // Tiny_Table's fixed subscribers array must be cleared on re-init:
-    // it used to keep notifying views from a previous life.
+    // regression: Tiny_Table's fixed subscribers array must be cleared on
+    // re-init — it used to keep notifying views from a previous life.
     @(test)
     tiny_table_reinit_clears_subscribers__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -283,8 +276,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.tiny_table__init(&tiny, &db) == nil)
         testing.expect(t, ecs.view_init(&view, &db, {&tiny}) == nil)
 
-        // Terminate the TABLE while the view is alive (view becomes Invalid),
-        // then re-init the same tiny table struct.
+        // terminate the TABLE while the view is alive (view becomes Invalid), then re-init
         testing.expect(t, ecs.tiny_table__terminate(&tiny) == nil)
         testing.expect(t, view.state == ecs.Object_State.Invalid)
         testing.expect(t, ecs.tiny_table__init(&tiny, &db) == nil)
@@ -304,11 +296,9 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Suspended-view stale guard
 
-    // A view that misses a MEMBER removal while suspended holds rows that
-    // reference table rows no longer backing them — it must come back from
-    // resume flagged `stale`, and rebuild must clear the flag and restore
-    // correct content. Missed ADDS must NOT flag it: they only leave the view
-    // incomplete, which is the documented suspend semantic.
+    // A missed MEMBER removal while suspended must flag the view `stale` on
+    // resume (rows now point at moved data); missed ADDS must not — that's
+    // just documented incompleteness.
     @(test)
     view_suspend_missed_removal_sets_stale__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -435,8 +425,7 @@ package ode_ecs__tests
         testing.expect(t, ecs.rebuild(&tiny_view) == nil)
         testing.expect_value(t, ecs.view_len(&tiny_view), 8)
 
-        // Rebuild mid-pause: the scan slices now contain holes that must be
-        // skipped, and removed entities must drop out of the rebuilt view.
+        // rebuild mid-pause: scan slices now contain holes that must be skipped
         ecs.pause_packing(&db)
         removed := 0
         for i in 0..<N {
@@ -465,8 +454,8 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // API consistency
 
-    // Re-adding an existing tag on a FULL tag table must be a no-op (nil),
-    // matching the component tables; it used to return Container_Is_Full.
+    // regression: re-adding an existing tag on a FULL tag table must be a
+    // no-op (nil), matching component tables; it used to return Container_Is_Full.
     @(test)
     tag_table_full_readd_is_noop__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -494,8 +483,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.terminate(&db) == nil)
     }
 
-    // An iterator with an explicit end_row must clamp to the current view
-    // length on reset; it used to walk cleared rows after the view shrank.
+    // regression: an iterator with an explicit end_row must clamp to the
+    // current view length on reset; it used to walk cleared rows after shrinking.
     @(test)
     iterator_explicit_end_row_clamps__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()

@@ -12,9 +12,8 @@ package ode_core
     import "core:testing"
 
 ///////////////////////////////////////////////////////////////////////////////
-// ix_gen -- index + generation 
-// When we reuse id (because old entity was destroyed) we increase generation. 
-// In this way if you saved old id, even though their ix will be the same their gen will be different.
+// ix_gen -- index + generation. Reusing an id (old entity destroyed) bumps
+// gen, so a stale saved id with the same ix reads as different from the new one.
 
     GEN_MAX :: 65535
 
@@ -47,7 +46,7 @@ package ode_core
 
         self.items = make([]ix_gen, cap, allocator) or_return
         self.freed = make([]int, cap, allocator) or_return
-        ix_gen_factory__clear(self, bump_gen = false) // fresh items, gens start at 0
+        ix_gen_factory__clear(self, bump_gen = false) // fresh items: gens start at 0
 
         return runtime.Allocator_Error.None
     }
@@ -59,8 +58,7 @@ package ode_core
         delete(self.freed, allocator) or_return
         self.freed = nil
         delete(self.items, allocator) or_return
-        // nil (not just freed) so a terminated factory reads as empty instead
-        // of dangling — is_valid and any later range over items stay safe
+        // nil (not just freed) so a terminated factory reads as empty, not dangling
         self.items = nil
         return runtime.Allocator_Error.None
     }
@@ -85,14 +83,14 @@ package ode_core
 
             p = &self.items[ix]
 
-            when VALIDATIONS do assert(p.ix == DELETED_INDEX) // sanity check
+            when VALIDATIONS do assert(p.ix == DELETED_INDEX)
             p.ix = ix
             p.gen = p.gen >= GEN_MAX ? 0 : p.gen + 1
 
             id = p^
         } else {
             p = &self.items[self.created_count]
-            when VALIDATIONS do assert(p.ix == DELETED_INDEX) // sanity check
+            when VALIDATIONS do assert(p.ix == DELETED_INDEX)
             p.ix = self.created_count
 
             id = p^
@@ -122,18 +120,17 @@ package ode_core
         return self.items[index]
     }
 
-    // #no_bounds_check: items has cap elements and id.ix is range-checked right above (same as is_expired)
+    // #no_bounds_check: id.ix is range-checked right above
     ix_gen_factory__is_freed :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool #no_bounds_check {
-        if id.ix < 0 || id.ix >= self.cap do return true // out of range -> treat as not live
+        if id.ix < 0 || id.ix >= self.cap do return true // out of range -> not live
         return self.items[id.ix].ix == DELETED_INDEX
     }
 
-    // #no_bounds_check: items has cap elements and id.ix is range-checked right above
+    // #no_bounds_check: id.ix is range-checked right above
     ix_gen_factory__is_expired :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool #no_bounds_check {
-        if id.ix < 0 || id.ix >= self.cap do return true // out of range -> treat as expired
-        // Comparing the whole stored id (ix + gen) rather than just gen also rejects slots that were
-        // never created or have been freed: those store ix == DELETED_INDEX, so the zero/default id
-        // {ix = 0, gen = 0} no longer slips through against a freshly cleared (gen == 0) slot.
+        if id.ix < 0 || id.ix >= self.cap do return true // out of range -> expired
+        // Comparing the whole id (ix + gen), not just gen, also rejects never-created/freed
+        // slots (ix == DELETED_INDEX), so a zero/default id can't slip through.
         return self.items[id.ix] != id
     }
 
@@ -142,7 +139,7 @@ package ode_core
         return self.created_count - self.freed_count
     }
 
-    // in bytes
+    // In bytes.
     ix_gen_factory__memory_usage :: proc(self: ^Ix_Gen_Factory) -> int {
         total := size_of(self^)
         if self.items != nil {
@@ -156,12 +153,9 @@ package ode_core
         return total
     }
 
-    // bump_gen advances every slot's generation so ids handed out before the
-    // clear stop matching ids created after it (the fresh-create path in
-    // ix_gen_factory__new_id reuses the stored gen without bumping). It
-    // defaults to true because the false path silently revives pre-clear ids;
-    // pass false only when the items are about to be overwritten wholesale
-    // (init, deserialization).
+    // bump_gen advances every slot's generation so pre-clear ids stop matching
+    // post-clear ones. Defaults true; pass false only when items are about to
+    // be overwritten wholesale (init, deserialization) since it silently revives old ids.
     ix_gen_factory__clear :: proc(self: ^Ix_Gen_Factory, bump_gen := true) {
         assert(self != nil)
         assert(self.items != nil)

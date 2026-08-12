@@ -1,8 +1,8 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    Tests for Command_Buffer (command_buffer.odin) — deferred structural
-    operations recorded during iteration and replayed at a sync point.
+    Tests for Command_Buffer: deferred structural operations recorded
+    during iteration and replayed at a sync point.
 */
 
 package ode_ecs__tests
@@ -267,10 +267,9 @@ package ode_ecs__tests
             testing.expect(t, pos != nil && pos.x == 6)
     }
 
-    // Regression: a deferred add that OVERWRITES an existing component must
-    // re-run subscribed views' filters — the overwritten value can flip the
-    // filter verdict either way, and the plain add-notification short-circuits
-    // on entities already in the view.
+    // Regression: an overwriting deferred add must re-run subscribed views'
+    // filters — the new value can flip the verdict either way, and the plain
+    // add-notification short-circuits on entities already in the view.
     @(test)
     cb_overwrite_reruns_view_filter__test :: proc(t: ^testing.T) {
         //
@@ -836,11 +835,9 @@ package ode_ecs__tests
             testing.expect(t, ecs.command_buffer_len(&cb2) == 0) // cleared despite the error
     }
 
-    // Cross-buffer ordering on ONE database: two independently-recorded
-    // buffers against the same db, where the second buffer's command depends
-    // on the first's effect. The doc comment (command_buffer.odin) promises
-    // "cross-buffer ordering is the order you replay them in" — verify both
-    // directions actually behave that way.
+    // Two independently-recorded buffers against one db, where buffer B's
+    // command depends on buffer A's effect: outcome must follow replay
+    // order, not recording order (see command_buffer.odin's ordering promise).
     @(test)
     cb_cross_buffer_ordering__test :: proc(t: ^testing.T) {
         //
@@ -888,9 +885,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.table_len(&positions) == 0)
 
         //
-        // Same setup, reversed replay order: B then A — B's add must now
-        // succeed (eid still alive at that point), proving the outcome is
-        // governed purely by replay order, not recording order.
+        // Reversed replay order: B then A — B's add must now succeed
+        // (eid still alive at that point).
         //
             db2: ecs.Database
             positions2: ecs.Table(Position)

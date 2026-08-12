@@ -22,10 +22,8 @@ package ode_ecs
     @(private)
     VIEW_NO_RID :: view_record_id(max(u32))
 
-    // A view row stores per-column table ROW IDS (u32), not component addresses:
-    // half the bytes per column, and the component address is derived as
-    // &table.rows[rid] on read. A table's rows array never reallocates (fixed
-    // cap at init), so rid + typed table is always enough.
+    // Stores per-column table ROW IDS (u32), not component addresses — half the bytes,
+    // derived as &table.rows[rid] on read (safe since a table's rows array never reallocates).
     View_Row_Raw :: struct {
         eid: entity_id,
         rids: [1] u32, // at least one column
@@ -36,8 +34,7 @@ package ode_ecs
     view_row_raw__fill :: proc (self: ^View_Row_Raw, view: ^View, eid: entity_id) #no_bounds_check {
         self.eid = eid
 
-        // cid equals the column's position in view.tables.items by construction
-        // (view__init sets tid_to_cid[table.id] = index), so no lookup is needed
+        // cid == position in view.tables.items by construction (view__init sets tid_to_cid[table.id] = index)
         for table, cid in view.tables.items {
             switch table.type {
                 case Table_Type.Unknown:
@@ -57,8 +54,7 @@ package ode_ecs
                         self.rids[cid] = u32((uintptr(ptr) - uintptr(&raw.rows[0])) / uintptr(raw.type_info.size))
                     }
                 case Table_Type.Tag_Table:
-                    // tags carry no component data; this slot is never read
-                    // (kept without a map probe, matching the old always-nil ref)
+                    // tags carry no component data; slot never read (no map probe needed, matches old always-nil ref)
                     self.rids[cid] = u32(VIEW_NO_RID)
                 case Table_Type.Arch_Table:
                     // shared index across every column, same direct load as Table
@@ -82,10 +78,8 @@ package ode_ecs
         raw: ^View_Row_Raw,
     }
 
-    // NOTE: unlike the old pointer-storing rows, these derive &table.rows[rid]
-    // unconditionally — they no longer return nil for a missing component. Rows
-    // are only read for entities whose included components all exist, so no
-    // caller relied on nil.
+    // NOTE: unlike old pointer-storing rows, these derive &table.rows[rid] unconditionally —
+    // never nil for missing components (rows are only read when all included components exist).
 
     @(private)
     view_row__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), view_row: ^View_Row) -> ^T #no_bounds_check {
@@ -109,14 +103,9 @@ package ode_ecs
     }
 
     @(private)
-    // Arch_Table columns don't participate in Iterator's it.dense fast path
-    // (only Table_Type.Table columns can be Aligned — see view__dense_resolve),
-    // so this is always the rid-indirection path, same shape as the
-    // Compact_Table/Tiny_Table accessors below. col_idx is resolved by a
-    // linear scan every call (no per-View caching, unlike Arch_Iterator's
-    // col_idx cache) — this proc is new, isolated, and only reachable when a
-    // caller explicitly asks for an Arch_Table column, so it cannot regress
-    // any existing Table/Compact_Table/Tiny_Table read path.
+    // Arch_Table columns never take the dense fast path (only Table_Type.Table can be
+    // Aligned — see view__dense_resolve), so this is always rid-indirection, with col_idx
+    // resolved by a linear scan every call (no per-View caching like Arch_Iterator's).
     view_row__get_component_for_arch_table :: #force_inline proc "contextless" (table: ^Arch_Table, view_row: ^View_Row, $T: typeid) -> ^T #no_bounds_check {
         #no_bounds_check {
             rid := view_row.raw.rids[view_row.view.tid_to_cid[table.id]]
@@ -134,30 +123,20 @@ package ode_ecs
 // View
 //
 
-    // Dense (aligned) fast path state.
+    // Dense (aligned) fast path: a Table column is "aligned" when view row `r` references
     //
-    // A column is "aligned" when, for its Table (not Compact_Table/Tiny_Table/Tag_Table),
-    // view row `r` references exactly `table.rows[r]`. When that holds, Iterator reads
-    // that column's components directly from the table's dense array and skips the
-    // per-row rid records (~3x faster reads). Alignment is tracked per column, so
-    // one misaligned table (or a Compact/Tiny/Tag column) doesn't push the other
-    // columns onto the pointer path.
+    // exactly `table.rows[r]`, letting Iterator read components directly instead of via rid
+    // (~3x faster). Tracked per column; maintained incrementally, Unknown resolved lazily by
+    // rescan on next iterator init/reset.
     //
-    // The state is maintained incrementally: appends verify the new row in O(tables),
-    // a non-tail removal degrades still-aligned columns to Unknown, and Unknown is
-    // resolved by an early-abort per-column rescan on the next iterator_init/
-    // iterator_reset. Tables with identical membership stay aligned even under
-    // tail-swap churn, so this fast path survives despawn/respawn workloads.
     View_Dense_State :: enum u8 {
         Unknown = 0,    // needs rescan (resolved lazily on iterator init/reset)
         Aligned,
         Misaligned,     // sticky until view__clear/view__rebuild
     }
 
-    // With rid-based rows, per-column alignment is simply "rids[cid] == row index";
-    // no base/stride constants are needed, so a column's dense info is just its state.
-    // Invariant: state == Aligned implies the column is a Table (non-Table columns are
-    // kept Misaligned by view__clear/view__dense_resolve and never take the dense path).
+    // Alignment is just "rids[cid] == row index", no base/stride constants needed.
+    // Invariant: Aligned implies a Table column — non-Table columns stay Misaligned.
 
     View :: struct {
         id: view_id,
@@ -183,13 +162,9 @@ package ode_ecs
         exclude_bits: Uni_Bits, // tables whose entities must NOT be in this view
         any_of_bits: Uni_Bits, // tables of which an entity must be in at least one, when any_of is non-empty
         suspended: bool,
-        // Set when a member-removal or row-move notification was skipped
-        // because the view was suspended: rows can then reference destroyed
-        // entities or table rows owned by someone else, so iterating reads
-        // garbage until view__rebuild. Missed adds don't set it (they only
-        // leave the view incomplete — safe). resume() keeps the flag; only a
-        // rebuild (or clear) restores trust. Iterator init asserts on it
-        // under VALIDATIONS.
+        // Set when suspend skipped a member-removal/row-move notification: rows may then
+        // reference destroyed entities or moved table rows, so iterating reads garbage until
+        // rebuild. Missed adds don't set it (view is just incomplete). Iterator init asserts under VALIDATIONS.
         stale: bool,
 
         // Whole-view summary of the per-column states, refreshed by view__dense_resolve
@@ -204,7 +179,6 @@ package ode_ecs
         temp_row: ^View_Row_Raw, // used to filter, pointed to reserved row at the end of rows array
     }
 
-    // Is view valid and ready to use (initialized and everything is ok)
     view__is_valid :: proc(self: ^View) -> bool {
         if self == nil do return false 
         if self.id < 0 do return false 
@@ -256,7 +230,6 @@ package ode_ecs
 
         self.db = db
 
-        // Store filter
         self.filter = filter
 
         // Make sure we do not have repeating columns (copmonent typse/tables).
@@ -285,10 +258,8 @@ package ode_ecs
             }
         }
 
-        // Dedupe + validate any_of the same way. Overlap with excludes is allowed
-        // (not a contradiction — e.g. "exclude Dead, any_of {Enemy, Boss}" is still a
-        // meaningful, satisfiable constraint), unlike overlap with includes below,
-        // which is always redundant since AND already guarantees that table.
+        // Dedupe + validate any_of the same way. Overlap with excludes is allowed (not a
+        // contradiction), unlike overlap with includes, which is always redundant under AND.
         uniq_any_of: []^Shared_Table
         sorted_any_of: []^Shared_Table
         defer if sorted_any_of != nil do delete(sorted_any_of, db.allocator)
@@ -307,7 +278,6 @@ package ode_ecs
 
         oc.dense_arr__init(&self.tables, self.tables_len, db.allocator) or_return
 
-        // max table id
         max_table_id: int = -1
         for table in uniq_tables {
             if int(table.id) > max_table_id do max_table_id = int(table.id)
@@ -393,20 +363,16 @@ package ode_ecs
         // Temp row is the last row in rows array
         self.temp_row = view__get_row_private(self, self.cap) // remember we allocated cap + 1 rows
 
-        // State
         self.state = Object_State.Normal
 
-        // Clear
         view__clear(self) or_return
 
         //
         // Attach to db
         //
-        // database__attach_view is capacity-limited (Container_Is_Full once
-        // views_cap is exhausted) — must not leak the allocations above on
-        // failure. Can't reuse view__terminate here — it unconditionally
-        // calls database__detach_view, which self was never actually
-        // attached to yet.
+        // database__attach_view is capacity-limited (Container_Is_Full) — must not leak the
+        // allocations above on failure. Can't reuse view__terminate here: it unconditionally
+        // calls database__detach_view, which self isn't attached to yet.
         {
             id, aerr := database__attach_view(db, self)
             if aerr != nil {
@@ -425,16 +391,9 @@ package ode_ecs
         }
 
         //
-        // Subscribe to tables. Each attach is capacity-limited by that
-        // table's own subscribers_cap (Container_Is_Full) — unlike the
-        // attach_view failure above, self IS validly attached and Normal by
-        // this point, so view__terminate can be reused directly: its
-        // subscriber-detach loops already tolerate Not_Found for any table
-        // this loop didn't reach yet, so it safely unwinds however far the
-        // loop got (self.tables/excludes/any_of already hold every table,
-        // subscribed or not — that's what makes the detach loop's Not_Found
-        // tolerance correct here) plus every other allocation view__terminate
-        // frees, leaving no partially-subscribed, leaked View behind.
+        // Subscribe to tables. Each table caps its own subscribers_cap (Container_Is_Full);
+        // self is already validly attached, so view__terminate can be reused to unwind on
+        // failure — its detach loops tolerate Not_Found for tables not yet subscribed.
         for table in uniq_tables {
             serr := shared_table__attach_subscriber(table, self)
             if serr != nil {
@@ -467,9 +426,8 @@ package ode_ecs
         }
 
         //
-        // Unsubscribe from tables first, so a failure here doesn't strand a
-        // half-freed view. Tables that were already terminated dropped their
-        // subscriber lists (type is reset to Unknown) — skip them.
+        // Unsubscribe from tables first, so a failure here doesn't strand a half-freed view.
+        // Tables already terminated dropped their subscriber lists (type reset to Unknown) — skip.
         //
         for table in self.tables.items {
             if table == nil || table.type == Table_Type.Unknown do continue
@@ -538,7 +496,6 @@ package ode_ecs
         return nil
     }
 
-    // Rebuild view and fill it with entities matching view's tables
     view__rebuild :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -557,16 +514,14 @@ package ode_ecs
             }
         }
 
-        // One dispatch for the whole scan: the smallest table's rid -> eid rows
-        // as a plain slice (holes included, skipped below) instead of a
-        // type-switch per row.
+        // One dispatch for the whole scan: smallest table's rid->eid rows as a plain slice
+        // (holes included, skipped below) instead of a type-switch per row.
         min_eids := shared_table__rid_to_eid_slice(min_table)
         assert(self.cap >= len(min_eids))
 
         for eid in min_eids {
             if is_not_set(eid) do continue // hole (removal while tail swap was paused)
 
-            // check if view bits is subset of entity bits
             if view__components_match(self, eid) {
                 view__add_record(self, eid) or_return
             }
@@ -575,15 +530,12 @@ package ode_ecs
         return nil
     }
     
-    // Number of records(rows) in view
     view__len :: #force_inline proc "contextless" (self: ^View) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
    
-    // Maximum number of records of view
     view__cap :: #force_inline proc "contextless" (self: ^View) -> int { return self.cap }
 
-    // View memory usage in bytes
     view__memory_usage :: proc (self: ^View) -> int { 
         total := size_of(self^)
 
@@ -616,9 +568,8 @@ package ode_ecs
     view__components_match :: #force_inline proc (self: ^View, eid: entity_id) -> bool {
         bits := &self.db.eid_to_bits[eid.ix]
 
-        // Unlike is_subset/no_intersection, intersects({}, x) is always false — an
-        // unused any_of (the common case) must be explicitly bypassed here, or every
-        // view without any_of would stop matching anything.
+        // intersects({}, x) is always false, so an unused any_of (the common case) must be
+        // explicitly bypassed here, or a view without any_of would match nothing.
         return uni_bits__is_subset(&self.bits, bits) &&
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
                (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits)) &&
@@ -643,20 +594,15 @@ package ode_ecs
         }
     }
 
-    // Rerun filter for an entity
     view__rerun_filter :: proc(self: ^View, eid: entity_id) -> Error {
-        if !view__components_match(self, eid) do return nil // do not consider it an error
-                                                            // if components do not match, row had been removed in other way
+        if !view__components_match(self, eid) do return nil // not an error — row was already removed some other way
 
         return view__rerun_filter_private(self, eid)
     }
 
-    // Re-evaluate the filter for every entity the view could contain, in one sweep:
-    // removes rows that stopped matching, adds candidates that now match. Use after
-    // bulk component mutations instead of per-entity rerun_views_filters. Unlike
-    // rebuild it does not clear the view, so surviving rows keep their positions
-    // (and their dense alignment, unless a removal actually moves rows).
-    // No-op for a view without a filter — membership is already exact.
+    // Re-evaluate the filter for every entity the view could contain in one sweep: removes
+    // rows that stopped matching, adds candidates that now match. Unlike rebuild it doesn't
+    // clear the view, so surviving rows keep their positions/alignment. No-op without a filter.
     view__refilter :: proc(self: ^View) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
         if self.filter == nil do return nil
@@ -706,10 +652,8 @@ package ode_ecs
         self.suspended = true
     }
 
-    // Resume updating view after calling suspend. If the view missed any
-    // membership-changing notification while suspended it stays `stale` —
-    // call rebuild() before iterating (iterator init asserts on it under
-    // VALIDATIONS).
+    // Resume updating after suspend. If a membership-changing notification was missed while
+    // suspended, the view stays `stale` — call rebuild() before iterating (asserted under VALIDATIONS).
     view__resume :: proc(self: ^View) {
         when VALIDATIONS {
             assert(self != nil)
@@ -728,18 +672,13 @@ package ode_ecs
 
     view__get_record :: view__get_row // for compatibility, use view__get_row instead, might be removed in future
 
-    // Batch (dense) access: when `table`'s column is dense-aligned, returns
-    // `table.rows[:view_len]` — the components of `table` in view-row order, as one contiguous
-    // slice. Returns nil when that column is not aligned (or the view is suspended, or `table`
-    // is not part of the view); in that case iterate with Iterator as usual. Alignment is per
-    // column, so one table of a view may be sliceable while another is not.
+    // Batch (dense) access: when `table`'s column is dense-aligned, returns table.rows[:view_len]
+    // as one contiguous slice; nil otherwise (fall back to Iterator). Alignment is per column.
+    // Slices from different tables of the same view share indexing (slice_a[i]/slice_b[i] = same
+    // entity) — the fastest way to iterate, compiling to a raw SoA sweep. Invalidated by any
+    // structural change; don't hold across those.
     //
-    // Slices for different tables of the same view share indexing: slice_a[i] and slice_b[i]
-    // belong to the same entity (the entity of view row i). This is the fastest possible way
-    // to iterate — a plain loop over these slices compiles to a raw SoA sweep.
     //
-    // The slice is invalidated by any structural change (add/remove component, create/destroy
-    // entity); do not hold on to it across such changes.
     view__slice :: proc "contextless" (self: ^View, table: ^Table($T)) -> []T {
         if self == nil || table == nil do return nil
         if self.state != Object_State.Normal do return nil
@@ -785,9 +724,8 @@ package ode_ecs
 // Private
 
     @(private)
-    // Verify one view row against each still-aligned column's dense invariant
-    // (rids[cid] must be exactly row_ix) and degrade columns that no longer
-    // hold. Non-Table columns are never Aligned, so they are skipped implicitly.
+    // Verify one row against each still-aligned column (rids[cid] must equal row_ix) and
+    // degrade columns that no longer hold. Non-Table columns are never Aligned, skipped implicitly.
     view__dense_check_row_degrade :: proc "contextless" (self: ^View, record: ^View_Row_Raw, row_ix: int) {
         #no_bounds_check {
             for &col, cid in self.dense_cols {
@@ -861,15 +799,9 @@ package ode_ecs
     }
 
     @(private)
-    // Suspended view skipped a member-removal or row-move notification for eid:
-    // if the entity is a member, its view row now references table rows that no
-    // longer back it (the table tail-swapped / packed regardless) — iterating
-    // would read garbage, so flag the view stale. Missed ADDS are deliberately
-    // not flagged: they only leave the view incomplete, which is the documented
-    // suspend semantic (rebuild to catch up).
-    // VALIDATIONS-only: the flag is read solely by VALIDATIONS asserts, and
-    // keeping this branch out of the notify loops costs release builds nothing
-    // (unguarded it measured ~2% on the churn benchmarks).
+    // Suspended view skipped a notification for eid: if it's a member, its row now points at
+    // stale table rows — flag stale (missed ADDs aren't flagged; that's just incompleteness).
+    // VALIDATIONS-only: read only by asserts; unguarded this cost ~2% in notify loops.
     // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.overbase.id_factory.cap
     view__missed_update_for_member :: #force_inline proc "contextless" (self: ^View, eid: entity_id) #no_bounds_check {
         when VALIDATIONS {
@@ -913,9 +845,8 @@ package ode_ecs
     }
 
     @(private)
-    // Adds a record whose rids are already filled in `src` (the view's temp row):
-    // copies the prepared row instead of re-deriving every column's row id
-    // (view_row_raw__fill costs a lookup per column — a map probe for Compact_Table).
+    // Adds a record whose rids are already filled in `src` (the view's temp row): copies the
+    // prepared row instead of re-deriving each column's row id (a map probe for Compact_Table).
     // #no_bounds_check: eid validated upstream, len(eid_to_rid) == db.overbase.id_factory.cap
     view__add_record_prefilled :: proc(self: ^View, eid: entity_id, src: ^View_Row_Raw) -> Error #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
@@ -972,9 +903,8 @@ package ode_ecs
     }
 
     @(private)
-    // Rerun filter for an entity. The row is filled at most once: for a non-member
-    // the row prepared for the filter test is copied into the view instead of
-    // being filled a second time.
+    // Rerun filter for an entity; the row is filled at most once — a non-member's row prepared
+    // for the filter test is copied into the view instead of being filled again.
     view__rerun_filter_private :: proc(self: ^View, eid: entity_id) -> Error {
         rid := self.eid_to_rid[eid.ix]
 
@@ -1029,18 +959,15 @@ package ode_ecs
         assert(cid != DELETED_INDEX)
 
         // record must exist
-        if self.eid_to_rid[eid.ix] == VIEW_NO_RID do return oc.Core_Error.Not_Found    // it is possible when removal of other component
-                                                                                        // removed enity from the view
+        if self.eid_to_rid[eid.ix] == VIEW_NO_RID do return oc.Core_Error.Not_Found // possible: removal of another component removed the entity from the view
         row_ix := int(self.eid_to_rid[eid.ix])
         record := view__get_row_private(self, row_ix)
         #no_bounds_check {
             record.rids[cid] = u32(rid)
         }
 
-        // Safety net: a component moving to a row other than row_ix breaks that
-        // column's dense alignment. (While truly aligned this should not trigger —
-        // removals that move members degrade the state to Unknown before this
-        // notification arrives.)
+        // Safety net: a component moving to a row other than row_ix breaks that column's
+        // alignment (shouldn't trigger while truly aligned — removals degrade to Unknown first).
         #no_bounds_check {
             col := &self.dense_cols[cid]
             if col^ == View_Dense_State.Aligned && rid != row_ix {

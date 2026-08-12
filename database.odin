@@ -20,9 +20,8 @@ package ode_ecs
         allocator: runtime.Allocator,
         state: Object_State,
 
-        // Active entity ID space. Points at overbase_storage (the common
-        // case, owned by this Database) or at a shared external Overbase
-        // attached via database__init_from_overbase. See overbase.odin.
+        // Active entity ID space: overbase_storage (owned) or a shared external
+        // Overbase attached via database__init_from_overbase. See overbase.odin.
         overbase: ^Overbase,
         owns_overbase: bool,
         overbase_storage: Overbase,
@@ -37,30 +36,26 @@ package ode_ecs
 
         eid_to_bits: []Uni_Bits,
 
-        // A set bit means "table T is disabled for this entity" — present in eid_to_bits
-        // (the entity has the component/row) but excluded from query matching until
-        // re-enabled via enable_component. See view__components_match.
+        // Set bit = table disabled for this entity — still present in eid_to_bits
+        // but excluded from query matching until enable_component. See view__components_match.
         eid_to_disabled_bits: []Uni_Bits,
 
         // Batch-allocated View-subscriber bookkeeping for every Tiny_Table in this
-        // Database (see tiny_table.odin's Tiny_Table_Subscriber_Slot) — Tiny_Table_Base
-        // only keeps an index into this slice, not the arrays themselves.
+        // Database (tiny_table.odin's Tiny_Table_Subscriber_Slot) — Tiny_Table_Base
+        // keeps only an index into this slice, not the arrays themselves.
         tiny_table_subscriber_slots: []Tiny_Table_Subscriber_Slot,
 
         // Optional parent/child relations, at most one per database.
-        // Set/unset by relations_table__init / relations_table__terminate.
         relations: ^Relations_Table,
 
-        // When true, removing a component from any Table/Compact_Table/Tiny_Table
-        // clears it in place (leaving a hole) instead of tail-swapping, so table
-        // rows and component pointers stay stable while iterating.
+        // When true, component removal clears in place (leaving a hole) instead of
+        // tail-swapping, so rows/pointers stay stable while iterating.
         // See database__pause_packing / database__resume_packing.
         tail_swap_paused: bool,
 
-        // eid.ix of the entity currently inside database__destroy_entity's component
-        // removal loop, DELETED_INDEX otherwise. Removing an excluded component could
-        // make the dying entity transiently match a view with excludes — the
-        // *__notify_excluding_views procs skip it while this is set.
+        // eid.ix of the entity inside database__destroy_entity's removal loop,
+        // DELETED_INDEX otherwise. Lets *__notify_excluding_views skip a dying
+        // entity that would otherwise transiently match an excluding view.
         destroying_eid_ix: int,
     }
 
@@ -118,13 +113,12 @@ package ode_ecs
         return nil
     }
 
-    // Attach this Database to a shared, already-initialized Overbase instead
-    // of creating its own — entity IDs created/destroyed through either this
-    // Database, a sibling Database sharing the same Overbase, or the Overbase
-    // itself all refer to the same entity set. If allocator is not given, the
-    // Overbase's own allocator is used for this Database's tables/views/groups
-    // and eid_to_bits. database__terminate will not terminate a shared Overbase
-    // — the caller owns its lifetime (see overbase_terminate).
+    // Attach this Database to a shared, already-initialized Overbase instead of
+    // creating its own — entity IDs created/destroyed through this Database, a
+    // sibling Database on the same Overbase, or the Overbase itself all refer to
+    // the same entity set. If allocator is nil, the Overbase's allocator is used.
+    // database__terminate will not terminate a shared Overbase — the caller owns
+    // its lifetime (see overbase_terminate).
     database__init_from_overbase :: proc(self: ^Database, overbase: ^Overbase, allocator: Maybe(runtime.Allocator) = nil, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -176,8 +170,8 @@ package ode_ecs
             self.eid_to_disabled_bits = nil
         }
 
-        // Views. Invalid views (their table was terminated) still own their
-        // allocations, so they must be terminated too or they leak.
+        // Invalid views (their table was terminated) still own their allocations,
+        // so they must be terminated too or they leak.
         for view in self.views.items {
             if view == nil do continue
             if view.state == Object_State.Normal || view.state == Object_State.Invalid {
@@ -186,19 +180,17 @@ package ode_ecs
         }
         oc.sparse_arr__terminate(&self.views, self.allocator) or_return
 
-        // Groups (before tables: releasing table ownership needs live table structs).
-        // group__terminate detaches the group from self.groups, so drain from the front.
+        // Before tables: releasing table ownership needs live table structs.
+        // group__terminate detaches from self.groups, so drain from the front.
         for oc.dense_arr__len(&self.groups) > 0 {
             group__terminate(self.groups.items[0]) or_return
         }
         oc.dense_arr__terminate(&self.groups, self.allocator) or_return
 
-        // Shared Tables. Terminating a Tiny_Table here calls
-        // database__detach_tiny_table_subscribers, which writes into
-        // self.tiny_table_subscriber_slots — so that slice must still be live for
-        // this loop, unlike eid_to_bits above (freed early; ranging a nil slice
-        // during a table's own terminate is a harmless no-op, but indexing one
-        // is not).
+        // Terminating a Tiny_Table calls database__detach_tiny_table_subscribers,
+        // which writes into tiny_table_subscriber_slots — so that slice must stay
+        // live here, unlike eid_to_bits (freed early; ranging a nil slice is a
+        // harmless no-op, but indexing one is not).
         for table in self.tables.items {
             if table == nil do continue
             if table.state == Object_State.Normal {
@@ -212,8 +204,8 @@ package ode_ecs
             self.tiny_table_subscriber_slots = nil
         }
 
-        // Relations_Table is not in self.tables, terminate it explicitly.
-        // relations_table__terminate sets self.relations = nil.
+        // Relations_Table is not in self.tables, terminate it explicitly
+        // (sets self.relations = nil).
         if self.relations != nil && self.relations.state == Object_State.Normal {
             relations_table__terminate(self.relations) or_return
         }
@@ -242,9 +234,8 @@ package ode_ecs
 
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
-        // Clear everything even if some object reports an error (e.g. a view
-        // invalidated by a terminated table) — a partial clear would leave the
-        // database in a torn state. The first error is still reported.
+        // Clear everything even if some object errors (e.g. a view invalidated by
+        // a terminated table) — a partial clear would leave a torn state. First error wins.
         err: Error
 
         for view in self.views.items {
@@ -268,14 +259,13 @@ package ode_ecs
         slice.zero(self.eid_to_disabled_bits)
 
         // bump_gen so entity ids held across the clear are detected as expired.
-        // A shared Overbase's entity ids stay valid for sibling Databases —
-        // only the Database that owns its Overbase may reset the id space.
+        // Only the Database that owns its Overbase may reset the id space —
+        // a shared Overbase's ids stay valid for sibling Databases.
         if self.owns_overbase {
             oc.ix_gen_factory__clear(&self.overbase.id_factory, bump_gen = true)
         }
 
-        // clear returns the database to its post-init state; a pause taken
-        // before the clear must not leak into the new data
+        // A pause taken before the clear must not leak into the new data.
         self.tail_swap_paused = false
 
         return err
@@ -302,34 +292,29 @@ package ode_ecs
     }
 
     // Local cleanup only: removes eid's components (and, with destroy_children,
-    // its descendants per this Database's own Relations_Table) from `self`.
-    // Does NOT validate eid and does NOT free the id — overbase__destroy_entity_impl
-    // is the sole caller, once per Database attached to the shared Overbase, and
-    // it owns id validation + the final free.
+    // its descendants per this Database's own Relations_Table) from `self`. Does
+    // NOT validate eid and does NOT free the id — overbase__destroy_entity_impl is
+    // the sole caller, once per Database attached to the shared Overbase, and owns
+    // id validation + the final free.
     //
-    // #force_inline: single call site (overbase__destroy_entity_impl), so no
-    // code-duplication cost — removes a call/return boundary that splitting
-    // this out of the old monolithic database__destroy_entity introduced.
+    // #force_inline: single call site, so no duplication cost — removes a call/return
+    // boundary left over from splitting this out of the old monolithic proc.
     @(private)
     database__destroy_entity_local :: #force_inline proc(self: ^Database, eid: entity_id, destroy_children: bool) -> Error {
-        // Relations cleanup (see relations_table.odin). Without a Relations_Table
-        // destroy_children is a no-op — no entity can have children.
+        // Without a Relations_Table, destroy_children is a no-op — no entity can have children.
         rt := self.relations
         if rt != nil && rt.state == Object_State.Normal {
             if destroy_children && rt.children_count[eid.ix] > 0 {
-                // Collect all descendants into rt.scratch as a flat BFS queue
-                // (at most rt.count <= rt.cap entries, so it always fits), then
-                // destroy them deepest-first: every destroyed entity has no
-                // remaining children and its parent is still alive, so each
-                // unlink is O(1). No recursion: the inner calls take the
-                // destroy_children == false path and never touch scratch.
+                // Collect all descendants into rt.scratch as a flat BFS queue (at most
+                // rt.count <= rt.cap entries), then destroy deepest-first: each destroyed
+                // entity has no remaining children and a still-alive parent, so every
+                // unlink is O(1). No recursion — inner calls take destroy_children == false.
                 tail := 0
                 #no_bounds_check {
                     c := rt.first_child[eid.ix]
                     for !is_not_set(c) {
-                        // a subtree has at most cap descendants; overflowing
-                        // scratch means the links are corrupted (e.g. a
-                        // parent cycle) — fail loudly, don't write OOB
+                        // Overflowing scratch means the links are corrupted (e.g. a parent
+                        // cycle) — fail loudly rather than write OOB.
                         when VALIDATIONS do assert(tail < len(rt.scratch), "relations links corrupted — descendant count exceeds cap")
                         rt.scratch[tail] = c
                         tail += 1
@@ -347,10 +332,9 @@ package ode_ecs
                     }
                 }
 
-                // Fully destroy each descendant (id freed + cleaned from every
-                // Database attached to self.overbase, not just self) — another
-                // Database's own relations cascade may have already destroyed
-                // one of these, hence tolerate_expired.
+                // Fully destroy each descendant (id freed + cleaned from every Database
+                // attached to self.overbase). tolerate_expired: a sibling Database's own
+                // relations cascade may have already destroyed one of these.
                 for i := tail - 1; i >= 0; i -= 1 {
                     overbase__destroy_entity_impl(self.overbase, rt.scratch[i], false, tolerate_expired = true) or_return
                 }
@@ -362,17 +346,16 @@ package ode_ecs
 
         bits := self.eid_to_bits[eid.ix]
 
-        // The removals below happen in table-id order, so an excluded component can
-        // go before an included one — without this guard the dying entity would
-        // transiently enter views that exclude that table (and their filters would
-        // observe it). No save/restore needed: destroy_children recursion completed above.
+        // Removals below happen in table-id order, so an excluded component can be
+        // removed before an included one — without this guard the dying entity would
+        // transiently enter views excluding that table. No save/restore needed:
+        // destroy_children recursion already completed above.
         self.destroying_eid_ix = eid.ix
         defer self.destroying_eid_ix = DELETED_INDEX
 
-        // Extract only the entity's set bits (the tables it belongs to) with
-        // count_trailing_zeros — O(components) work. Odin's `for id in bit_set`
-        // would instead test every position of the 128-bit domain (× TABLES_MULT
-        // words), paying ~128 bit tests per destroy for a 3-component entity.
+        // Extract only the entity's set bits via count_trailing_zeros — O(components)
+        // work, vs. Odin's `for id in bit_set` testing every position of the full
+        // 128-bit (x TABLES_MULT) domain regardless of how many bits are set.
         when TABLES_MULT == 1 {
             v := transmute(u128) bits
             for v != 0 {
@@ -391,7 +374,6 @@ package ode_ecs
             }
         }
 
-        // clean bit_sets
         uni_bits__clear(&self.eid_to_bits[eid.ix])
         uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
 
@@ -410,15 +392,13 @@ package ode_ecs
 
     @(require_results)
     database__is_entity_expired :: #force_inline proc "contextless" (self: ^Database, eid: entity_id) -> bool {
-        // Happens when eid.gen do not match. It means eid expired (was deleted)
+        // True when eid.gen doesn't match — the id was deleted and its index reused.
         return overbase__is_entity_expired(self.overbase, eid)
     }
 
-    // Pause tail swapping in all tables (Table, Compact_Table, Tiny_Table, Tag_Table).
-    // While paused, remove_component/destroy_entity clear the component in place —
-    // the row becomes a hole (get_entity for it returns ix == DELETED_INDEX), no other
-    // component moves, and subscribed views are still notified. This makes it safe to
-    // remove components/destroy entities while iterating table rows.
+    // Pause tail swapping in all tables. While paused, remove_component/destroy_entity
+    // clear the component in place (a hole; get_entity returns ix == DELETED_INDEX)
+    // instead of moving another row, so it's safe to remove/destroy while iterating.
     database__pause_packing :: proc(self: ^Database) {
         when VALIDATIONS {
             assert(self != nil)
@@ -428,8 +408,8 @@ package ode_ecs
         self.tail_swap_paused = true
     }
 
-    // Resume tail swapping and pack every table that accumulated holes, so the
-    // normal removal path never encounters a hole. O(tables) when nothing was removed.
+    // Resume tail swapping and pack every table that accumulated holes.
+    // O(tables) when nothing was removed.
     database__resume_packing :: proc(self: ^Database) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -446,8 +426,8 @@ package ode_ecs
             if err == nil do err = terr
         }
 
-        // Group membership changes were deferred while paused (rows could not
-        // move); rebuild dirty groups now that every table is packed.
+        // Membership changes were deferred while paused (rows could not move);
+        // rebuild dirty groups now that every table is packed.
         for group in self.groups.items {
             if group.state != Object_State.Normal || !group.dirty do continue
             gerr := group__rebuild(group)
@@ -460,10 +440,9 @@ package ode_ecs
     database__memory_usage :: proc (self: ^Database) -> int {
         total := size_of(self^)
 
-        // Only the Database that owns its Overbase counts its memory — a
-        // shared Overbase is counted once (via overbase_memory_usage), not
-        // once per attached Database. The overbase pointer field itself is
-        // already included in size_of(self^) above.
+        // Only the owning Database counts Overbase memory, so a shared Overbase is
+        // counted once, not once per attached Database (the pointer field itself
+        // is already included in size_of(self^) above).
         if self.owns_overbase do total += overbase__memory_usage(self.overbase)
         for table in self.tables.items {
             if table != nil do total += shared_table__memory_usage(table)
@@ -479,10 +458,9 @@ package ode_ecs
     }
 
     //
-    // Relations (parent/child) — thin wrappers over the database's
-    // Relations_Table, see relations_table.odin. All of them return
-    // API_Error.Relations_Table_Not_Created until relations_table__init
-    // has been called for this database.
+    // Relations (parent/child) — thin wrappers over the database's Relations_Table
+    // (relations_table.odin). All return API_Error.Relations_Table_Not_Created
+    // until relations_table__init has been called for this database.
     //
 
     database__set_parent :: proc(self: ^Database, child: entity_id, parent: entity_id, loc := #caller_location) -> Error {
@@ -560,15 +538,13 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Private
 
-    // Returns index of table in self.tables
     @(private)
     database__attach_table :: proc(self: ^Database, table: ^Shared_Table) -> (id: table_id, err: Error) {
         raw_id: int
         raw_id, err = oc.sparse_arr__add(&self.tables, table)
-        // Table ids double as Uni_Bits bit indices, a compile-time-fixed bit_set
-        // sized exactly BIT_SET_VALUES_CAP * TABLES_MULT — growth must never
-        // cross that ceiling. NOT TABLES_CAP, which is just this array's
-        // independently-configurable initial/default size.
+        // Table ids double as Uni_Bits bit indices, a compile-time-fixed bit_set sized
+        // exactly BIT_SET_VALUES_CAP * TABLES_MULT — growth must never cross that
+        // ceiling (NOT TABLES_CAP, which is just this array's default initial size).
         table_id_cap := BIT_SET_VALUES_CAP * TABLES_MULT
         if err == oc.Core_Error.Container_Is_Full && self.tables.cap < table_id_cap {
             new_cap := min(self.tables.cap * 2, table_id_cap)
@@ -586,11 +562,10 @@ package ode_ecs
     }
 
     @(private)
-    // Hands out a slot in tiny_table_subscriber_slots for a newly-init'd Tiny_Table —
-    // same "first free slot" idiom Tiny_Table's own attach_subscriber procs use, just
-    // one level up. Slots are always zero-valued on return (fresh from make(), or
-    // zeroed by database__detach_tiny_table_subscribers on a previous release), so
-    // the caller never needs to clear it itself.
+    // Hands out a slot in tiny_table_subscriber_slots for a newly-init'd Tiny_Table
+    // (same "first free slot" idiom as Tiny_Table's own attach_subscriber procs).
+    // Slots are always zero-valued on return — fresh from make(), or zeroed by
+    // database__detach_tiny_table_subscribers on a previous release.
     database__attach_tiny_table_subscribers :: proc(self: ^Database) -> (slot_id: int, err: Error) {
         for &slot, i in self.tiny_table_subscriber_slots {
             if !slot.in_use {
@@ -633,8 +608,8 @@ package ode_ecs
     }
 
     @(private)
-    // Removes entity's component from the table with id `id` during entity
-    // destruction. Stale bits (table terminated / id reused) are tolerated.
+    // Removes entity's component from the table with id `id` during entity destruction.
+    // Stale bits (table terminated / id reused) are tolerated.
     database__remove_component_by_table_id :: #force_inline proc(self: ^Database, #any_int id: int, eid: entity_id) -> Error {
         if id >= len(self.tables.items) do return nil // stale bit beyond the attached span
         table := self.tables.items[id]
@@ -659,15 +634,11 @@ package ode_ecs
         uni_bits__remove(&self.eid_to_bits[eid.ix], table_id)
     }
 
-    // Component enable/disable — a soft toggle: the component/row stays exactly where it
-    // is (no data movement, no eid_to_bits change), but a disabled table's bit is excluded
-    // from query matching (view__components_match) until re-enabled. Disabling can only
-    // ever evict a view member (never admit one); enabling can only ever admit one (never
-    // evict) — mirrors table_base__notify_any_of_views/notify_excluding_views' shapes
-    // respectively, reusing the same subscribers list add_component/remove_component walk
-    // (shared_table__subscribers) instead of a new per-type list. Called only by the
-    // per-table-type disable_component/enable_component/is_component_disabled wrappers
-    // (table.odin, compact_table.odin, tiny_table.odin, tag_table.odin, arch_table.odin).
+    // Component enable/disable — a soft toggle: the component/row stays put (no data
+    // movement, no eid_to_bits change), but a disabled table's bit is excluded from
+    // query matching (view__components_match) until re-enabled. Disabling can only evict
+    // a view member; enabling can only admit one. Reuses the same subscribers list
+    // add_component/remove_component walk instead of a new per-type list.
     @(private)
     database__disable_component :: proc(self: ^Database, eid: entity_id, id: table_id, loc := #caller_location) -> Error {
         when VALIDATIONS {

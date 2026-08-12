@@ -57,17 +57,17 @@ package ode_ecs
     @(private)
     SNAPSHOT_VERSION :: u32(5) // bumped: added the eid_to_disabled_bits section
 
-    // Written and compared as a raw u32: a snapshot produced on a machine with
-    // different endianness reads back as a different value and is rejected.
+    // Compared as a raw u32 — a snapshot from a different-endian machine
+    // reads back as a different value and is rejected.
     @(private)
     SNAPSHOT_ENDIAN_CHECK :: u32(0x0A0B0C0D)
 
     @(private)
     SNAPSHOT_FLAG__HAS_RELATIONS :: u32(1 << 0)
 
-    // Set when the entity-id section (items/freed blob right after the
-    // header) is present in the buffer. Written iff the saving Database owns
-    // its Overbase — see the entity-id ownership note at the top of this file.
+    // Set when the entity-id section (items/freed blob after the header) is
+    // present. Written iff the saving Database owns its Overbase (see the
+    // entity-id ownership note at the top of this file).
     @(private)
     SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION :: u32(1 << 1)
 
@@ -94,13 +94,12 @@ package ode_ecs
         cap:        i64, // informational; load only requires len <= target cap
         len:        i64,
         name_len:   i64, // "pkg.Name" of the component type; 0 for Tag_Table/Arch_Table/unnamed
-        column_count: i64, // Arch_Table only: number of columns: a Snap_Arch_Column_Header
-                            // + name follows per column, before the shared rid_to_eid blob. 0 for every other table type.
+        column_count: i64, // Arch_Table only: column count. Each column adds a
+                            // Snap_Arch_Column_Header + name before the shared rid_to_eid blob.
     }
 
     @(private)
-    // One per Arch_Table column, written column_count times right after the
-    // Snap_Table_Header, each followed by the column's "pkg.Name" bytes + pad8.
+    // One per Arch_Table column, written column_count times after Snap_Table_Header; each followed by "pkg.Name" bytes + pad8.
     Snap_Arch_Column_Header :: struct #packed {
         comp_size:  i64,
         comp_align: i64,
@@ -113,9 +112,8 @@ package ode_ecs
         count: i64,
     }
 
-    // Every variable-length blob is followed by zero padding up to an 8-byte
-    // boundary, so all headers and entity_id/int blobs stay 8-aligned within
-    // the buffer.
+    // Every variable-length blob is padded with zeros to an 8-byte boundary,
+    // keeping headers and entity_id/int blobs 8-aligned in the buffer.
     @(private)
     snap__align8 :: #force_inline proc "contextless" (offset: int) -> int {
         return (offset + 7) &~ 7
@@ -139,8 +137,7 @@ package ode_ecs
     }
 
     @(private)
-    // Zero (not skip) the padding so serializing the same state twice yields
-    // byte-identical buffers.
+    // Zeros (not skips) the padding so identical state serializes to identical bytes.
     snap_writer__pad8 :: proc(self: ^Snap_Writer) {
         aligned := snap__align8(self.offset)
         for self.offset < aligned {
@@ -218,14 +215,12 @@ package ode_ecs
                 return true
         }
 
-        // pointers, multi-pointers, strings, slices, dynamic arrays, maps,
-        // any, typeid, procedures, soa pointers, ...
+        // everything else (pointers, slices, maps, any, typeid, procedures, ...) is non-POD
         return false
     }
 
     @(private)
-    // Length of the "pkg.Name" identity string written for a component type;
-    // 0 when the type is not a named type.
+    // Length of the "pkg.Name" identity string for a component type; 0 if unnamed.
     snapshot__name_len :: proc(ti: ^runtime.Type_Info) -> int {
         if ti == nil do return 0
         named, ok := ti.variant.(runtime.Type_Info_Named)
@@ -250,8 +245,7 @@ package ode_ecs
     }
 
     @(private)
-    // Either side without a name (name_len == 0 / unnamed target type) skips
-    // the check — size/align matching still applies.
+    // Unnamed side (name_len == 0) skips the check; size/align matching still applies.
     snapshot__name_matches :: proc(ti: ^runtime.Type_Info, name_bytes: []byte) -> bool {
         expected := snapshot__name_len(ti)
         if expected == 0 || len(name_bytes) == 0 do return true
@@ -269,7 +263,6 @@ package ode_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // Table dispatch helpers
-
 
     @(private)
     shared_table__snapshot_holes_count :: proc(table: ^Shared_Table) -> int {
@@ -291,8 +284,8 @@ package ode_ecs
     }
 
     @(private)
-    // Row count for the snapshot payload. For Tag_Table this is the rows slice
-    // length (== map count while there are no holes, which serialize enforces).
+    // Row count for the snapshot payload; for Tag_Table this is the rows slice
+    // length (== map count, since serialize enforces no holes).
     shared_table__snapshot_len :: proc(table: ^Shared_Table) -> int {
         if table.type == Table_Type.Tag_Table {
             return (^runtime.Raw_Slice)(&(cast(^Tag_Table) table).rows).len
@@ -301,9 +294,9 @@ package ode_ecs
     }
 
     @(private)
-    // A snapshot must capture a packed database: no deferred packing in flight
-    // and (for save) no holes in any table. Holes would put dead rows into the
-    // rows blob; call resume_packing/pack first.
+    // Snapshot requires a packed database: no deferred packing in flight, and
+    // (for save) no holes — holes would put dead rows into the rows blob.
+    // Call resume_packing/pack first.
     database__snapshot_check_not_paused :: proc(self: ^Database, check_holes: bool) -> Error {
         if self.tail_swap_paused do return API_Error.Cannot_Serialize_While_Packing_Paused
 
@@ -339,9 +332,8 @@ package ode_ecs
             size = snap__align8(size)
         }
 
-        // disable_component/enable_component state (database.odin's "Component
-        // enable/disable" section) — per-Database, unlike the entity-id section
-        // above, so this is always present regardless of Overbase ownership.
+        // disable/enable_component state — per-Database (unlike the entity-id
+        // section above), so always present regardless of Overbase ownership.
         size += self.overbase.id_factory.cap * size_of(Uni_Bits)
         size = snap__align8(size)
 
@@ -391,10 +383,8 @@ package ode_ecs
 
     // Writes a snapshot of the whole database into buf (sized via
     // database__serialized_size). Zero allocations. Errors:
-    //   Cannot_Serialize_While_Packing_Paused — packing paused or holes present,
-    //     call resume_packing/pack first;
-    //   Snapshot_Component_Not_POD — a component type contains pointers/slices/
-    //     strings/etc (pass allow_non_pod = true to blob-copy it anyway);
+    //   Cannot_Serialize_While_Packing_Paused — packing paused or holes present;
+    //   Snapshot_Component_Not_POD — non-POD component (allow_non_pod=true to force);
     //   Serialize_Buffer_Too_Small.
     database__serialize :: proc(self: ^Database, buf: []byte, allow_non_pod := false) -> (written: int, err: Error) {
         if !database__is_valid(self) do return 0, API_Error.Object_Invalid
@@ -435,13 +425,10 @@ package ode_ecs
         }
         snap_writer__write(&w, &hdr, size_of(hdr))
 
-        // Id factory. The WHOLE items array: generations of freed and
-        // never-recreated slots drive expired-id detection and must round-trip.
-        // The freed list order matters too (LIFO reuse). Only written when this
-        // Database owns its Overbase — a shared Overbase's id-space is saved/
-        // restored independently via overbase_serialize/overbase_deserialize,
-        // so this Database's own snapshot never carries (and never overwrites)
-        // state a sibling Database also depends on.
+        // Id factory: the whole items array (generations drive expired-id
+        // detection) plus the freed list (order matters — LIFO reuse). Only
+        // written when this Database owns its Overbase; a shared Overbase's
+        // id-space is saved/restored separately via overbase_serialize/overbase_deserialize.
         if self.owns_overbase {
             snap_writer__write(&w, raw_data(self.overbase.id_factory.items), self.overbase.id_factory.cap * size_of(oc.ix_gen))
             snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(int))
@@ -558,14 +545,10 @@ package ode_ecs
 // Deserialize
 
     @(private)
-    // Validates one row's saved entity_id against whichever id-space this
-    // deserialize call trusts. use_saved selects the snapshot's own recorded
-    // state (saved_items) — correct only when this Database owns the
-    // entity-id section being restored; otherwise the row is checked against
-    // the database's live Overbase, which is either already independently
-    // restored (via overbase_deserialize) or simply the ground truth the
-    // caller is expected to have set up. See the entity-id ownership note at
-    // the top of this file.
+    // Validates a row's saved entity_id against whichever id-space this call
+    // trusts: use_saved checks the snapshot's own saved_items (only valid
+    // when this Database owns the entity-id section); otherwise checks the
+    // live Overbase. See the entity-id ownership note at the top of this file.
     snapshot__validate_row_eid :: proc(self: ^Database, eid: entity_id, saved_items: []entity_id, use_saved: bool) -> Error {
         if use_saved {
             if eid.ix < 0 || eid.ix >= len(saved_items) do return API_Error.Snapshot_Invalid
@@ -577,16 +560,15 @@ package ode_ecs
     }
 
     @(private)
-    // Structural validation of a snapshot's relations blob, before any of it is
-    // copied into the live Relations_Table. Link-target liveness alone is not
-    // enough: the runtime consumers (relations_table__children_of and the
-    // destroy-children cascade) walk next_sibling with #no_bounds_check writes
-    // into scratch[cap], so a sibling cycle or an inconsistent doubly-linked
-    // list in the blob would loop forever and write out of bounds. O(saved_cap).
+    // Structural validation of a snapshot's relations blob before it's copied
+    // into the live Relations_Table. Liveness alone isn't enough: runtime
+    // consumers walk next_sibling with #no_bounds_check writes into
+    // scratch[cap], so a sibling cycle or inconsistent doubly-linked list
+    // would loop forever and write out of bounds. O(saved_cap).
     //
-    // stamps: shared validation scratch (len == live entities cap); values
-    // <= stamp_base are owned by the section duplicate checks, this proc uses
-    // values above stamp_base for parent-chain epochs.
+    // stamps: shared validation scratch (len == live entities cap); values <=
+    // stamp_base belong to section duplicate checks, values above are this
+    // proc's parent-chain epochs.
     snapshot__validate_relations :: proc(
         self: ^Database,
         parent, first_child, next_sibling, prev_sibling: []entity_id,
@@ -600,11 +582,9 @@ package ode_ecs
         saved_cap := len(parent)
         cap := self.relations.cap
 
-        // a. Per-slot local checks: liveness, in-range links, doubly-linked
-        //    mutual inverses, parent agreement between siblings, head property.
-        //    All structural comparisons are on .ix — liveness is checked per
-        //    link, and a live index maps to exactly one generation, so index
-        //    equality implies id equality.
+        // a. Per-slot checks: liveness, in-range links, doubly-linked mutual
+        //    inverses, parent agreement, head property. Comparisons use .ix —
+        //    liveness is checked per link, so index equality implies id equality.
         links_count := 0 // slots with a parent (== relations in use)
         cc_total := 0
         for ix in 0..<saved_cap {
@@ -660,17 +640,15 @@ package ode_ecs
             cc_total += int(n_cc)
         }
 
-        // every child link is counted once by its parent, and the header count
-        // (which pass 2 installs as rt.count) must agree
+        // every child link is counted once by its parent; must agree with the
+        // header count (pass 2 installs it as rt.count)
         if links_count != saved_count do return API_Error.Snapshot_Invalid
         if cc_total != saved_count do return API_Error.Snapshot_Invalid
 
-        // b. Walk every child list with a hard budget; its length must match
-        //    children_count. With (a) passed, next_sibling has at most one
-        //    predecessor per node so a walk cannot re-enter itself — the budget
-        //    is belt-and-braces. Detached sibling circles (mutually consistent
-        //    but reachable from no head) still pass (a); they are caught here
-        //    because their nodes count into links_count but are never walked.
+        // b. Walk every child list with a hard budget; length must match
+        //    children_count (the budget is belt-and-braces — (a) already
+        //    bounds predecessors to one per node). Detached sibling circles
+        //    pass (a) but are caught here: counted in links_count, never walked.
         walked_total := 0
         for ix in 0..<saved_cap {
             c := first_child[ix]
@@ -686,11 +664,10 @@ package ode_ecs
         }
         if walked_total != saved_count do return API_Error.Snapshot_Invalid
 
-        // c. Parent-chain acyclicity. (a)+(b) still admit e.g. a<->b where each
-        //    is the other's parent with consistent child lists — the destroy
-        //    cascade would BFS that forever. Epoch-marked walk-up: each node is
-        //    marked at most once with a value > stamp_base, later walks stop at
-        //    any marked node, so the whole pass is amortized O(saved_cap).
+        // c. Parent-chain acyclicity. (a)+(b) still admit e.g. a<->b as mutual
+        //    parents with consistent child lists, which would BFS forever.
+        //    Epoch-marked walk-up marks each node once; later walks stop at
+        //    any marked node, so the pass is amortized O(saved_cap).
         for ix in 0..<saved_cap {
             if is_not_set(parent[ix]) do continue
             epoch := stamp_base + 1 + i32(ix)
@@ -709,10 +686,9 @@ package ode_ecs
     }
 
     // Loads a snapshot into an already-initialized database with a matching
-    // schema (same tables inited in the same order, same component types) and
-    // capacities >= the saved ones. All existing entities/components/relations
-    // are replaced; views and groups are rebuilt from the loaded data.
-    // The whole buffer is validated before anything is mutated (all-or-nothing).
+    // schema (same tables in the same order, same component types) and
+    // capacities >= saved. Existing entities/components/relations are
+    // replaced, views/groups rebuilt. All-or-nothing: fully validated before mutating.
     database__deserialize :: proc(self: ^Database, data: []byte) -> Error {
         if !database__is_valid(self) do return API_Error.Object_Invalid
         database__snapshot_check_not_paused(self, check_holes = false) or_return
@@ -729,15 +705,13 @@ package ode_ecs
         if hdr.endian_check != SNAPSHOT_ENDIAN_CHECK do return API_Error.Snapshot_Invalid
         if hdr.version != SNAPSHOT_VERSION do return API_Error.Snapshot_Version_Mismatch
 
-        // has_entity_ids: the buffer physically carries the items/freed blob
-        // (written iff the saving Database owned its Overbase). apply_entity_ids:
-        // this Database owns its Overbase too, so it's safe to overwrite it from
-        // that blob. When has_entity_ids is true but apply_entity_ids is false
-        // (this Database shares its Overbase, or a foreign snapshot is being
-        // loaded), the blob is still present in the buffer and must be skipped
-        // over, but row entity_ids are validated against the live Overbase
-        // instead of the snapshot's own saved_items — see the entity-id
-        // ownership note at the top of this file.
+        // has_entity_ids: the buffer carries the items/freed blob (written iff
+        // the saving Database owned its Overbase). apply_entity_ids: this
+        // Database also owns its Overbase, so it's safe to overwrite it from
+        // that blob. When has_entity_ids is true but apply_entity_ids is
+        // false, the blob is still skipped over but row entity_ids are
+        // validated against the live Overbase instead of saved_items (see the
+        // ownership note at the top of this file).
         has_entity_ids := (hdr.flags & SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION) != 0
         apply_entity_ids := has_entity_ids && self.owns_overbase
 
@@ -765,10 +739,8 @@ package ode_ecs
             snap_reader__pad8(&r) or_return
         }
 
-        // disable_component/enable_component state — always present, and
-        // (unlike the entity-id section) always applied to this Database's own
-        // eid_to_disabled_bits regardless of Overbase ownership, so saved_cap
-        // must fit the live array unconditionally here.
+        // disable/enable_component state — always present and always applied
+        // to this Database's own eid_to_disabled_bits, so saved_cap must fit unconditionally.
         if saved_cap > self.overbase.id_factory.cap do return API_Error.Snapshot_Capacity_Too_Small
         _ = snap_reader__bytes(&r, saved_cap * size_of(Uni_Bits)) or_return
         snap_reader__pad8(&r) or_return
@@ -785,13 +757,11 @@ package ode_ecs
 
         // Validation scratch, one allocation for the whole pass (db allocator,
         // not context — callers may run under a panic allocator):
-        // - per-section duplicate-eid stamps (value = 1-based section ordinal;
-        //   two rows of one section naming the same entity would alias one
-        //   index entry to two live rows in pass 2)
+        // - per-section duplicate-eid stamps (1-based section ordinal; a
+        //   repeat entity within a section would alias one index entry to two rows)
         // - relations parent-chain acyclicity epochs (values above section_count)
-        // Sized to the LIVE entities cap: row eids are validated against the
-        // live Overbase on the non-owning path, so their ix is bounded by the
-        // live cap, not saved_cap.
+        // Sized to the LIVE entities cap since row eids are checked against
+        // the live Overbase on the non-owning path.
         stamps: []i32
         if int(hdr.section_count) > 0 || has_relations {
             stamps = make([]i32, self.overbase.id_factory.cap, self.allocator) or_return
@@ -866,11 +836,9 @@ package ode_ecs
 
                     eids := snap_reader__entity_ids(&r, n) or_return
                     for eid in eids {
-                        // every row's entity must be alive in the id-space this
-                        // load trusts (the snapshot's own, or the live Overbase)
+                        // entity must be alive in the id-space this load trusts
                         snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
-                        // ...and appear at most once in this section: a duplicate
-                        // would produce two live rows aliasing one index entry
+                        // and unique within this section — a duplicate would alias two rows
                         if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
                         stamps[eid.ix] = i32(section_ix + 1)
                     }
@@ -895,9 +863,8 @@ package ode_ecs
             rh: Snap_Relations_Header
             snap_reader__read(&r, &rh, size_of(rh)) or_return
             if rh.count < 0 || int(rh.count) > self.relations.cap do return API_Error.Snapshot_Capacity_Too_Small
-            // The live link arrays are sized to the LIVE entities cap and pass 2
-            // copies saved_cap entries into them — must also hold on the
-            // non-owning path, which skips the saved_cap check at the top
+            // Live link arrays are sized to the LIVE entities cap and pass 2
+            // copies saved_cap entries into them — must hold even on the non-owning path.
             if saved_cap > len(self.relations.parent) do return API_Error.Snapshot_Capacity_Too_Small
 
             s_parent       := snap_reader__entity_ids(&r, saved_cap) or_return
@@ -918,20 +885,15 @@ package ode_ecs
         if r.offset != len(data) do return API_Error.Snapshot_Invalid
 
         //
-        // Pass 2 — apply. Validated above, so nothing below can fail: every
-        // row eid is live and unique within its section (so the index maps
-        // can't overflow — they are sized next_power_of_two(cap*2), and a
-        // section holds at most cap distinct rows), the relations blob is a
-        // structurally consistent forest, and all capacities were checked.
-        // The or_returns below are defense in depth only.
+        // Pass 2 — apply. Validated above so nothing below can fail: every row
+        // eid is live and unique within its section, and the relations blob
+        // is a structurally consistent forest. The or_returns below are defense in depth only.
         //
 
-        // Reset to a clean post-init state. No gen bump: the factory items are
-        // fully overwritten from the snapshot right after. Only when this
-        // Database owns its Overbase — otherwise the shared id-space is left
-        // completely untouched by this call (a sibling Database, or nothing
-        // at all, may depend on it; see overbase_deserialize to restore it
-        // explicitly).
+        // Reset to a clean post-init state. No gen bump: factory items are
+        // fully overwritten from the snapshot right after — only when this
+        // Database owns its Overbase; otherwise the shared id-space is left
+        // untouched (see overbase_deserialize to restore it explicitly).
         if apply_entity_ids {
             oc.ix_gen_factory__clear(&self.overbase.id_factory, bump_gen = false)
         }
@@ -960,9 +922,8 @@ package ode_ecs
             self.overbase.id_factory.created_count = created_count
             self.overbase.id_factory.freed_count = freed_count
         } else if has_entity_ids {
-            // Section is present in the buffer but doesn't belong to this
-            // Database (shared Overbase, or a foreign snapshot) — skip past
-            // it without touching the live id-space.
+            // Present in the buffer but doesn't belong to this Database
+            // (shared Overbase, or a foreign snapshot) — skip past without touching id-space.
             _ = snap_reader__bytes(&r, saved_cap * size_of(oc.ix_gen)) or_return
             _ = snap_reader__bytes(&r, freed_count * size_of(int)) or_return
             snap_reader__pad8(&r) or_return
@@ -995,9 +956,8 @@ package ode_ecs
 
         assert(r.offset == len(data))
 
-        // Groups first (their swaps settle the final row order), then views.
-        // Notifications fired at the cleared views during group rebuild are
-        // harmless no-ops.
+        // Groups first (swaps settle final row order), then views — notifications
+        // fired at cleared views during group rebuild are harmless no-ops.
         for group in self.groups.items {
             if group == nil || group.state != Object_State.Normal do continue
             group__rebuild(group) or_return

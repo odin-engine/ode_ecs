@@ -53,15 +53,12 @@ package sync_udp_common
     // afterwards, entity N means the exact same entity_id (index + generation)
     // on both sides, with no join handshake required.
     //
-    // This is a deliberate simplification for the sample: sync.odin's
-    // apply_delta tolerantly SKIPS any structural/value record naming an
-    // entity_id the receiving Database doesn't already recognize (see its own
-    // doc comment) — it never creates entities on the receiver's behalf. A
-    // real deployment would instead bootstrap a newly-joining client with a
-    // full serialization.odin snapshot (database__serialize/deserialize),
-    // which establishes the id space and initial state in one shot, then
-    // switch to delta_sync from there (see sync_channel__resync's doc comment
-    // for why the two compose correctly). Sidestepped here so the sample can
+    // Deliberate simplification: sync.odin's apply_delta SKIPS any record
+    // naming an entity_id the receiver doesn't already recognize — it never
+    // creates entities on the receiver's behalf (see its doc comment). A real
+    // deployment would instead bootstrap a joining client with a full
+    // serialization.odin snapshot, then switch to delta_sync from there (see
+    // sync_channel__resync's doc comment). Sidestepped so the sample can
     // focus on the delta-sync wire path itself.
     world_spawn_pool :: proc(w: ^World) -> (eids: [ENTITY_COUNT]ecs.entity_id, err: ecs.Error) {
         for i in 0..<ENTITY_COUNT {

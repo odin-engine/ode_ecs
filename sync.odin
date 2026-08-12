@@ -121,13 +121,9 @@ package ode_ecs
     }
 
     @(private)
-    // Top-level fields only — a nested struct/array field is treated as one
-    // opaque blob (its own offset+size), not recursed into. Covers a
-    // named-struct component (the common case), a bare-struct component, and
-    // (falls through to "one field, the whole thing") a non-struct component
-    // like a plain int/float/bool. Returns ok=false if the component has more
-    // top-level fields than SYNC_MAX_FIELDS (the field-changed mask is one
-    // bit per field).
+    // Top-level fields only — a nested struct/array field is one opaque blob
+    // (offset+size), not recursed into. Falls back to one field for a non-struct
+    // component. Returns ok=false if field count exceeds SYNC_MAX_FIELDS (the field-changed mask is one bit per field).
     sync__compute_fields :: proc(ti: ^runtime.Type_Info, out: ^[SYNC_MAX_FIELDS]Sync_Field) -> (count: int, ok: bool) {
         base := ti
         if named, is_named := base.variant.(runtime.Type_Info_Named); is_named {
@@ -195,13 +191,9 @@ package ode_ecs
         return true
     }
 
-    // tables_cap: max number of tables this channel can have registered at
-    // once. structural_events_cap: max pending structural (add/remove) events
-    // buffered between collects — a fixed, small cap (unlike touched/shadow,
-    // this is NOT entities_cap-sized); if it fills up, further structural
-    // events are dropped (the receiver just stays behind on that one change
-    // until the next full resync — the same loss-tolerance a UDP packet drop
-    // already implies).
+    // tables_cap: max registered tables. structural_events_cap: max pending
+    // structural (add/remove) events between collects — fixed, small (not
+    // entities_cap-sized); overflow silently drops events, same loss-tolerance a dropped UDP packet already implies.
     sync_channel__init :: proc(self: ^Sync_Channel, db: ^Database, tables_cap: int, structural_events_cap: int = 256, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -330,12 +322,9 @@ package ode_ecs
             e.shadow = nil
         }
 
-        // touched is entities_cap-sized (NOT table.cap-sized): between two
-        // collects, more than table.cap DISTINCT entities can plausibly have
-        // been touched (e.g. add, remove, add-a-different-entity, repeat,
-        // all before the next collect runs) even though at most table.cap
-        // can be LIVE at any one instant. entities_cap is the only bound that
-        // can never be exceeded, since touched_bitset dedups by eid.ix.
+        // touched is entities_cap-sized, not table.cap-sized: between collects,
+        // more than table.cap distinct entities can be touched (add/remove/re-add
+        // cycles) even though at most table.cap are live at once; touched_bitset dedups by eid.ix.
         terr := oc.dense_arr__init(&e.touched, entities_cap, self.db.allocator)
         if terr != nil {
             if e.shadow != nil do delete(e.shadow, self.db.allocator)
@@ -385,11 +374,8 @@ package ode_ecs
         return sync_channel__register_common(self, cast(^Shared_Table) table, nil, true, false, loc)
     }
 
-    // Arch_Table is not yet supported (see this file's header comment) — this
-    // overload exists purely so ecs.sync_register(&channel, &an_arch_table)
-    // is a valid call that returns a clear, documented Error instead of
-    // failing to compile (Arch_Table isn't a Table($T), so without this stub
-    // no overload in the sync_register proc group would match it at all).
+    // Arch_Table isn't supported yet (see file header). This stub exists so
+    // sync_register(&channel, &an_arch_table) compiles and returns a clear Error instead of failing to match any overload.
     sync_channel__register_arch_table :: proc(self: ^Sync_Channel, table: ^Arch_Table, allow_non_pod := false) -> Error {
         return API_Error.Sync_Table_Type_Not_Supported
     }
@@ -424,12 +410,9 @@ package ode_ecs
         return nil
     }
 
-    // Sets every registered table's shadow to its CURRENT live values and
-    // drops all pending touched/structural queues. Call this right after
-    // sending a full database__serialize snapshot to a (re)joining observer —
-    // without it, the next collect_delta would re-send everything as if it
-    // had all just changed, since the shadow would still be at its pre-snapshot
-    // (usually all-zero) state.
+    // Resets every registered table's shadow to current live values and drops
+    // pending touched/structural queues. Call right after sending a full
+    // database__serialize snapshot — otherwise the next collect_delta re-sends everything as if newly changed.
     sync_channel__resync :: proc(self: ^Sync_Channel, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -461,10 +444,8 @@ package ode_ecs
         return nil
     }
 
-    // A cheap O(registered tables) WORST-CASE upper bound (assumes every
-    // touched entity changed every field) — not an exact dry-run diff, which
-    // would cost the same as collecting. Size a buffer to this and one
-    // sync_collect_delta call is guaranteed to fully flush every pending change.
+    // Cheap O(tables) worst-case upper bound (assumes every touched entity
+    // changed every field), not an exact dry-run. A buffer sized to this guarantees one sync_collect_delta call flushes everything pending.
     sync_delta_max_size :: proc(self: ^Sync_Channel) -> int {
         size := size_of(Sync_Header)
         size += len(self.structural_events.items) * size_of(Sync_Structural_Wire)
@@ -489,12 +470,8 @@ package ode_ecs
     }
 
     // Writes as much of the pending delta (structural events, then touched
-    // component fields table-by-table) as fits into buf, and consumes exactly
-    // what was written from the pending queues — nothing already flushed is
-    // re-sent by a later call, nothing not-yet-flushed is lost. Stops entirely
-    // (does not try to pack smaller later records into the remaining space)
-    // on the first record that doesn't fit; whatever's left stays queued for
-    // the next call. Only errors if buf can't even hold the fixed header.
+    // fields table-by-table) as fits in buf, consuming exactly what was written —
+    // nothing already flushed is re-sent, nothing unflushed is lost. Stops at the first record that doesn't fit (no smaller-record packing); only errors if buf can't hold the fixed header.
     sync_collect_delta :: proc(self: ^Sync_Channel, buf: []byte, loc := #caller_location) -> (written: int, err: Error) {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -506,10 +483,8 @@ package ode_ecs
         offset := size_of(Sync_Header)
         stop := false
 
-        // Structural events: small fixed-size records, popped tail-backward
-        // (Dense_Arr.remove_by_index at the last index is a pure truncation,
-        // no swap-reorder — see ode_core/dense_arr.odin — so this never loses,
-        // duplicates, or reorders whatever's left in the queue on a partial flush).
+        // Structural events: small fixed-size records, popped tail-backward.
+        // remove_by_index at the last index is a pure truncation (no swap-reorder), so a partial flush never loses/duplicates/reorders what's left queued.
         structural_written := 0
         {
             i := len(self.structural_events.items) - 1
@@ -550,10 +525,8 @@ package ode_ecs
                 for i >= 0 {
                     eid := e.touched.items[i]
 
-                    // Re-resolve fresh: the entity may have lost this
-                    // component since being marked touched. Nothing to diff —
-                    // the removal already produced its own structural event
-                    // (and zeroed the shadow) via table_base__notify_sync_remove.
+                    // Re-resolve fresh: the entity may have lost this component since
+                    // being touched. Nothing to diff — removal already produced its own structural event (and zeroed the shadow) via table_base__notify_sync_remove.
                     c := shared_table__get_component(e.table, eid)
                     if c == nil {
                         sync__untouch(e, eid)
@@ -583,10 +556,8 @@ package ode_ecs
                         }
                     }
 
-                    // Resync the shadow regardless of whether anything
-                    // actually differed (a touch with no real edit — e.g.
-                    // get_component_mut called but nothing written — is
-                    // normal and costs nothing extra since c is already read).
+                    // Resync the shadow regardless of whether anything differed — a
+                    // touch with no real edit (e.g. get_component_mut called but nothing written) is normal and free since c is already read.
                     mem.copy(shadow_ptr, c, e.comp_size)
 
                     if mask != 0 {
@@ -624,12 +595,8 @@ package ode_ecs
     }
 
     @(private)
-    // Called by every supported table type's terminate path (mirrors how a
-    // View gets marked Invalid there). The table is being torn down out from
-    // under this channel — don't touch its (already-terminating) Dense_Arr,
-    // just forget the table pointer so collect_delta/unregister_table treat
-    // this entry as dead. Its own shadow/touched/touched_bitset allocations
-    // are freed later, unconditionally, by sync_channel__terminate.
+    // Called by every table type's terminate path (mirrors View's Invalid marking).
+    // Just forgets the table pointer so collect_delta/unregister_table treat this entry as dead — shadow/touched allocations are freed later by sync_channel__terminate.
     sync_channel__on_table_terminated :: proc(self: ^Sync_Channel, tid: table_id) {
         if self == nil || self.state != Object_State.Normal do return
         if int(tid) >= len(self.table_id_to_entry) do return
@@ -674,20 +641,15 @@ package ode_ecs
             mem.zero(&e.shadow[off], e.comp_size)
         }
 
-        // structural_events has a small fixed cap (not entities_cap-sized) —
-        // silently drop on overflow rather than error; the receiver just
-        // stays behind on this one change until the next resync, same
-        // tolerance a dropped UDP packet already implies.
+        // structural_events has a small fixed cap (not entities_cap-sized) — silently
+        // drop on overflow rather than error; same loss-tolerance a dropped UDP packet already implies.
         _, _ = oc.dense_arr__add(&self.structural_events, Sync_Structural_Event{ eid = eid, table_id = tid, added = added })
     }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Sync_Decoder — receiver side. Lighter than Sync_Channel: no shadow, no
-// touched tracking, no watcher registration on the table — just enough
-// per-table field-layout info to decode collect_delta's wire format and
-// apply it. Uses the exact same field-layout reflection as the sender, so a
-// sender/receiver pair registered with matching schemas always agree on how
-// to slice a component's bytes.
+// touched tracking, no watcher registration — just enough per-table field
+// layout to decode collect_delta's wire format and apply it, using the same reflection as the sender.
 
     @(private)
     Sync_Decoder_Entry :: struct {
@@ -827,18 +789,10 @@ package ode_ecs
         return API_Error.Sync_Table_Type_Not_Supported
     }
 
-    // Parses and applies one collect_delta buffer. Tolerates (silently skips)
-    // an unknown/expired entity_id — normal for a receiver that's briefly
-    // behind the sender. A table_id the decoder never registered is treated
-    // as a schema mismatch (Snapshot_Schema_Mismatch) rather than skipped:
-    // unlike an unknown entity, there is no way to know how many payload
-    // bytes to skip past without knowing that table's field layout, so the
-    // rest of the buffer can't be safely parsed either — this can only
-    // happen if the sender/receiver schemas disagree, which isn't something
-    // to silently recover from. Already-applied effects from earlier in the
-    // same buffer are NOT rolled back in that case (each collected delta is
-    // an incremental tick, not an atomic snapshot — see serialization.odin's
-    // database__deserialize for the fully-atomic alternative).
+    // Parses and applies one collect_delta buffer. Tolerates (silently skips) an
+    // unknown/expired entity_id — normal for a receiver briefly behind the sender.
+    // An unregistered table_id is a hard Snapshot_Schema_Mismatch instead — its field
+    // layout is unknown so the rest of the buffer can't be safely parsed, and earlier effects in this buffer are NOT rolled back (each delta is an incremental tick, not an atomic snapshot).
     sync_apply_delta :: proc(self: ^Sync_Decoder, data: []byte, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -921,23 +875,16 @@ package ode_ecs
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tests — only exist when the feature is actually compiled in (see this
-// file's header comment): with SYNC_ENABLED off, sync_register always
-// returns Sync_Feature_Disabled, so these tests' assumptions (registration
-// succeeding, entries[0] existing, etc.) don't hold and blow up in ways that
-// range from a normal assertion failure to a bounds-check panic — cleaner to
-// just not compile them in at all, mirroring how the maps package's tests
-// require -define:maps_testing=true to exist rather than to pass.
+// Tests — only compiled in when SYNC_ENABLED (see file header): with it off,
+// sync_register always returns Sync_Feature_Disabled, so these tests' assumptions don't hold. Mirrors how maps package tests require -define:maps_testing=true to exist at all.
 
 when SYNC_ENABLED {
 
     @(private="file")
     Sync_XY :: struct { x: int, y: int }
 
-    // A structural "add" already marks the entity touched (see
-    // table_base__notify_sync_add) — a subsequent get_component_mut on the
-    // same entity, called any number of times before the next collect, must
-    // not add a second, duplicate touched entry.
+    // A structural "add" already marks the entity touched; repeated
+    // get_component_mut calls on the same entity before the next collect must not add a duplicate touched entry.
     @(test)
     sync__mark_touched_dedup__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -976,9 +923,8 @@ when SYNC_ENABLED {
         testing.expect(t, len(ch.entries[0].touched.items) == 2) // a genuinely different entity DOES add a second entry
     }
 
-    // Only the bytes of fields that actually changed go on the wire — verified
-    // by exact byte-count rather than by decoding, so this doubles as a check
-    // that collect_delta's format matches this file's own header doc comment.
+    // Only changed fields' bytes go on the wire — verified by exact byte-count,
+    // doubling as a check that collect_delta matches the header's wire-format doc.
     @(test)
     sync__field_mask_single_field_change__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1027,13 +973,9 @@ when SYNC_ENABLED {
         testing.expect(t, written3 == size_of(Sync_Header))
     }
 
-    // Regression test for the shadow-indexing bug caught during design: the
-    // shadow must be keyed by entity_id.ix (never leaking a departed entity's
-    // bytes to whichever entity reuses that index later), not by row id.
-    // entities_cap=1 forces the SAME ix to be reused by a second, distinct
-    // entity; that entity writes the exact same byte pattern the first one
-    // had, and must still be reported as "changed" (a brand new entity the
-    // receiver has never seen must never be silently skipped).
+    // Regression test: shadow must be keyed by entity_id.ix, not row id, so a
+    // departed entity's bytes never leak to whoever reuses that ix. entities_cap=1
+    // forces ix reuse; the new entity writes identical bytes and must still be reported as "changed".
     @(test)
     sync__shadow_not_leaked_across_reused_entity_id__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1083,8 +1025,7 @@ when SYNC_ENABLED {
     }
 
     // An undersized buffer must flush exactly as much as fits, in order, and
-    // leave the rest correctly queued for the next call — nothing lost,
-    // duplicated, or reordered.
+    // leave the rest correctly queued for the next call.
     @(test)
     sync__partial_collect_undersized_buffer__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1122,11 +1063,8 @@ when SYNC_ENABLED {
         testing.expect(t, len(ch.entries[0].touched.items) == 0)
         testing.expect(t, len(ch.structural_events.items) == 0)
 
-        // mutate BOTH fields: collect_delta's partial-fit check is a
-        // conservative worst-case (offset + entity_id + mask + comp_size,
-        // not the actual changed-byte count — see its own doc comment), so
-        // sizing small_buf to fit exactly one record only lines up with
-        // reality when the record's actual size equals that worst case.
+        // mutate BOTH fields: collect_delta's fit-check is a conservative worst-case
+        // (not actual changed-byte count), so small_buf sized to one record only lines up with reality when the record equals that worst case.
         for i in 0..<3 {
             mc := table__get_component_mut(&tbl, eids[i])
             mc.x = 100 + i
@@ -1150,11 +1088,9 @@ when SYNC_ENABLED {
         testing.expect(t, len(ch.entries[0].touched.items) == 0)
     }
 
-    // Structural add/remove round-trips through a Sync_Decoder onto a
-    // separate mirrored Database sharing the same Overbase (so entity ids are
-    // valid on both sides, mirroring how a real sender/receiver pair agrees
-    // on entity identity). Also covers the "unknown/expired entity_id on
-    // apply is a tolerated skip" contract via a hand-crafted buffer.
+    // Structural add/remove round-trips through a Sync_Decoder onto a separate
+    // mirrored Database sharing the same Overbase (entity ids valid on both sides).
+    // Also covers the "unknown/expired entity_id on apply is a tolerated skip" contract via a hand-crafted buffer.
     @(test)
     sync__structural_roundtrip_and_tolerated_skip__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1216,10 +1152,8 @@ when SYNC_ENABLED {
         testing.expect(t, !tag_table__has_tag(&tag_recv, eid))
     }
 
-    // Arch_Table is out of scope for v1 — registering one must return a
-    // clear, documented error on both the sender and receiver side, not
-    // silently do nothing (and not fail to compile — see the two stub procs'
-    // own doc comments for why they exist at all).
+    // Arch_Table is out of scope for v1 — registering one must return a clear,
+    // documented error on both sides, not silently do nothing (see the stub procs' own doc comments for why they exist).
     @(test)
     sync__arch_table_registration_rejected__test :: proc(t: ^testing.T) {
         allocator := context.allocator

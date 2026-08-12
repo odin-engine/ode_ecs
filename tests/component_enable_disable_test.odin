@@ -1,11 +1,9 @@
 /*
     2026 (c) Oleh, https://github.com/zm69
 
-    Tests for component enable/disable: a soft toggle that excludes a component from query
-    matching (view__components_match) without moving or removing it. Takes the owning table's
-    pointer, same convention as has_component. See ecs.odin's
-    disable_component/enable_component/is_component_disabled and view.odin's
-    view__components_match.
+    Tests for component enable/disable: a soft toggle that excludes a
+    component from query matching (view__components_match) without moving
+    or removing it.
 */
 
 package ode_ecs__tests

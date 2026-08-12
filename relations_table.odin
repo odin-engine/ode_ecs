@@ -44,13 +44,11 @@ package ode_ecs
         prev_sibling:   []entity_id,
         children_count: []i32,
 
-        // Sized to cap: children_of() results and destroy-cascade queue.
-        // The slice returned by children_of is valid only until the next
-        // children_of call or any structural change.
+        // Sized to cap: children_of() results and destroy-cascade queue. The
+        // slice returned by children_of is valid only until the next call or any structural change.
         scratch: []entity_id,
     }
 
-    // Is table valid and ready to use (initialized and everything is ok)
     relations_table__is_valid :: proc(self: ^Relations_Table) -> bool {
         if self == nil do return false
         if self.state != Object_State.Normal do return false
@@ -70,9 +68,9 @@ package ode_ecs
         when VALIDATIONS {
             assert(self != nil, loc = loc)
             assert(database__is_valid(db), loc = loc)
-            assert(self.state == Object_State.Not_Initialized, loc = loc) // should be NOT_INITIALIZED
+            assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
-            assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
+            assert(cap <= db.overbase.id_factory.cap, loc = loc)
         }
 
         if db.relations != nil do return API_Error.Relations_Table_Already_Exists
@@ -142,7 +140,6 @@ package ode_ecs
         return nil
     }
 
-    // Memory usage in bytes
     relations_table__memory_usage :: proc(self: ^Relations_Table) -> int {
         total := size_of(self^)
 
@@ -156,7 +153,6 @@ package ode_ecs
         return total
     }
 
-    // Number of parent links (relations)
     relations_table__len :: #force_inline proc "contextless" (self: ^Relations_Table) -> int {
         return self.count
     }
@@ -165,10 +161,9 @@ package ode_ecs
         return self.cap
     }
 
-    // Makes `parent` the parent of `child`, replacing child's previous parent (if any).
+    // Makes `parent` the parent of `child`, replacing any previous parent.
     // Returns Relation_Cycle if child == parent or child is an ancestor of parent.
-    // Returns Container_Is_Full when creating a NEW link would exceed cap
-    // (re-parenting an already-linked child always succeeds).
+    // Returns Container_Is_Full when creating a NEW link would exceed cap (re-parenting an existing link always succeeds).
     relations_table__set_parent :: proc(self: ^Relations_Table, child: entity_id, parent: entity_id, loc := #caller_location) -> Error #no_bounds_check {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -227,19 +222,17 @@ package ode_ecs
         return self.parent[eid.ix], nil
     }
 
-    // Returns parent's children as a slice of the internal scratch buffer.
-    // The slice is valid only until the next children_of call or any
-    // structural change (set_parent/remove_parent/destroy_entity/clear) —
-    // use it immediately, do not store it.
+    // Returns parent's children as a slice of the internal scratch buffer, valid
+    // only until the next children_of call or any structural change
+    // (set_parent/remove_parent/destroy_entity/clear) — use immediately, do not store.
     relations_table__children_of :: proc(self: ^Relations_Table, parent: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
         database__is_entity_correct(self.db, parent) or_return
 
         n := 0
         c := self.first_child[parent.ix]
         for !is_not_set(c) {
-            // scratch holds at most cap children; exceeding it means the
-            // sibling links are corrupted (e.g. a cycle) — fail loudly instead
-            // of writing out of bounds
+            // scratch holds at most cap children; exceeding it means the sibling links
+            // are corrupted (e.g. a cycle) — fail loudly instead of writing out of bounds
             when VALIDATIONS do assert(n < len(self.scratch), "relations links corrupted — sibling list exceeds cap")
             self.scratch[n] = c
             n += 1
@@ -324,9 +317,8 @@ package ode_ecs
         self.count -= 1
     }
 
-    // Removes all of eid's relations: unlinks it from its parent and orphans
-    // its children (their parent link is cleared). Called by
-    // database__destroy_entity; eid is already validated by the caller.
+    // Removes all of eid's relations: unlinks from its parent and orphans its
+    // children. Called by database__destroy_entity; eid is already validated by the caller.
     @(private)
     relations_table__unlink_entity :: proc "contextless" (self: ^Relations_Table, eid: entity_id) #no_bounds_check {
         p := self.parent[eid.ix]

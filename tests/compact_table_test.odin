@@ -20,27 +20,19 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Database
 
-
-    // compact_table__init asserts (under VALIDATIONS) that a component type
-    // is not zero-sized — use Tag_Table for a marker/tag component instead.
-    // No dedicated test here: catching an expected debug-mode assert via
-    // testing.expect_assert_message hangs in this project's sandboxed test
-    // environment (confirmed with an isolated repro with no ecs.odin code
-    // involved), so this is covered by manual verification only.
+    // No test for the zero-sized-component assert: expect_assert_message hangs
+    // in this project's sandboxed test env, so it's covered by manual verification only.
 
     @(test)
     compact_table__attaching_detaching_tables__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
             ais_table2: ecs.Compact_Table(AI)
@@ -91,14 +83,12 @@ package ode_ecs__tests
     compact_table__attaching_detaching_views__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
             positions: ecs.Compact_Table(Position)
@@ -153,15 +143,12 @@ package ode_ecs__tests
     compact_table__creating_destroying_entities__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
             ecs_1: ecs.Database
 
             defer ecs.terminate(&ecs_1)
@@ -204,14 +191,12 @@ package ode_ecs__tests
     compact_table__adding_removing_components__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
             ais_2: ecs.Compact_Table(AI)
@@ -239,12 +224,9 @@ package ode_ecs__tests
 
         //
         // Test
-        //
-
             pos, pos2: ^Position
             ai, ai2: ^AI
 
-            // Boundaries check
             pos, err = ecs.add_component(&positions, ecs.entity_id{ix = 99999})
             testing.expect(t, pos == nil)
             testing.expect(t, err == ecs.API_Error.Entity_Id_Out_of_Bounds)
@@ -282,7 +264,6 @@ package ode_ecs__tests
             ai.IQ = 66
             ai2.IQ = 42
 
-            // Remove components
             testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == 0) // row 0
             testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 1) // row 1
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
@@ -314,7 +295,6 @@ package ode_ecs__tests
 
             testing.expect(t, ecs.remove_component(&positions, eid_2) == oc.Core_Error.Not_Found)
 
-            // Get Component
             testing.expect(t, ecs.compact_table__len(&ais) == 2)
 
             a : ^AI
@@ -334,9 +314,8 @@ package ode_ecs__tests
             testing.expect(t, pos == nil)
 
             //
-            // Copy component 
+            // Copy component
             //
-
             defer ecs.compact_table__terminate(&ais_2)
             testing.expect(t, ecs.compact_table__init(&ais_2, &ecs_1, 10) == nil)
 
@@ -348,9 +327,8 @@ package ode_ecs__tests
             testing.expect(t, a.neurons_count == a_2.neurons_count)
 
             //
-            // Move component 
+            // Move component
             //
-
             a, err = ecs.move_component(&ais_2, &ais, eid_1)
             testing.expect(t, err == nil)
             testing.expect(t, a.neurons_count == 111)
@@ -396,7 +374,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
 
-        // ADD POS 1
         pos, err = ecs.add_component(positions, eid_3)
         pos.x = 333
         testing.expect(t,  err == nil)
@@ -426,7 +403,7 @@ package ode_ecs__tests
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
         
-        // ais.eid_to_ptr[eid_3.ix] was changed because ais component was removed
+        // ais row for eid_3 moved (tail-swapped) when eid_1's ais was removed
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
 
         err = ecs.remove_component(ais, eid_1)
@@ -447,7 +424,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 0)
 
         #no_bounds_check {
-            // Direct memory check 
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).eid.ix == ecs.DELETED_INDEX)
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).eid.gen == 0)
             testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).rids[0] == 0)
@@ -499,15 +475,13 @@ package ode_ecs__tests
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
 
-        // FORCE CAP = 2
         old_cap := view1.cap
         view1.cap = 2
 
-        // ADD POS
         pos, err = ecs.add_component(positions, eid_2)
         pos.x = 22
         testing.expect(t,  err == nil)
-        testing.expect(t, ecs.view_len(view1) == 2) // LEN DIDN'T INCREASE, BECAUSE OF CAP
+        testing.expect(t, ecs.view_len(view1) == 2) // len didn't increase, capped
         testing.expect(t, ecs.view_len(view3) == 2)
 
         r = ecs.view__get_row(view3, 0)
@@ -518,17 +492,13 @@ package ode_ecs__tests
         testing.expect(t, r.eid == eid_2)
         testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_2))
 
-        // RESTORE CAP
         view1.cap = old_cap
 
-        // ADD POS
         before_error_add_len := ecs.view_len(view1)
         pos, err = ecs.add_component(positions, eid_2)     
         pos.x = 222       
         testing.expect(t,  err == ecs.API_Error.Component_Already_Exist)
         testing.expect(t, ecs.view_len(view1) == before_error_add_len + 1)
-
-        // view1 
 
         r = ecs.view__get_row(view1, 0)
         testing.expect(t, r.eid == eid_3)
@@ -546,8 +516,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
         testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
 
-        // view3
-        
         r = ecs.view__get_row(view3, 0)
         testing.expect(t, r.eid == eid_3)
         testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_3))
@@ -743,14 +711,12 @@ package ode_ecs__tests
     compact_table__views_subscribing_for_updates__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
             positions: ecs.Compact_Table(Position)
@@ -767,17 +733,11 @@ package ode_ecs__tests
 
         //
         // Test
-        //
-
         eid_1, eid_2, eid_3: ecs.entity_id
         pos: ^Position
         ai: ^AI
 
-        // Create some entities and components
-    
         eid_1, eid_2, eid_3 = compact_table__create_entities_and_components(t, &ecs_1, &positions, &ais)
-
-        // Init views
 
         testing.expect(t, ecs.view_init(&view1, &ecs_1, {&ais, &positions}) == nil)
         testing.expect(t, ecs.view_len(&view1) == 0)
@@ -797,14 +757,11 @@ package ode_ecs__tests
 
         testing.expect(t, view1.cap == 8)
 
-        // clear
         testing.expect(t, ecs.clear(&ecs_1) == nil)
 
         //
-        // Repeat after clear to see if everything fine again
+        // Repeat after clear to make sure everything still works
         // 
-
-        // Create some entities and components
 
         ecs.suspend(&view1)
         ecs.suspend(&view2)
@@ -817,9 +774,8 @@ package ode_ecs__tests
         ecs.resume(&view3)
 
         //
-        // Retest if everything was suspended
+        // Retest: nothing changed while suspended
         //
-
         testing.expect(t, ecs.view_len(&view1) == 0)
         testing.expect(t, view1.cap == 8)
 
@@ -853,18 +809,14 @@ package ode_ecs__tests
     compact_table__filter__test :: proc(t: ^testing.T) {
         //
         // Prepare
-        //
-            // Log into console when panic happens
             context.logger = log.create_console_logger()
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
-            
+            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+
         //
         // Test rerunning filters for entities
-        //
-
             db:     ecs.Database
             view:   ecs.View
             err:    ecs.Error

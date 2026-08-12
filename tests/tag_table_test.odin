@@ -93,8 +93,6 @@ package ode_ecs__tests
                 if eid == human do is_human_alive = true
                 if eid == bird do is_bird_alive = true 
                 if eid == chair do is_chair_alive = true
-
-                //fmt.println(eid)
             }
 
             testing.expect(t, is_human_alive)
@@ -107,8 +105,6 @@ package ode_ecs__tests
 
             testing.expect(t, ecs.tag_table__len(&is_alive_table) == 3)
             testing.expect(t, ecs.tag_table__cap(&is_alive_table) == 10)
-
-            //fmt.println(is_alive_table.eid_map)
 
             ecs.resume(&view)
 
@@ -223,7 +219,7 @@ package ode_ecs__tests
                 chair_eid = chair,
             }
 
-            view3.user_data = &my_user_data   // set user_data !!!
+            view3.user_data = &my_user_data
 
             testing.expect(t, ecs.view_init(&view3, &db, {&is_alive_table}, filter = my_filter2) == nil)
 

@@ -2,7 +2,7 @@
     2025 (c) Oleh, https://github.com/zm69
 
     A basic sample with 100,000 entities that demonstrates how to use tables and views.
-    
+
     Run this sample with speed optimizations to see results closer to real-world performance:
 
     odin run . -o:speed
@@ -19,7 +19,7 @@ package ode_ecs_sample1
     import "core:mem"
     import "core:math/rand"
     import "core:time"
-     
+
 
 // ODE_ECS
     import ecs "../../"
@@ -28,7 +28,7 @@ package ode_ecs_sample1
 //
 // Components
 //
-    Position :: struct { x, y: int } 
+    Position :: struct { x, y: int }
     AI :: struct { neurons_count: int }
     Physical :: struct { velocity, mass: f32 }
 
@@ -44,7 +44,7 @@ package ode_ecs_sample1
     physics: ecs.Table(Physical)
 
     // Views
-    physical: ecs.View 
+    physical: ecs.View
 
     // All possible components combinations for generating random entities
     g_combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
@@ -55,63 +55,49 @@ package ode_ecs_sample1
 main :: proc() {
 
     //
-    // OPTIONAL: Setup memory tracking and logger. 
+    // OPTIONAL: Setup memory tracking and logger.
     //
         mem_track: oc.Mem_Track
 
-        // Track memory leaks and bad frees
-        context.allocator = oc.mem_track__init(&mem_track, context.allocator)  
+        context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defer statements are executed in the reverse order that they were declared
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
 
-        // Log into console when panic happens
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Replace default allocator with panic allocator to make sure that  
-        // no allocations happen outside of provided allocator
+        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
     //
     // Actual ODE_ECS sample starts here.
-    //
-
-        //
-        // Simple error handling
-        //
         err: ecs.Error
 
     //
-    // Init 
+    // Init
     //
-       
-        // Init database
-        defer { 
-            err = ecs.terminate(&db) 
+        defer {
+            err = ecs.terminate(&db)
             if err != nil do report_error(err)
         }
-        err = ecs.init(&db, 100_000, allocator) // Maximum 100K entities
-        if err != nil { report_error(err); return }
-        
-        // Init tables
-        err = ecs.table_init(&positions, db = &db, cap = 100_000) // Maximum 100K position components
+        err = ecs.init(&db, 100_000, allocator)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&ais, &db, 100_000) // Maximum 20K AI components
+        err = ecs.table_init(&positions, db = &db, cap = 100_000)
         if err != nil { report_error(err); return }
 
-        err = ecs.table_init(&physics, &db, 100_000) // Maximum 70K position components
+        err = ecs.table_init(&ais, &db, 100_000)
         if err != nil { report_error(err); return }
 
-        // Init views
+        err = ecs.table_init(&physics, &db, 100_000)
+        if err != nil { report_error(err); return }
+
         err = ecs.view_init(&physical, &db, {&positions, &physics})
         if err != nil { report_error(err); return }
 
     //
     // Systems
-    //
-
         iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
             err: ecs.Error
             it: ecs.Iterator
@@ -120,9 +106,6 @@ main :: proc() {
             if err != nil { report_error(err); return }
 
             for _, pos, ph in ecs.next(&it, positions, physics) {
-
-                // Doing some calculations on components
-
                 pos.x += 34
                 pos.y += 7
 
@@ -133,31 +116,29 @@ main :: proc() {
 
         iterate_over_table :: proc (table: ^ecs.Table(AI)) {
             for &ai in ecs.slice(table) {
-                // Doing some calculations on components
-                ai.neurons_count += 1 
+                ai.neurons_count += 1
             }
-        }       
+        }
 
     //
-    // Game load, create 100_000 entities with random components
+    // Game load: create 100,000 entities with random components
     // 
         create_entities_with_random_components_and_data(100_000)
     //
-    //  Game loop, frame zero, iterating over table only
+    // Frame zero: iterate over table only
     // 
         sw: time.Stopwatch
         time.stopwatch_start(&sw)
 
-            iterate_over_table(&ais) 
+            iterate_over_table(&ais)
 
         time.stopwatch_stop(&sw)
 
         _, _, _, nanos0 := time.precise_clock_from_stopwatch(sw)
 
     //
-    //  Game loop, frame one, iterating over view and table
+    // Frame one: iterate over view and table
     // 
-     
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
@@ -168,7 +149,7 @@ main :: proc() {
         _, _, _, nanos1 := time.precise_clock_from_stopwatch(sw)
 
     //
-    //  Game loop, frame two, destroying and creating 10_000 entities plus iterating over view and table
+    // Frame two: destroy/create 10,000 entities, then iterate over view and table
     // 
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
@@ -200,7 +181,7 @@ main :: proc() {
         delete(s, allocator)
 
         s = oc.add_thousand_separator(ecs.table_len(&physics), sep=',', allocator=allocator)
-        fmt.printfln("%-30s %v", "Physics components count:", s) 
+        fmt.printfln("%-30s %v", "Physics components count:", s)
         delete(s, allocator)
 
         s = oc.add_thousand_separator(ecs.view_len(&physical), sep=',', allocator=allocator)
@@ -213,7 +194,7 @@ main :: proc() {
         s = oc.add_thousand_separator(ecs.table_len(&ais), sep=',', allocator=allocator)
         fmt.printfln("%-30s %.4f ms (%v components)", "Iterate over table:", f64(nanos0)/1_000_000.0, s)
         delete(s, allocator)
-        
+
         s = oc.add_thousand_separator(ecs.view_len(&physical), sep=',', allocator=allocator)
         s2 := oc.add_thousand_separator(ecs.view_len(&physical) * 2, sep=',', allocator=allocator)
         fmt.printfln("%-30s %.4f ms (%v rows, %v components)", "Iterate over view:", f64(nanos1)/1_000_000.0, s, s2)
@@ -239,7 +220,6 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
         eid, err = ecs.database__create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // Randomly chose what components combo we want for entity
         combo := rand.choice(g_combo_choice[:])
 
         for j:=0; j<3; j+=1 {
@@ -251,13 +231,13 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
                     if err != nil { report_error(err); fmt.println(eid); return }
                     // pos.x = int(rand.int63()) % 1920
                     // pos.y = int(rand.int63()) % 1080
-                case 2:               
+                case 2:
                     ai, err = ecs.add_component(&ais, eid)
                     if err != nil { report_error(err); fmt.println(eid); return }
                     // ai.neurons_count = int(rand.uint32()) % 400
                 case 3:
                     ph, err = ecs.add_component(&physics, eid)
-                    if err != nil { report_error(err); return } 
+                    if err != nil { report_error(err); return }
                     // ph.mass = rand.float32_range(30, 100)
             }
 
