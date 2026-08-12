@@ -42,17 +42,17 @@ package ode_ecs
         return true
     }
 
-    overbase__init :: proc(self: ^Overbase, entities_cap: int, databases_cap := 1, allocator := context.allocator) -> Error {
+    overbase__init :: proc(self: ^Overbase, entities_cap: u32, databases_cap := 1, allocator := context.allocator) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
         }
 
-        if entities_cap <= 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
+        if entities_cap == 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
 
         self.allocator = allocator
 
-        oc.ix_gen_factory__init(&self.id_factory, entities_cap, self.allocator) or_return
+        oc.ix_gen_factory__init(&self.id_factory, int(entities_cap), self.allocator) or_return
         oc.dense_arr__init(&self.databases, databases_cap, self.allocator) or_return
 
         self.state = Object_State.Normal
@@ -88,15 +88,6 @@ package ode_ecs
         return oc.ix_gen_factory__new_id(&self.id_factory)
     }
 
-    // The canonical entity-destroy implementation. Removes the entity's
-    // components from every attached Database (recursively for descendants
-    // when destroy_children is set — see database__destroy_entity_local),
-    // then frees the id.
-    //
-    // #force_inline: collapses the wrapper chain (this + database__destroy_entity)
-    // around overbase__destroy_entity_impl into one proc; with a single
-    // Database attached, cost over the pre-Overbase implementation is just
-    // the existing validity/id-free bookkeeping — the Dense_Arr walk is skipped entirely.
     overbase__destroy_entity :: #force_inline proc(self: ^Overbase, eid: entity_id, destroy_children := false) -> Error {
         return overbase__destroy_entity_impl(self, eid, destroy_children, tolerate_expired = false)
     }

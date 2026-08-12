@@ -1,7 +1,7 @@
 # 🐑 Updates Timeline
 
 **August 2026**
-- Bump gen in ix_gen to 16 bits.
+- Bump gen in ix_gen to 32 bits.
 - **new** •  [Fat Struct discussion](/docs/fat_struct_vs_ecs.md) and samples.
 - Allow autogrow (Database, Tables, Views) during the init stage, not the frame loop.
 

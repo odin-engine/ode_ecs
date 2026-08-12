@@ -40,7 +40,7 @@ Don't forget to pull the latest changes from time to time. We usually don't brea
 
 ODE_ECS is a high-performance in-memory "database" for entities and components.
 
-Entities are simply IDs (64-bit values: a 48-bit ID and a 16-bit generation). They can be linked to zero or more components, which can be added or removed dynamically. All data resides within the components.
+Entities are simply IDs (64-bit values: a 32-bit ID and a 32-bit generation). They can be linked to zero or more components, which can be added or removed dynamically. All data resides within the components.
 
 A _Component_ is pure data (usually defined as a `struct`, though any Odin type can be used).
 
@@ -421,8 +421,8 @@ The `ix_gen` is defined like this:
 
 ```odin
     ix_gen :: bit_field i64 {
-        ix: int | 48,       // index
-        gen: uint | 16,     // generation
+        ix: int | 32,       // index
+        gen: uint | 32,     // generation
     }
 ```  
 

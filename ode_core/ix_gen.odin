@@ -15,11 +15,11 @@ package ode_core
 // ix_gen -- index + generation. Reusing an id (old entity destroyed) bumps
 // gen, so a stale saved id with the same ix reads as different from the new one.
 
-    GEN_MAX :: 65535
+    GEN_MAX :: 4_294_967_295
 
     ix_gen :: bit_field i64 {
-        ix: int | 48,       // index
-        gen: uint | 16,     // generation
+        ix: int | 32,       // index
+        gen: uint | 32,     // generation
     }
 
     Ix_Gen_Factory :: struct {
@@ -356,10 +356,13 @@ package ode_core
         testing.expect(t, ix_gen_factory__is_expired(&factory, id_2) == false)
     }
 
-    // 16-bit generation wrap driven through the public path: after GEN_MAX + 1
+    // 32-bit generation wrap driven through the public path: after GEN_MAX + 1
     // free/new cycles on the same slot the generation returns to its starting
     // value, so a stale id held across the full cycle reads as live again (the
-    // documented ABA limit of a 16-bit generation).
+    // documented ABA limit of a 32-bit generation). GEN_MAX is 4.29 billion, so
+    // actually looping that many cycles isn't a reasonable unit test — instead,
+    // poke the internal slot state directly to fast-forward to the edge of the
+    // wrap, then exercise the last two cycles through the public API.
     @(test)
     ix_gen_factory__gen_wraparound__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -376,22 +379,19 @@ package ode_core
         testing.expect(t, err == Core_Error.None)
         testing.expect(t, first_id.ix == 0 && first_id.gen == 0)
 
-        seen_zero_again := false
-        id := first_id
-        for _ in 0..<int(GEN_MAX) { // 65535 cycles: gen runs 1..65535, stale everywhere
-            testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
-            id, err = ix_gen_factory__new_id(&factory)
-            testing.expect(t, err == Core_Error.None)
-            testing.expect(t, ix_gen_factory__is_expired(&factory, first_id))
-            if id.gen == 0 do seen_zero_again = true
-        }
-        testing.expect(t, seen_zero_again == false)
-        testing.expect(t, id.gen == GEN_MAX)
+        // Fast-forward to one below the wrap instead of cycling GEN_MAX times.
+        testing.expect(t, ix_gen_factory__free_id(&factory, first_id) == Core_Error.None)
+        factory.items[0].gen = GEN_MAX - 1
 
-        // cycle 65536 wraps 65535 -> 0 and the original id collides back to live
+        id, err2 := ix_gen_factory__new_id(&factory) // bumps GEN_MAX-1 -> GEN_MAX
+        testing.expect(t, err2 == Core_Error.None)
+        testing.expect(t, id.gen == GEN_MAX)
+        testing.expect(t, ix_gen_factory__is_expired(&factory, first_id))
+
+        // one more cycle wraps GEN_MAX -> 0 and the original id collides back to live
         testing.expect(t, ix_gen_factory__free_id(&factory, id) == Core_Error.None)
-        id, err = ix_gen_factory__new_id(&factory)
-        testing.expect(t, err == Core_Error.None)
+        id, err2 = ix_gen_factory__new_id(&factory)
+        testing.expect(t, err2 == Core_Error.None)
         testing.expect(t, id.gen == 0)
         testing.expect(t, id == first_id)
         testing.expect(t, ix_gen_factory__is_expired(&factory, first_id) == false)

@@ -74,7 +74,7 @@ package ode_ecs
         return true
     }
 
-    database__init :: proc(self: ^Database, entities_cap: int, allocator := context.allocator, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
+    database__init :: proc(self: ^Database, entities_cap: u32, allocator := context.allocator, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
@@ -83,7 +83,7 @@ package ode_ecs
             assert(views_cap > 1)
         }
 
-        if entities_cap <= 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
+        if entities_cap == 0 do return API_Error.Entities_Cap_Should_Be_Greater_Than_Zero
         if tables_cap > BIT_SET_VALUES_CAP * TABLES_MULT do return API_Error.Tables_Cap_Exceeds_Compile_Time_Limit
 
         // A re-init'd struct (issue #8) may still be paused from its previous
@@ -103,8 +103,8 @@ package ode_ecs
         oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
-        self.eid_to_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
-        self.eid_to_disabled_bits = make([]Uni_Bits, entities_cap, self.allocator) or_return
+        self.eid_to_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
+        self.eid_to_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
 
         self.state = Object_State.Normal
 

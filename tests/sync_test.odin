@@ -48,7 +48,7 @@ when ecs.SYNC_ENABLED {
     }
 
     sync_pub_world__init :: proc(t: ^testing.T, w: ^Sync_Pub_World, entities_cap: int, allocator: mem.Allocator) {
-        testing.expect(t, ecs.overbase_init(&w.ob, entities_cap, 2, allocator) == nil)
+        testing.expect(t, ecs.overbase_init(&w.ob, u32(entities_cap), 2, allocator) == nil)
         testing.expect(t, ecs.init_from_overbase(&w.db_send, &w.ob) == nil)
         testing.expect(t, ecs.init_from_overbase(&w.db_recv, &w.ob) == nil)
 

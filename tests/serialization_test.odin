@@ -45,7 +45,7 @@ package ode_ecs__tests
     }
 
     snapshot_world__init :: proc(t: ^testing.T, w: ^Snapshot_World, entities_cap: int, allocator: mem.Allocator) {
-        testing.expect(t, ecs.init(&w.db, entities_cap = entities_cap, allocator = allocator) == nil)
+        testing.expect(t, ecs.init(&w.db, entities_cap = u32(entities_cap), allocator = allocator) == nil)
         testing.expect(t, ecs.table_init(&w.positions, &w.db, 20) == nil)
         testing.expect(t, ecs.table_init(&w.speeds, &w.db, 20) == nil)
         testing.expect(t, ecs.compact_table__init(&w.ais, &w.db, 8) == nil)
