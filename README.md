@@ -232,34 +232,6 @@ Or, as a one-liner with `ecs.next` — same `it`, `get_entity`/`get_component` f
     }
 ```
 
-The `Iterator` automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view (which is the common case: it holds whenever components are added to tables in the same order per entity, and it survives entity despawn/respawn churn). In that case, components are read directly from the tables' dense arrays, which is roughly 2x faster than going through the view's pointer records. This is fully automatic and falls back transparently when the view is not aligned.
-
-For the absolute fastest iteration, `slice` returns the raw component slices in view-row order when the view is aligned (and `nil` otherwise). A plain loop over these slices compiles to a raw SoA sweep (~2x faster still than the iterator):
-
-```odin
-    pos_slice := ecs.slice(&view1, &positions)
-    ai_slice  := ecs.slice(&view1, &ais)
-
-    if pos_slice != nil && ai_slice != nil {
-        for i in 0..<len(pos_slice) {
-            // pos_slice[i] and ai_slice[i] belong to the same entity (view row i)
-        }
-    } else {
-        // View is not dense-aligned: iterate with Iterator as usual
-    }
-```
-
-The slices are invalidated by any structural change (adding/removing components, creating/destroying entities) — use them immediately; don't store them.
-
-### View excludes
-
-Besides included tables, `ecs.view_init` takes an optional `excludes` list — the view keeps only entities that have a component in **none** of the excluded tables ("has `Position` but NOT `Stunned`"). It is auto-maintained (adding/removing the excluded component updates the view) and costs a single bitset test, so prefer it over an equivalent filter proc:
-
-```odin
-    // All entities with a Position that are NOT tagged stunned
-    err = ecs.view_init(&view, &db, {&positions}, excludes = {&stunned_tag_table})
-```
-
 ### 🔎 View filters
 Read about View filters [here](/docs/view.md#filters).
 
