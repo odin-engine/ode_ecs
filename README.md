@@ -1,7 +1,7 @@
 ![alt text](/img/banner.png?raw=true)
 # 🐏 ODE_ECS
 
-⚡ A minimal, data-oriented, high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
+⚡ A high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 ### What ODE_ECS offers
 

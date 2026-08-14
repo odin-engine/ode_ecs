@@ -1,7 +1,7 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
 
-    A minimal, data-oriented, high-performance ECS written in Odin.  
+    A high-performance ECS written in Odin.  
 */
 package ode_ecs
 
