@@ -103,9 +103,6 @@ package ode_ecs
     }
 
     @(private)
-    // Arch_Table columns never take the dense fast path (only Table_Type.Table can be
-    // Aligned — see view__dense_resolve), so this is always rid-indirection, with col_idx
-    // resolved by a linear scan every call (no per-View caching like Arch_Iterator's).
     view_row__get_component_for_arch_table :: #force_inline proc "contextless" (table: ^Arch_Table, view_row: ^View_Row, $T: typeid) -> ^T #no_bounds_check {
         #no_bounds_check {
             rid := view_row.raw.rids[view_row.view.tid_to_cid[table.id]]

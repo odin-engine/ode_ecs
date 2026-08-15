@@ -51,6 +51,12 @@ package ode_ecs
         holes_count: int,
         first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
+        // 1-entry memo for arch_table__column_index: repeated queries for the same
+        // component type (the common case — a View column or a system reading one
+        // type every row) skip the linear scan. last_col_type == nil means empty.
+        last_col_type: typeid,
+        last_col_idx: int,
+
         // Sizes subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
         // when they're lazily allocated on first attach (see arch_table__attach_subscriber etc.).
         subscribers_cap: int,
@@ -110,6 +116,7 @@ package ode_ecs
 
         self.owner = nil
         self.cap = cap
+        self.last_col_type = nil
 
         self.columns = make([]Arch_Column, len(component_types), db.allocator) or_return
         self.col_payload_offsets = make([]int, len(component_types), db.allocator) or_return
@@ -256,11 +263,20 @@ package ode_ecs
     }
 
     @(private)
-    // Column index for type T, -1 if absent. Linear scan — cheap for realistic
-    // archetype column counts, avoids the hidden allocation a map[typeid]int would need.
+    // Column index for type T, -1 if absent. 1-entry memo hit skips the scan
+    // entirely (the common case: repeated queries for the same T — a View column
+    // read every row, or back-to-back get_component/dense_slice calls). Linear
+    // scan on miss — cheap for realistic archetype column counts, avoids the
+    // hidden allocation a map[typeid]int would need.
     arch_table__column_index :: proc "contextless" (self: ^Arch_Table, id: typeid) -> int {
+        if id == self.last_col_type do return self.last_col_idx
+
         for &col, i in self.columns {
-            if col.type_info.id == id do return i
+            if col.type_info.id == id {
+                self.last_col_type = id
+                self.last_col_idx = i
+                return i
+            }
         }
         return -1
     }

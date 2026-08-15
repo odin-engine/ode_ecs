@@ -169,6 +169,20 @@
       changed nothing, already small enough to auto-inline), here the hint
       was load-bearing: these procs grew just past the compiler's automatic
       (non-forced) inlining threshold.
+    - iter_view_arch_mixed (View spanning a Table + an Arch_Table): the
+      view_row__get_component_for_arch_table path called arch_table__column_index
+      unconditionally on every get_component (a linear scan of self.columns) —
+      unlike Arch_Iterator's nextN, which resolves col_idx once and caches it
+      for the iterator's lifetime (see the doc comment above iter_view_arch_mixed
+      and on view_row__get_component_for_arch_table in view.odin, both written
+      when this gap was first identified but left unaddressed). Added a 1-entry
+      memo (last_col_type/last_col_idx) on Arch_Table itself, checked before the
+      scan: 0.77-0.86 -> 0.67-0.70 ns/op (~10-15%), consistent across 5
+      interleaved A/B rounds; iter_dense_it/iter_arch_slice/iter_arch_it/
+      churn_arch/churn_group_mixed unaffected (those paths don't call
+      arch_table__column_index per-row, or already cache it). Reset the memo in
+      arch_table__init (issue #8 re-init pattern) so a stale entry from a
+      previous life can't alias into the freshly allocated columns array.
 */
 package ode_ecs_benchmarks
 
