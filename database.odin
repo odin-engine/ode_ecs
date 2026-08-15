@@ -40,6 +40,12 @@ package ode_ecs
         // but excluded from query matching until enable_component. See view__components_match.
         eid_to_disabled_bits: []Uni_Bits,
 
+        // Sticky true once any database__disable_component call has run (reset by
+        // database__clear, which also zeroes eid_to_disabled_bits); lets
+        // view__components_match skip the eid_to_disabled_bits load+check entirely
+        // when the feature was never used — the common case.
+        has_disabled_components: bool,
+
         // Batch-allocated View-subscriber bookkeeping for every Tiny_Table in this
         // Database (tiny_table.odin's Tiny_Table_Subscriber_Slot) — Tiny_Table_Base
         // keeps only an index into this slice, not the arrays themselves.
@@ -90,6 +96,7 @@ package ode_ecs
         // life; terminate does not reset the flag.
         self.tail_swap_paused = false
         self.destroying_eid_ix = DELETED_INDEX
+        self.has_disabled_components = false
 
         self.allocator = allocator
 
@@ -134,6 +141,7 @@ package ode_ecs
 
         self.tail_swap_paused = false
         self.destroying_eid_ix = DELETED_INDEX
+        self.has_disabled_components = false
 
         self.allocator = allocator.? or_else overbase.allocator
         self.overbase = overbase
@@ -257,6 +265,7 @@ package ode_ecs
 
         slice.zero(self.eid_to_bits)
         slice.zero(self.eid_to_disabled_bits)
+        self.has_disabled_components = false
 
         // bump_gen so entity ids held across the clear are detected as expired.
         // Only the Database that owns its Overbase may reset the id space —
@@ -649,6 +658,7 @@ package ode_ecs
         database__is_entity_correct(self, eid) or_return
 
         uni_bits__add(&self.eid_to_disabled_bits[eid.ix], id)
+        self.has_disabled_components = true
 
         table := self.tables.items[int(id)]
         for view in shared_table__subscribers(table) {

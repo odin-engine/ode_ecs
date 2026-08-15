@@ -934,6 +934,8 @@ package ode_ecs
         snap_reader__read(&r, raw_data(self.eid_to_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
         snap_reader__pad8(&r) or_return
 
+        self.has_disabled_components = true
+
         for _ in 0..<int(hdr.section_count) {
             th: Snap_Table_Header
             snap_reader__read(&r, &th, size_of(th)) or_return

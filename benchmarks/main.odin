@@ -183,6 +183,21 @@
       arch_table__column_index per-row, or already cache it). Reset the memo in
       arch_table__init (issue #8 re-init pattern) so a stale entry from a
       previous life can't alias into the freshly allocated columns array.
+    - view__components_match (called on every add_component/remove_component
+      notification to every subscribed view — the core of churn/churn_partial/
+      churn_compact/churn_tag/rebuild) unconditionally loaded and intersected
+      db.eid_to_disabled_bits[eid.ix], even though disable_component/
+      enable_component is a rarely-used soft-toggle feature most databases never
+      touch. Added Database.has_disabled_components, sticky-true from the first
+      database__disable_component call (and set conservatively true after
+      snapshot restore, since a snapshot can carry disabled bits without going
+      through disable_component — see serialization.odin), reset false by
+      database__init/init_from_overbase/clear; view__components_match now skips
+      the load+intersect entirely while it's false. churn 11.1-11.2 -> 10.9-11.0,
+      churn_compact 13.2-14.2 -> 12.3-12.7, churn_tag 12.9-13.6 -> 12.3-12.4
+      ns/op, consistent across 5 interleaved A/B rounds; churn_partial/
+      churn_vel/churn_small_view/rebuild neutral (rebuild's ~5 ns/op scale is
+      noise-dominated — no consistent direction across rounds).
 */
 package ode_ecs_benchmarks
 

@@ -570,7 +570,7 @@ package ode_ecs
         return uni_bits__is_subset(&self.bits, bits) &&
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
                (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits)) &&
-               uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix])
+               (!self.db.has_disabled_components || uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix]))
     }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
