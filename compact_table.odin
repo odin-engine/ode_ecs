@@ -172,7 +172,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_excluding_views. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__notify_excluding_views. 
     compact_table_base__notify_excluding_views :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
@@ -189,7 +189,7 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_any_of_views. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__notify_any_of_views. 
     compact_table_base__notify_any_of_views :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
         for view in self.subscribers_any_of.items {
             if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
@@ -197,27 +197,34 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_sync_add. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__notify_sync_add — same when SYNC_ENABLED gate (compiles away
+    // entirely, default build). 
     compact_table_base__notify_sync_add :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__notify_structural(ch, self.id, eid, true)
-            sync_channel__mark_touched(ch, self.id, eid)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, true)
+                sync_channel__mark_touched(ch, self.id, eid)
+            }
         }
     }
 
     @(private)
-    // See table_base__notify_sync_remove. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__notify_sync_remove. 
     compact_table_base__notify_sync_remove :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__notify_structural(ch, self.id, eid, false)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, false)
+            }
         }
     }
 
     @(private)
-    // See table_base__mark_touched. #force_inline: see table_base__notify_excluding_views.
+    // See table_base__mark_touched. 
     compact_table_base__mark_touched :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__mark_touched(ch, self.id, eid)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__mark_touched(ch, self.id, eid)
+            }
         }
     }
 

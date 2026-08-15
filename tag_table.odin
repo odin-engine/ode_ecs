@@ -491,24 +491,24 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_sync_add (tag_table__add_tag has no mark_touched
-    // call — a tag carries no field data to diff).
     tag_table__notify_sync_add :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__notify_structural(ch, self.id, eid, true)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, true)
+            }
         }
     }
 
     @(private)
-    // See table_base__notify_sync_remove.
     tag_table__notify_sync_remove :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__notify_structural(ch, self.id, eid, false)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, false)
+            }
         }
     }
 
     @(private)
-    // See table_base__notify_excluding_views (also for the #force_inline rationale).
     tag_table__notify_excluding_views :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
@@ -525,7 +525,6 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_any_of_views; #force_inline: see table_base__notify_excluding_views.
     tag_table__notify_any_of_views :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
         for view in self.subscribers_any_of.items {
             if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)

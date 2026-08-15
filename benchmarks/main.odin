@@ -46,6 +46,7 @@
                             Arch_Table; see the header notes for proof this
                             integration added ZERO cost to churn_vel_group itself
         get_random          shuffled random get_component by entity (Table)
+        get_random_mut      same, via get_component_mut (pays table_base__mark_touched)
         get_random_compact  shuffled random get_component by entity (Compact_Table)
         get_random_compact_miss  same, against a half-populated Compact_Table
                             (50% lookups miss — exercises the Robin Hood probe exit)
@@ -295,6 +296,7 @@ main :: proc() {
     bench_iter_view_arch_mixed()
 
     bench_get_random()
+    bench_get_random_mut()
     bench_get_random_compact()
     bench_get_random_compact_miss()
     bench_rebuild()
@@ -734,6 +736,25 @@ bench_get_random :: proc() {
     }
 
     report("get_random", best, N)
+}
+
+bench_get_random_mut :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in shuffled {
+            s += ecs.get_component_mut(&positions, eid).x
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_mut", best, N)
 }
 
 bench_get_random_compact :: proc() {

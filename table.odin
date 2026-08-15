@@ -206,7 +206,6 @@ package ode_ecs
     // After a component is removed, an any_of view may have lost its only qualifying
     // table for this entity — recheck and evict if so. Only ever removes (a no-op if
     // not a member), so needs no destroying_eid_ix guard, unlike notify_excluding_views.
-    // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_any_of_views :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         for view in self.subscribers_any_of.items {
             if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
@@ -217,30 +216,33 @@ package ode_ecs
     // A component was added — every watching Sync_Channel gets a structural "added"
     // event AND has eid marked touched, so its initial value transmits even without
     // a follow-up get_component_mut call.
-    // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_sync_add :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__notify_structural(ch, self.id, eid, true)
-            sync_channel__mark_touched(ch, self.id, eid)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, true)
+                sync_channel__mark_touched(ch, self.id, eid)
+            }
         }
     }
 
     @(private)
     // A component was removed — every watching Sync_Channel gets a structural
     // "removed" event, which also zeroes that channel's shadow slot for eid.
-    // #force_inline: see table_base__notify_excluding_views.
     table_base__notify_sync_remove :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__notify_structural(ch, self.id, eid, false)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__notify_structural(ch, self.id, eid, false)
+            }
         }
     }
 
     @(private)
     // Mark eid touched in every watching Sync_Channel so the next collect_delta diffs it.
-    // #force_inline: see table_base__notify_excluding_views.
     table_base__mark_touched :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
-        for ch in self.sync_watchers.items {
-            sync_channel__mark_touched(ch, self.id, eid)
+        when SYNC_ENABLED {
+            for ch in self.sync_watchers.items {
+                sync_channel__mark_touched(ch, self.id, eid)
+            }
         }
     }
 
