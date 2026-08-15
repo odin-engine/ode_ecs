@@ -384,7 +384,7 @@ package ode_ecs
         }
 
         uni_bits__clear(&self.eid_to_bits[eid.ix])
-        uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
+        if self.has_disabled_components do uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
 
         return nil
     }
