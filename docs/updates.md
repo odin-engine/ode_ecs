@@ -1,6 +1,10 @@
 # 🐑 Updates Timeline
 
 **August 2026**
+- **new** •  [Observers](/docs/observers.md) (`Observer`) — structural-change callbacks.
+- `Command_Buffer` is now auto-terminated by `database__terminate`.
+- **new** •  [Pairs](/docs/pair_table.md) (`Pair_Table(T)`) — many-to-many relations that, unlike `Relations_Table`, participate in `View` matching via an embedded `Tag_Table`.
+- **new** •  [Relations hierarchy walk](/docs/relations.md#hierarchy-walk) — read-only parent-before-child traversal. See [Sample15](/samples/sample15/main.odin).
 - Bump gen in ix_gen to 32 bits.
 - **new** •  [Fat Struct discussion](/docs/fat_struct_vs_ecs.md) and samples.
 - Allow autogrow (Database, Tables, Views) during the init stage, not the frame loop.

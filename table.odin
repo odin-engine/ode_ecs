@@ -398,6 +398,10 @@ package ode_ecs
         T_size := elem_size
         target := table_raw__rid_to_ptr_sized(self, target_rid, elem_size)
 
+        // Fires before any mutation below, so an observer can still read the
+        // about-to-be-removed value through `data`.
+        database__notify_observers(self.db, .Component_Removed, target_eid, table_id = self.id, data = target)
+
         // Cached once — nothing below changes the pause state before it's used.
         paused := table_raw__is_packing_paused(self)
 
@@ -530,6 +534,7 @@ package ode_ecs
             database__add_component(self.db, eid, self.id)
 
             table_base__notify_sync_add(self, eid)
+            database__notify_observers(self.db, .Component_Added, eid, table_id = self.id, data = component)
 
             raw.len += 1
 

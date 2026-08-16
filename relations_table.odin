@@ -6,7 +6,7 @@
 
     Storage is intrusive linked-tree arrays indexed by eid.ix — every operation
     is a direct array access, no hashing. All memory is preallocated at init:
-    entities_cap * 36 bytes + cap * 8 bytes.
+    entities_cap * 36 bytes + cap * 32 + 16 bytes.
 
     `cap` limits the number of concurrent parent links (relations). It also
     sizes the internal scratch buffer used by relations_table__children_of and
@@ -14,7 +14,21 @@
     children and a subtree has at most `cap` descendants).
 
     Relations are not components: they do not affect Views. If you need to
-    iterate "all entities with a parent", pair this with a Tag_Table.
+    iterate "all entities with a parent", roots()/walk_hierarchy() below now
+    cover that directly; pair this with a Tag_Table only if you specifically
+    need it to show up in a View.
+
+    Hierarchy walk (roots, walk_subtree, walk_hierarchy): read-only traversal
+    helpers, parent-before-child order. walk_hierarchy additionally reports
+    level boundaries so a caller can process one depth level at a time (e.g.
+    propagate a transform update top-down). Every root has >= 1 child by
+    definition, i.e. >= 1 edge, and edges are disjoint across different roots'
+    subtrees, so #roots <= count <= cap — a whole-forest walk's *combined*
+    result (roots + all descendants) is therefore bounded by 2*cap, not cap;
+    its buffer is sized accordingly (see walk_buf below). All three return
+    slices of internal buffers, valid only until the next call to any of them,
+    or any structural change (set_parent/remove_parent/destroy_entity/clear)
+    — same contract as children_of.
 
     Cleanup is automatic: database__destroy_entity unlinks the destroyed entity
     from its parent and orphans (or, with destroy_children=true, destroys) its
@@ -47,6 +61,16 @@ package ode_ecs
         // Sized to cap: children_of() results and destroy-cascade queue. The
         // slice returned by children_of is valid only until the next call or any structural change.
         scratch: []entity_id,
+
+        // roots()/walk_hierarchy()'s forest-wide BFS queue and level boundaries.
+        // Distinct from `scratch` (single-subtree/cascade-destroy scoped) — a
+        // whole-forest walk isn't bounded by one subtree's size the way a single
+        // subtree is. Sized 2*cap: #roots <= count <= cap (every root needs >= 1
+        // child/edge) and descendants <= count <= cap, so roots+descendants <= 2*cap.
+        // level_offsets sized cap+2: at most cap+1 levels (root level + a chain using
+        // all cap edges, one level each), plus one extra slot for the end-boundary.
+        walk_buf:      []entity_id,
+        level_offsets: []int,
     }
 
     relations_table__is_valid :: proc(self: ^Relations_Table) -> bool {
@@ -59,6 +83,8 @@ package ode_ecs
         if self.prev_sibling == nil do return false
         if self.children_count == nil do return false
         if self.scratch == nil do return false
+        if self.walk_buf == nil do return false
+        if self.level_offsets == nil do return false
         if self.cap <= 0 do return false
 
         return true
@@ -86,6 +112,8 @@ package ode_ecs
         self.prev_sibling   = make([]entity_id, entities_cap, db.allocator) or_return
         self.children_count = make([]i32,       entities_cap, db.allocator) or_return
         self.scratch        = make([]entity_id, cap,          db.allocator) or_return
+        self.walk_buf       = make([]entity_id, cap * 2,      db.allocator) or_return
+        self.level_offsets  = make([]int,        cap + 2,     db.allocator) or_return
 
         db.relations = self
         self.state = Object_State.Normal
@@ -104,6 +132,8 @@ package ode_ecs
         delete(self.prev_sibling, self.db.allocator) or_return
         delete(self.children_count, self.db.allocator) or_return
         delete(self.scratch, self.db.allocator) or_return
+        delete(self.walk_buf, self.db.allocator) or_return
+        delete(self.level_offsets, self.db.allocator) or_return
 
         self.parent = nil
         self.first_child = nil
@@ -111,6 +141,8 @@ package ode_ecs
         self.prev_sibling = nil
         self.children_count = nil
         self.scratch = nil
+        self.walk_buf = nil
+        self.level_offsets = nil
         self.count = 0
         self.cap = 0
 
@@ -149,6 +181,8 @@ package ode_ecs
         if self.prev_sibling != nil   do total += size_of(self.prev_sibling[0]) * len(self.prev_sibling)
         if self.children_count != nil do total += size_of(self.children_count[0]) * len(self.children_count)
         if self.scratch != nil        do total += size_of(self.scratch[0]) * len(self.scratch)
+        if self.walk_buf != nil       do total += size_of(self.walk_buf[0]) * len(self.walk_buf)
+        if self.level_offsets != nil  do total += size_of(self.level_offsets[0]) * len(self.level_offsets)
 
         return total
     }
@@ -194,6 +228,8 @@ package ode_ecs
 
         relations_table__link_child(self, parent, child)
 
+        database__notify_observers(self.db, .Parent_Set, child, related = parent)
+
         return nil
     }
 
@@ -208,6 +244,8 @@ package ode_ecs
 
         old_parent := self.parent[child.ix]
         if is_not_set(old_parent) do return oc.Core_Error.Not_Found
+
+        database__notify_observers(self.db, .Parent_Removed, child, related = old_parent)
 
         relations_table__unlink_child(self, old_parent, child)
 
@@ -277,6 +315,126 @@ package ode_ecs
         database__is_entity_correct(self.db, eid) or_return
 
         return self.parent[eid.ix] == target || self.parent[target.ix] == eid, nil
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Hierarchy walk — read-only traversal helpers, parent-before-child order.
+// See the file header for the buffer-sizing/lifetime contract.
+
+    // True if eid has no parent AND at least one child — the entry point of a
+    // hierarchy. An entity that has never touched relations (no parent, no
+    // children) is NOT a root, it's just untouched.
+    relations_table__is_root :: proc(self: ^Relations_Table, eid: entity_id) -> (res: bool, err: Error) #no_bounds_check {
+        database__is_entity_correct(self.db, eid) or_return
+
+        return is_not_set(self.parent[eid.ix]) && self.children_count[eid.ix] > 0, nil
+    }
+
+    // All roots in the table, in ix order. O(entities_cap) — no dense index of
+    // "entities with relations" exists, so every slot's parent/children_count
+    // must be checked. Returns a slice of walk_buf (see file header for bound
+    // and lifetime contract).
+    relations_table__roots :: proc(self: ^Relations_Table) -> (res: []entity_id, err: Error) #no_bounds_check {
+        n := 0
+        for ix := 0; ix < len(self.parent); ix += 1 {
+            if self.children_count[ix] <= 0 do continue
+            if !is_not_set(self.parent[ix]) do continue
+
+            when VALIDATIONS do assert(n < len(self.walk_buf), "relations links corrupted — more roots than possible")
+            self.walk_buf[n] = self.db.overbase.id_factory.items[ix]
+            n += 1
+        }
+
+        return self.walk_buf[:n], nil
+    }
+
+    // Descendants of root, breadth-first (children before grandchildren) — the
+    // same order destroy_children relies on internally, exposed for reading.
+    // root itself is NOT included (same convention as children_of returning
+    // only children, not the parent). Reuses `scratch` — same lifetime
+    // contract as children_of, cheaper than walk_hierarchy when you already
+    // have a specific root and don't need level boundaries.
+    relations_table__walk_subtree :: proc(self: ^Relations_Table, root: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
+        database__is_entity_correct(self.db, root) or_return
+
+        n := 0
+        c := self.first_child[root.ix]
+        for !is_not_set(c) {
+            when VALIDATIONS do assert(n < len(self.scratch), "relations links corrupted — subtree exceeds cap")
+            self.scratch[n] = c
+            n += 1
+            c = self.next_sibling[c.ix]
+        }
+
+        for head := 0; head < n; head += 1 {
+            cur := self.scratch[head]
+            gc := self.first_child[cur.ix]
+            for !is_not_set(gc) {
+                when VALIDATIONS do assert(n < len(self.scratch), "relations links corrupted — subtree exceeds cap")
+                self.scratch[n] = gc
+                n += 1
+                gc = self.next_sibling[gc.ix]
+            }
+        }
+
+        return self.scratch[:n], nil
+    }
+
+    // Whole forest, breadth-first, depth order (every root, then their
+    // children, then grandchildren, ...) — discovers all roots itself (see
+    // roots()), a materially different traversal from walk_subtree, not a
+    // thin wrapper around it. level_offsets[i]..<level_offsets[i+1] indexes
+    // into the returned entities slice for depth level i (roots are level 0);
+    // len(level_offsets)-1 is the number of levels. Uses walk_buf/
+    // level_offsets — same lifetime contract as children_of.
+    relations_table__walk_hierarchy :: proc(self: ^Relations_Table) -> (entities: []entity_id, level_offsets: []int, err: Error) #no_bounds_check {
+        n := 0
+
+        // Level 0: every root.
+        for ix := 0; ix < len(self.parent); ix += 1 {
+            if self.children_count[ix] <= 0 do continue
+            if !is_not_set(self.parent[ix]) do continue
+
+            when VALIDATIONS do assert(n < len(self.walk_buf), "relations links corrupted — more entities than possible")
+            self.walk_buf[n] = self.db.overbase.id_factory.items[ix]
+            n += 1
+        }
+
+        self.level_offsets[0] = 0
+        if n == 0 {
+            self.level_offsets[1] = 0
+            return self.walk_buf[:0], self.level_offsets[:1], nil
+        }
+
+        num_levels := 1
+        self.level_offsets[1] = n
+        level_start := 0
+
+        for {
+            level_end := self.level_offsets[num_levels]
+            added := false
+
+            for i := level_start; i < level_end; i += 1 {
+                cur := self.walk_buf[i]
+                c := self.first_child[cur.ix]
+                for !is_not_set(c) {
+                    when VALIDATIONS do assert(n < len(self.walk_buf), "relations links corrupted — more entities than possible")
+                    self.walk_buf[n] = c
+                    n += 1
+                    c = self.next_sibling[c.ix]
+                    added = true
+                }
+            }
+
+            level_start = level_end
+            if !added do break
+
+            num_levels += 1
+            when VALIDATIONS do assert(num_levels < len(self.level_offsets), "relations links corrupted — more levels than possible")
+            self.level_offsets[num_levels] = n
+        }
+
+        return self.walk_buf[:n], self.level_offsets[:num_levels + 1], nil
     }
 
 ///////////////////////////////////////////////////////////////////////////////

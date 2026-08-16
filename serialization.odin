@@ -6,33 +6,15 @@
     and relations round-trip; views and groups are derived data and are rebuilt
     on load instead of being stored.
 
-    Scope (v2): components must be POD — no pointers, slices, strings, maps or
+    Components must be POD — no pointers, slices, strings, maps or
     dynamic arrays inside them (their rows are copied as raw bytes). serialize
     rejects non-POD component types unless allow_non_pod = true is passed.
-    Per-table user serialize/deserialize callbacks for non-POD components are
-    deliberately left for a future version.
 
     Loading requires an already-initialized Database with a matching schema:
     the same tables initialized in the same order (and with the same
     init/terminate history, so table ids coincide), same component types, and
     capacities no smaller than the saved data. Deserialization is all-or-nothing:
     the whole buffer is validated before anything is mutated.
-
-    Entity-id ownership (v2): a Database that owns its Overbase (the common,
-    plain ecs.init case) still snapshots the entity-id space (generations,
-    freed list) together with its tables, exactly as v1 did. A Database
-    attached to a *shared* Overbase (ecs.init_from_overbase) instead omits
-    that section — deserialize never touches shared id-space state a sibling
-    Database also depends on. Row entity_ids are validated against the
-    snapshot's own recorded id state when this Database owns the section, or
-    against the live Overbase otherwise (see snapshot__validate_row_eid). To
-    save/restore the shared id-space itself, use Overbase's own
-    overbase_serialize/overbase_deserialize (overbase_serialization.odin).
-    See docs/overbase.md.
-
-    The wire format depends on the Table_Type enum values and on the ix_gen
-    bit_field packing (ix:48/gen:16) — changing either requires bumping
-    SNAPSHOT_VERSION.
 */
 package ode_ecs
 
@@ -55,7 +37,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F) // "ODEECSDB" as little-endian bytes
 
     @(private)
-    SNAPSHOT_VERSION :: u32(5) // bumped: added the eid_to_disabled_bits section
+    SNAPSHOT_VERSION :: u32(6) // bumped: added Pair_Table sections + Snapshot_Header.pair_table_section_count
 
     // Compared as a raw u32 — a snapshot from a different-endian machine
     // reads back as a different value and is rejected.
@@ -65,9 +47,7 @@ package ode_ecs
     @(private)
     SNAPSHOT_FLAG__HAS_RELATIONS :: u32(1 << 0)
 
-    // Set when the entity-id section (items/freed blob after the header) is
-    // present. Written iff the saving Database owns its Overbase (see the
-    // entity-id ownership note at the top of this file).
+    // Set when the entity-id section (items/freed blob after the header) is present.
     @(private)
     SNAPSHOT_FLAG__HAS_ENTITY_ID_SECTION :: u32(1 << 1)
 
@@ -82,6 +62,7 @@ package ode_ecs
         created_count: i64, // factory state
         freed_count:   i64,
         section_count: i64, // number of table sections that follow
+        pair_table_section_count: i64, // number of Pair_Table sections, written last (after relations)
     }
 
     @(private)
@@ -110,6 +91,22 @@ package ode_ecs
     Snap_Relations_Header :: struct #packed {
         cap:   i64, // informational; load only requires count <= target cap
         count: i64,
+    }
+
+    @(private)
+    // Pair_Table rows aren't eid-indexed (unlike Relations_Table's parent/child
+    // arrays, where position is meaningful) — the freelist/linked-list bookkeeping
+    // isn't saved at all, only the canonical (holder, target, data) triples for
+    // occupied rows; deserialize apply reconstructs everything else by replaying
+    // pair_table_base__add_raw per row. See pair_table_base__snapshot_write/apply.
+    Snap_Pair_Table_Header :: struct #packed {
+        pair_table_id:     i64,
+        presence_table_id: i64, // identity check against the live pt.presence.id —
+                                 // catches a section applied to the wrong Pair_Table
+        data_elem_size:    i64, // 0 for a tag-only Pair_Table (T = struct{})
+        data_elem_align:   i64,
+        pairs_cap:         i64, // informational; load only requires count <= target pairs_cap
+        count:             i64, // number of (holder, target, data) triples that follow
     }
 
     // Every variable-length blob is padded with zeros to an 8-byte boundary,
@@ -375,6 +372,14 @@ package ode_ecs
             size = snap__align8(size + entities_cap * size_of(i32)) // children_count
         }
 
+        for pt in self.pair_tables.items {
+            if pt == nil do continue
+
+            size += size_of(Snap_Pair_Table_Header)
+            size = snap__align8(size + pt.pairs_count * 2 * size_of(entity_id)) // holders + targets
+            size = snap__align8(size + pt.pairs_count * pt.data_type_info.size) // data (0 bytes if tag-only)
+        }
+
         return size, nil
     }
 
@@ -406,6 +411,11 @@ package ode_ecs
             if table != nil do section_count += 1
         }
 
+        pair_table_section_count: i64 = 0
+        for pt in self.pair_tables.items {
+            if pt != nil do pair_table_section_count += 1
+        }
+
         has_relations := self.relations != nil && self.relations.state == Object_State.Normal
         flags: u32 = 0
         if has_relations do flags |= SNAPSHOT_FLAG__HAS_RELATIONS
@@ -422,6 +432,7 @@ package ode_ecs
             created_count = i64(self.overbase.id_factory.created_count),
             freed_count   = i64(self.overbase.id_factory.freed_count),
             section_count = section_count,
+            pair_table_section_count = pair_table_section_count,
         }
         snap_writer__write(&w, &hdr, size_of(hdr))
 
@@ -446,6 +457,10 @@ package ode_ecs
         }
 
         if has_relations do relations_table__snapshot_write(self.relations, &w)
+
+        for pt in self.pair_tables.items {
+            if pt != nil do pair_table_base__snapshot_write(pt, &w)
+        }
 
         assert(w.offset == total)
         return w.offset, nil
@@ -539,6 +554,55 @@ package ode_ecs
         snap_writer__write(w, raw_data(self.children_count), entities_cap * size_of(i32))
         snap_writer__pad8(w)
         // scratch is transient (valid only until the next call) — not saved
+    }
+
+    @(private)
+    // Writes only the canonical (holder, target, data) triples for occupied
+    // rows — not the freelist/linked-list bookkeeping (see Snap_Pair_Table_Header).
+    // Three passes over [0, pairs_cap) (holders, then targets, then data) rather
+    // than one, so each ends up as one contiguous blob like every other
+    // section's arrays — fine off the hot path (save is not destroy_entity).
+    pair_table_base__snapshot_write :: proc(self: ^Pair_Table_Base, w: ^Snap_Writer) {
+        raw := cast(^Pair_Table_Raw) self
+        elem_size := self.data_type_info.size
+
+        pth := Snap_Pair_Table_Header{
+            pair_table_id     = i64(self.id),
+            presence_table_id = i64(self.presence.id),
+            data_elem_size    = i64(elem_size),
+            data_elem_align   = i64(self.data_type_info.align),
+            pairs_cap         = i64(self.pairs_cap),
+            count             = i64(self.pairs_count),
+        }
+        snap_writer__write(w, &pth, size_of(pth))
+
+        for r := 0; r < self.pairs_cap; r += 1 {
+            if self.row_holder[r].ix == DELETED_INDEX do continue
+            h := self.row_holder[r]
+            snap_writer__write(w, &h, size_of(entity_id))
+        }
+        for r := 0; r < self.pairs_cap; r += 1 {
+            if self.row_holder[r].ix == DELETED_INDEX do continue
+            tgt := self.targets[r]
+            snap_writer__write(w, &tgt, size_of(entity_id))
+        }
+        snap_writer__pad8(w)
+
+        if elem_size > 0 {
+            // Pointer arithmetic on raw_data(raw.data), not raw.data[i] — the
+            // Pair_Table_Raw cast reinterprets the slice's element type, but its
+            // `len` field still holds the ORIGINAL element count (pairs_cap), not
+            // a byte count, so bounds-checked indexing here would fault (or, in
+            // release builds, silently read short). Same technique as
+            // table_raw__rid_to_ptr_sized (table.odin).
+            base := uintptr(raw_data(raw.data))
+            for r := 0; r < self.pairs_cap; r += 1 {
+                if self.row_holder[r].ix == DELETED_INDEX do continue
+                src := rawptr(base + uintptr(r * elem_size))
+                snap_writer__write(w, src, elem_size)
+            }
+        }
+        snap_writer__pad8(w)
     }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -751,6 +815,13 @@ package ode_ecs
         }
         if int(hdr.section_count) != nonnil_tables do return API_Error.Snapshot_Schema_Mismatch
 
+        nonnil_pair_tables := 0
+        for pt in self.pair_tables.items {
+            if pt != nil do nonnil_pair_tables += 1
+        }
+        if int(hdr.pair_table_section_count) < 0 do return API_Error.Snapshot_Invalid
+        if int(hdr.pair_table_section_count) != nonnil_pair_tables do return API_Error.Snapshot_Schema_Mismatch
+
         has_relations := (hdr.flags & SNAPSHOT_FLAG__HAS_RELATIONS) != 0
         db_has_relations := self.relations != nil && self.relations.state == Object_State.Normal
         if has_relations != db_has_relations do return API_Error.Snapshot_Schema_Mismatch
@@ -882,6 +953,47 @@ package ode_ecs
             ) or_return
         }
 
+        // Pair_Table sections, written last. No cross-section stamp check against
+        // `presence`'s own tagged set here — stamps are overwritten section-by-section
+        // as the loop above runs (only meaningful for same-section duplicate
+        // detection), not a persistent per-entity membership record. Validation here
+        // is schema (ids/sizes) + per-row liveness, the same rigor a regular table
+        // section gets; duplicate (holder,target) rows are tolerated (see
+        // pair_table_base__add_raw's own idempotent dedupe at apply time).
+        prev_pair_id := -1
+        for _ in 0..<int(hdr.pair_table_section_count) {
+            pth: Snap_Pair_Table_Header
+            snap_reader__read(&r, &pth, size_of(pth)) or_return
+
+            ptid := int(pth.pair_table_id)
+            if ptid <= prev_pair_id do return API_Error.Snapshot_Invalid // ids are written strictly ascending
+            prev_pair_id = ptid
+
+            if ptid < 0 || ptid >= len(self.pair_tables.items) do return API_Error.Snapshot_Schema_Mismatch
+            pt := self.pair_tables.items[ptid]
+            if pt == nil || pt.state != Object_State.Normal do return API_Error.Snapshot_Schema_Mismatch
+            if int(pth.data_elem_size) != pt.data_type_info.size do return API_Error.Snapshot_Schema_Mismatch
+            if int(pth.data_elem_align) != pt.data_type_info.align do return API_Error.Snapshot_Schema_Mismatch
+            if int(pth.presence_table_id) != int(pt.presence.id) do return API_Error.Snapshot_Schema_Mismatch
+
+            count := int(pth.count)
+            if count < 0 do return API_Error.Snapshot_Invalid
+            if count > pt.pairs_cap do return API_Error.Snapshot_Capacity_Too_Small
+
+            holders := snap_reader__entity_ids(&r, count) or_return
+            targets := snap_reader__entity_ids(&r, count) or_return
+            snap_reader__pad8(&r) or_return
+
+            for h in holders do snapshot__validate_row_eid(self, h, saved_items, apply_entity_ids) or_return
+            for tg in targets do snapshot__validate_row_eid(self, tg, saved_items, apply_entity_ids) or_return
+
+            elem_size := int(pth.data_elem_size)
+            if elem_size > 0 {
+                _ = snap_reader__bytes(&r, count * elem_size) or_return
+            }
+            snap_reader__pad8(&r) or_return
+        }
+
         if r.offset != len(data) do return API_Error.Snapshot_Invalid
 
         //
@@ -905,6 +1017,13 @@ package ode_ecs
             shared_table__clear(table) or_return
         }
         if db_has_relations do relations_table__clear(self.relations) or_return
+        // Row/link bookkeeping only — `presence` (a Shared_Table) was just
+        // cleared above via the tables loop, and gets restored from its own
+        // snapshot section below, same as any other Tag_Table.
+        for pt in self.pair_tables.items {
+            if pt == nil do continue
+            pair_table_base__reset_rows(pt)
+        }
         for view in self.views.items {
             if view == nil || view.state != Object_State.Normal do continue
             view__clear(view) or_return
@@ -954,6 +1073,34 @@ package ode_ecs
             snap_reader__read(&r, raw_data(rt.children_count), saved_cap * size_of(i32)) or_return
             snap_reader__pad8(&r) or_return
             rt.count = int(rh.count)
+        }
+
+        for _ in 0..<int(hdr.pair_table_section_count) {
+            pth: Snap_Pair_Table_Header
+            snap_reader__read(&r, &pth, size_of(pth)) or_return
+            pt := self.pair_tables.items[int(pth.pair_table_id)]
+
+            count := int(pth.count)
+            holders := snap_reader__entity_ids(&r, count) or_return
+            targets := snap_reader__entity_ids(&r, count) or_return
+            snap_reader__pad8(&r) or_return
+
+            elem_size := int(pth.data_elem_size)
+            data_bytes: []byte
+            if elem_size > 0 {
+                data_bytes = snap_reader__bytes(&r, count * elem_size) or_return
+            }
+            snap_reader__pad8(&r) or_return
+
+            // pair_table_base__reset_rows already ran above; `presence` is already
+            // restored, so add_raw's own is_new_holder check is a no-op for every
+            // row here — only the row/link bookkeeping actually gets populated.
+            for i in 0..<count {
+                data_ptr: rawptr = nil
+                if elem_size > 0 do data_ptr = &data_bytes[i * elem_size]
+                _, paerr := pair_table_base__add_raw(pt, holders[i], targets[i], data_ptr)
+                if paerr != nil do return paerr // defense in depth — Pass 1 already validated everything
+            }
         }
 
         assert(r.offset == len(data))

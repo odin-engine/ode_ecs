@@ -61,6 +61,18 @@
         destroy             create+destroy entities with 3 components, with
                             8 / 32 / 128 tables attached to the database
         rebuild             full view rebuild over N rows
+        walk_hierarchy      whole-forest breadth-first Relations_Table walk (100
+                            root chains) — reports ns per entity visited
+        roots               O(entities_cap) root scan over the same forest —
+                            reports ns per live entity (cost is independent of
+                            forest shape, only of how many entities exist)
+        pair_first_target   O(1) point lookup, most-recently-added target of a
+                            holder (PAIR_FANOUT=16 targets/holder)
+        pair_targets_of     O(#pairs for that holder) full-list walk, reported
+                            per holder (not per pair) for a direct, honest
+                            contrast against pair_first_target's O(1) number
+        churn_pair          steady-state pair_add (fan-out 16) + pair_remove_all
+                            per holder — Pair_Table's structural churn cost
 
     Measured dead ends (do not re-attempt without new evidence):
     - Merging the id-factory entry with eid_to_bits into one per-entity record
@@ -216,6 +228,7 @@ package ode_ecs_benchmarks
     Position :: struct { x, y: f32 }
     Velocity :: struct { dx, dy: f32 }
     AI :: struct { neurons_count: int }
+    Pair_Data :: struct { weight: f32 }
 
 //
 // Config
@@ -316,6 +329,13 @@ main :: proc() {
     bench_destroy(8)
     bench_destroy(32)
     bench_destroy(128)
+
+    bench_walk_hierarchy()
+    bench_roots()
+
+    bench_pair_first_target()
+    bench_pair_targets_of()
+    bench_pair_churn()
 
     fmt.println()
     fmt.println("checksum:", g_sink) // consume results so nothing is optimized away
@@ -1386,4 +1406,212 @@ bench_destroy :: proc(table_count: int) {
     report(fmt.tprintf("destroy (%v tables)", table_count), best, CHURN_N)
 
     if ecs.terminate(&des_db) != nil do panic("destroy db terminate failed")
+}
+
+// Shared fixture for walk_hierarchy/roots: WH_ROOTS root chains, each
+// CHURN_N/WH_ROOTS entities deep — a forest with real depth (unlike a flat
+// one-child-per-root shape), so walk_hierarchy's level-by-level expansion
+// actually crosses multiple levels.
+WH_ROOTS :: 100
+
+bench_setup_forest :: proc(db: ^ecs.Database, rt: ^ecs.Relations_Table) {
+    chain_len := CHURN_N / WH_ROOTS
+    for r in 0..<WH_ROOTS {
+        prev, err := ecs.create_entity(db)
+        if err != nil do panic("create_entity failed")
+        for i in 1..<chain_len {
+            next, nerr := ecs.create_entity(db)
+            if nerr != nil do panic("create_entity failed")
+            if ecs.set_parent(db, next, prev) != nil do panic("set_parent failed")
+            prev = next
+        }
+    }
+}
+
+bench_walk_hierarchy :: proc() {
+    wh_db: ecs.Database
+    wh_rt: ecs.Relations_Table
+
+    if ecs.init(&wh_db, CHURN_N, context.allocator) != nil do panic("walk_hierarchy db init failed")
+    if ecs.relations_init(&wh_rt, &wh_db, CHURN_N) != nil do panic("walk_hierarchy relations init failed")
+    bench_setup_forest(&wh_db, &wh_rt)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        entities, _, err := ecs.walk_hierarchy(&wh_db)
+        time.stopwatch_stop(&sw)
+        if err != nil do panic("walk_hierarchy failed")
+        g_sink += f64(len(entities))
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    report("walk_hierarchy", best, CHURN_N)
+
+    if ecs.terminate(&wh_db) != nil do panic("walk_hierarchy db terminate failed")
+}
+
+bench_roots :: proc() {
+    r_db: ecs.Database
+    r_rt: ecs.Relations_Table
+
+    if ecs.init(&r_db, CHURN_N, context.allocator) != nil do panic("roots db init failed")
+    if ecs.relations_init(&r_rt, &r_db, CHURN_N) != nil do panic("roots relations init failed")
+    bench_setup_forest(&r_db, &r_rt)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        roots, err := ecs.roots(&r_db)
+        time.stopwatch_stop(&sw)
+        if err != nil do panic("roots failed")
+        g_sink += f64(len(roots))
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    report("roots", best, CHURN_N)
+
+    if ecs.terminate(&r_db) != nil do panic("roots db terminate failed")
+}
+
+// Shared fixture for the Pair_Table benchmarks: PAIR_FANOUT targets per
+// holder, a many-to-many fan-out representative of e.g. faction alliances or
+// equipped-item slots. Large enough that pair_targets_of's O(n) walk is
+// clearly distinguishable from pair_first_target's O(1) cost.
+PAIR_FANOUT :: 16
+PAIR_HOLDERS :: CHURN_N / PAIR_FANOUT
+
+bench_setup_pairs :: proc(db: ^ecs.Database, pt: ^ecs.Pair_Table(Pair_Data)) -> (holders: []ecs.entity_id) {
+    holders = make([]ecs.entity_id, PAIR_HOLDERS)
+    for i in 0..<PAIR_HOLDERS {
+        h, err := ecs.create_entity(db)
+        if err != nil do panic("create_entity failed")
+        holders[i] = h
+        for j in 0..<PAIR_FANOUT {
+            t, terr := ecs.create_entity(db)
+            if terr != nil do panic("create_entity failed")
+            _, aerr := ecs.pair_add(pt, h, t, Pair_Data{ weight = f32(j) })
+            if aerr != nil do panic("pair_add failed")
+        }
+    }
+    return
+}
+
+bench_pair_first_target :: proc() {
+    p_db: ecs.Database
+    p_pt: ecs.Pair_Table(Pair_Data)
+
+    if ecs.init(&p_db, PAIR_HOLDERS * (PAIR_FANOUT + 1), context.allocator) != nil do panic("pair_first_target db init failed")
+    if ecs.pair_init(&p_pt, &p_db, holders_cap = PAIR_HOLDERS, pairs_cap = PAIR_HOLDERS * PAIR_FANOUT) != nil do panic("pair_first_target pair_init failed")
+    holders := bench_setup_pairs(&p_db, &p_pt)
+    defer delete(holders)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for h in holders {
+            target, ok := ecs.pair_first_target(&p_pt, h)
+            if ok do g_sink += f64(target.ix)
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    report("pair_first_target", best, PAIR_HOLDERS)
+
+    if ecs.terminate(&p_db) != nil do panic("pair_first_target db terminate failed")
+}
+
+bench_pair_targets_of :: proc() {
+    p_db: ecs.Database
+    p_pt: ecs.Pair_Table(Pair_Data)
+
+    if ecs.init(&p_db, PAIR_HOLDERS * (PAIR_FANOUT + 1), context.allocator) != nil do panic("pair_targets_of db init failed")
+    if ecs.pair_init(&p_pt, &p_db, holders_cap = PAIR_HOLDERS, pairs_cap = PAIR_HOLDERS * PAIR_FANOUT) != nil do panic("pair_targets_of pair_init failed")
+    holders := bench_setup_pairs(&p_db, &p_pt)
+    defer delete(holders)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for h in holders {
+            targets, err := ecs.pair_targets_of(&p_pt, h)
+            if err != nil do panic("pair_targets_of failed")
+            g_sink += f64(len(targets))
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    // Reported per HOLDER (not per pair visited) so it's directly comparable
+    // to pair_first_target's number above — same call shape, one query per
+    // holder — making the O(1)-vs-O(n) cost of the fan-out walk legible.
+    report("pair_targets_of", best, PAIR_HOLDERS)
+
+    if ecs.terminate(&p_db) != nil do panic("pair_targets_of db terminate failed")
+}
+
+// Steady-state structural churn: pair_add every (holder, target) pair in the
+// fixture, then pair_remove_all every holder, repeated. Isolated from
+// bench_setup_pairs above (which leaves pairs populated) since churn needs
+// entities pre-created but pairs NOT pre-added, so the add cost is measured too.
+bench_pair_churn :: proc() {
+    c_db: ecs.Database
+    c_pt: ecs.Pair_Table(Pair_Data)
+
+    if ecs.init(&c_db, PAIR_HOLDERS * (PAIR_FANOUT + 1), context.allocator) != nil do panic("churn_pair db init failed")
+    if ecs.pair_init(&c_pt, &c_db, holders_cap = PAIR_HOLDERS, pairs_cap = PAIR_HOLDERS * PAIR_FANOUT) != nil do panic("churn_pair pair_init failed")
+
+    holders := make([]ecs.entity_id, PAIR_HOLDERS)
+    defer delete(holders)
+    targets := make([]ecs.entity_id, PAIR_HOLDERS * PAIR_FANOUT)
+    defer delete(targets)
+
+    for i in 0..<PAIR_HOLDERS {
+        h, err := ecs.create_entity(&c_db)
+        if err != nil do panic("create_entity failed")
+        holders[i] = h
+        for j in 0..<PAIR_FANOUT {
+            t, terr := ecs.create_entity(&c_db)
+            if terr != nil do panic("create_entity failed")
+            targets[i * PAIR_FANOUT + j] = t
+        }
+    }
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for i in 0..<PAIR_HOLDERS {
+            h := holders[i]
+            for j in 0..<PAIR_FANOUT {
+                _, aerr := ecs.pair_add(&c_pt, h, targets[i * PAIR_FANOUT + j], Pair_Data{ weight = f32(j) })
+                if aerr != nil do panic("pair_add failed")
+            }
+        }
+        for h in holders {
+            if ecs.pair_remove_all(&c_pt, h) != nil do panic("pair_remove_all failed")
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    g_sink += f64(ecs.pair_table__len(&c_pt))
+    report("churn_pair", best, PAIR_HOLDERS * PAIR_FANOUT * 2)
+
+    if ecs.terminate(&c_db) != nil do panic("churn_pair db terminate failed")
 }

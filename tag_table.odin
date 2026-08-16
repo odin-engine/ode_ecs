@@ -186,6 +186,7 @@ package ode_ecs
         database__add_component(self.db, eid, self.id)
 
         tag_table__notify_sync_add(self, eid)
+        database__notify_observers(self.db, .Tag_Added, eid, table_id = self.id)
 
         raw.len += 1
 
@@ -226,6 +227,9 @@ package ode_ecs
         if target_slot == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
 
         target_rid := int(target_rid_u)
+
+        // Fires before any mutation below (tags carry no data, so `data` stays nil).
+        database__notify_observers(self.db, .Tag_Removed, target_eid, table_id = self.id)
 
         // Deferred tail swap: clear the tag in place, leaving a hole.
         // Nothing moves, so nothing needs to stay stable while iterating.

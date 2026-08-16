@@ -406,6 +406,10 @@ package ode_ecs
 
         T_size := elem_size
 
+        // Fires before any mutation below, so an observer can still read the
+        // about-to-be-removed value through `data`.
+        database__notify_observers(self.db, .Component_Removed, target_eid, table_id = self.id, data = target)
+
         // Deferred tail swap: clear the component in place, leaving a hole.
         // Nothing moves, so component pointers stay stable while iterating.
         if shared_table__is_packing_paused(cast(^Shared_Table) self) {
@@ -552,6 +556,7 @@ package ode_ecs
             database__add_component(self.db, eid, self.id)
 
             tiny_table_base__notify_sync_add(self, eid)
+            database__notify_observers(self.db, .Component_Added, eid, table_id = self.id, data = component)
 
             self.len += 1
         } else {

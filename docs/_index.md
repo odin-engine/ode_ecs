@@ -12,6 +12,8 @@ Optional:
 * [Group](group.md)
 * [Command Buffer](command_buffer.md)
 * [Relations](relations.md)
+* [Pairs (many-to-many relations)](pair_table.md)
+* [Observers (structural-change callbacks)](observers.md)
 * [Serialization](serialization.md)
 * [Overbase](overbase.md)
 
@@ -46,6 +48,9 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 * [Sample12](/samples/sample12/main.odin) – Demonstrates `Overbase`: sharing one entity ID space across two Databases.
 * [Sample13](/samples/sample13/main.odin) – Demonstrates `Overbase` serialization: saving and restoring a shared entity ID space and two attached Databases.
 * [Sample14](/samples/sample14/main.odin) – Demonstrates `Arch_Table`: whole-row create/get_component/iteration with `Arch_Iterator`, and mixing an `Arch_Table` into a `View` and a `Group` alongside a regular `Table`.
+* [Sample15](/samples/sample15/main.odin) – Demonstrates relations hierarchy walk.
+* [Sample16](/samples/sample16/main.odin) – Demonstrates `Pair_Table`: many-to-many relations.
+* [Sample17](/samples/sample17/main.odin) – Demonstrates `enable_component`/`disable_component`.
 
 
 # 📖 How to read the source code

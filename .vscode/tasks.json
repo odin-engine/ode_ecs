@@ -131,6 +131,42 @@
             }
         },
         {
+            "label": "ECS Tests Observers",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "test",
+                "${workspaceFolder}\\tests\\",
+                "-debug",
+                "-o:none",
+                "-define:ECS_OBSERVERS_ENABLED=true",
+                "-define:ODIN_TEST_THREADS=1",
+                "-define:ODIN_TEST_RANDOM_SEED=1",
+                "-define:ODIN_TEST_LOG_LEVEL=warning",
+                "-define:ODIN_TEST_FANCY=false",
+                "-define:ODIN_TEST_CLIPBOARD=false",
+                "-define:ODIN_TEST_PROGRESS_WIDTH=0",
+                "-define:ODIN_TEST_SHORT_LOGS=true"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\tests\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
             "label": "Private Tests",
             "group": {
                 "kind": "build",
@@ -710,6 +746,62 @@
             ],
             "options": {
                 "cwd": "${workspaceFolder}\\samples\\sample15\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Sample16",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "detail": "",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "run",
+                "${workspaceFolder}\\samples\\sample16",
+                "-debug",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\samples\\sample16\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Sample17",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "detail": "",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "run",
+                "${workspaceFolder}\\samples\\sample17",
+                "-debug",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\samples\\sample17\\out\\"
             },
             "presentation": {
                 "echo": true,

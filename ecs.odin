@@ -30,6 +30,12 @@ package ode_ecs
 
     VIEWS_CAP :: #config(ECS_VIEWS_CAP, 16)
 
+    // Initial Pair_Table capacity per Database; grows on demand.
+    PAIR_TABLES_CAP :: #config(ECS_PAIR_TABLES_CAP, 8)
+
+    // Initial Command_Buffer capacity per Database; grows on demand.
+    COMMAND_BUFFERS_CAP :: #config(ECS_COMMAND_BUFFERS_CAP, 8)
+
     SUBSCRIBERS_CAP :: #config(ECS_SUBSCRIBERS_CAP, 8)
 
     DELETED_INDEX :: oc.DELETED_INDEX // -1 by default; marks "unused/incorrect index"
@@ -43,13 +49,13 @@ package ode_ecs
         TINY_TABLE__VIEWS_CAP :: 8      // max Views subscribed to one Tiny_Table
         TINY_TABLE__MAP_CAP :: 32       // must be power of 2
 
-        // Max concurrently-alive Tiny_Tables per Database — their View-subscriber
+        // Max concurrently-alive Tiny_Tables per Database - their View-subscriber
         // bookkeeping lives in one Database-owned batch pool (Tiny_Table_Subscriber_Slot
         // in tiny_table.odin), so it needs its own cap.
         TINY_TABLES_CAP :: #config(ECS_TINY_TABLES_CAP, 32)
 
     //
-    // Sync (delta-change replication, see sync.odin)
+    // Sync - delta-change replication.
     //
 
         // Off by default; compile in with -define:ECS_SYNC_ENABLED=true.
@@ -64,6 +70,18 @@ package ode_ecs
         // Top-level fields per component a Sync_Channel can diff; wire field-changed mask is a u32.
         SYNC_MAX_FIELDS :: 32
 
+    //
+    // Observers- structural-change callbacks.
+    //
+
+        // Off by default; compile in with -define:ECS_OBSERVERS_ENABLED=true. Every
+        // notify call site is `when OBSERVERS_ENABLED`-gated, so the feature costs
+        // nothing in a default build - not even a runtime branch.
+        OBSERVERS_ENABLED :: #config(ECS_OBSERVERS_ENABLED, false)
+
+        // Initial Observer capacity per Database; grows on demand.
+        OBSERVERS_CAP :: #config(ECS_OBSERVERS_CAP, 8)
+
 ///////////////////////////////////////////////////////////////////////////////
 // Aliases
 // 
@@ -77,7 +95,7 @@ package ode_ecs
         resume_tail_swap        :: database__resume_packing
 
     //
-    // Overbase (shared entity ID space, see overbase.odin). Attach via
+    // Overbase (shared entity ID space). Attach via
     // init_from_overbase to share entities across Databases; create_entity/
     // destroy_entity/is_expired/entities_len/get_entity below accept either.
     //
@@ -108,7 +126,7 @@ package ode_ecs
         }
 
     //
-    // Serialization (binary snapshot of a whole Database, see serialization.odin)
+    // Serialization (binary snapshot of a whole Database)
     //
         serialized_size         :: database__serialized_size    // Exact buffer size serialize will need for the current state
         serialize               :: database__serialize          // Write a snapshot into a caller-provided buffer (zero allocations)
@@ -117,8 +135,7 @@ package ode_ecs
         load_from_file          :: database__load_from_file     // read a file + deserialize
 
     //
-    // Overbase serialization (binary snapshot of just the shared entity-id space,
-    // see overbase_serialization.odin) — a Database's own serialize/deserialize
+    // Overbase serialization (binary snapshot of just the shared entity-id space) - a Database's own serialize/deserialize
     // never touches a shared Overbase's id-space.
     //
         overbase_serialized_size :: overbase__serialized_size
@@ -149,7 +166,7 @@ package ode_ecs
         resume                  :: view__resume                     // resume after suspend
 
     //
-    // Group (owned group — enforced dense alignment, see group.odin)
+    // Group (owned group - enforced dense alignment)
     //
         group_init          :: group__init                          // exclusive ownership of tables; members stay in an aligned prefix
         group_terminate     :: group__terminate
@@ -165,14 +182,14 @@ package ode_ecs
         iterate             :: proc{iterator__iterate1, iterator__iterate2, iterator__iterate3, iterator__iterate4} // for-in sugar: for v1, v2 in iterate(&it, &t1, &t2) { ... }; Table($T) columns only
 
     //
-    // Arch_Iterator (dense iterator directly over an Arch_Table's own rows, see arch_iterator.odin)
+    // Arch_Iterator (dense iterator directly over an Arch_Table's own rows)
     //
         arch_iterator_init  :: arch_iterator__init
         arch_iterator_reset :: arch_iterator__reset
         // for-in sugar: for eid, pos, ai in next(&it, Position, AI) { ... }. Component types
         // are supplied per call (up to 7), not bound at init; next(&it) with no types returns
         // just the entity id. Also covers View-based Iterator (Table($T) columns, like iterate,
-        // but with eid and up to arity 7) — preferred over iterate going forward.
+        // but with eid and up to arity 7) - preferred over iterate going forward.
         next                 :: proc {
             arch_iterator__next,
             arch_iterator__next1,
@@ -193,7 +210,7 @@ package ode_ecs
         }
 
     //
-    // Command_Buffer (deferred structural operations, see command_buffer.odin)
+    // Command_Buffer (deferred structural operations)
     //
         command_buffer_init      :: command_buffer__init          // Preallocate a buffer bound to a Database (commands_cap records, payload_cap bytes)
         command_buffer_terminate :: command_buffer__terminate
@@ -223,9 +240,7 @@ package ode_ecs
             command_buffer__remove_entity_for_arch_table,
         }
 
-        // Record: add an Arch_Table row with its values (see arch_table.odin's
-        // "all-or-nothing" note — an archetype has no per-component add, so this
-        // is its own group rather than an overload of cmd_add_component)
+        // Record: add an Arch_Table row with its values
         cmd_arch_add_entity :: proc {
             command_buffer__arch_add_entity1,
             command_buffer__arch_add_entity2,
@@ -237,15 +252,18 @@ package ode_ecs
         cmd_remove_parent   :: command_buffer__remove_parent      // Record: remove entity's parent link
         cmd_unparent        :: command_buffer__remove_parent
 
+        cmd_pair_add        :: command_buffer__pair_add           // Record: add (holder -> target) to a Pair_Table with its payload
+        cmd_pair_remove     :: command_buffer__pair_remove        // Record: remove one (holder, target) pair
+
     //
-    // Sync (delta-change replication over an unreliable transport, see sync.odin)
+    // Sync (delta-change replication over an unreliable transport)
     //
         sync_channel_init      :: sync_channel__init
         sync_channel_terminate :: sync_channel__terminate
         sync_decoder_init      :: sync_decoder__init
         sync_decoder_terminate :: sync_decoder__terminate
 
-        // Register a table with a Sync_Channel (sender) or Sync_Decoder (receiver) —
+        // Register a table with a Sync_Channel (sender) or Sync_Decoder (receiver) -
         // resolves by both the channel/decoder's type and the table's type.
         sync_register :: proc {
             sync_channel__register_table,
@@ -262,12 +280,12 @@ package ode_ecs
         sync_unregister :: sync_channel__unregister_table
 
         collect_delta  :: sync_collect_delta   // sender: write pending changes into buf (see its doc comment for the partial-fill contract)
-        delta_max_size :: sync_delta_max_size  // sender: cheap worst-case upper bound for buf — sizing to this guarantees one collect_delta call fully flushes
+        delta_max_size :: sync_delta_max_size  // sender: cheap worst-case upper bound for buf - sizing to this guarantees one collect_delta call fully flushes
         apply_delta    :: sync_apply_delta     // receiver: parse + apply one collect_delta buffer
-        resync         :: sync_channel__resync // sender: shadow := live values, drop pending queues — call right after sending a full serialize snapshot
+        resync         :: sync_channel__resync // sender: shadow := live values, drop pending queues - call right after sending a full serialize snapshot
 
         // Same as get_component, but marks the entity touched in every
-        // Sync_Channel watching this table — use this instead of get_component
+        // Sync_Channel watching this table - use this instead of get_component
         // whenever you intend to WRITE through the returned pointer, so the
         // next collect_delta picks up the change.
         get_component_mut :: proc {
@@ -275,6 +293,12 @@ package ode_ecs
             compact_table__get_component_mut,
             tiny_table__get_component_mut,
         }
+
+    //
+    // Observers (structural-change callbacks)
+    //
+        observer_init      :: observer__init
+        observer_terminate :: observer__terminate
 
     //
     // Relations (parent/child); requires a Relations_Table on the database, see relations_table__init
@@ -286,15 +310,20 @@ package ode_ecs
         remove_parent       :: database__remove_parent              // Remove entity's parent link
         unparent            :: database__remove_parent
         parent_of           :: database__parent_of                  // Entity's parent id, or id with ix == DELETED_INDEX if none
-        children_of         :: database__children_of                // Entity's children as a slice of an internal buffer — use immediately
+        children_of         :: database__children_of                // Entity's children as a slice of an internal buffer - use immediately
         children_count      :: database__children_count
         is_child_of         :: database__is_child_of                // Is `a` a child of `b`?
         is_parent_of        :: database__is_parent_of               // Is `a` the parent of `b`?
         has_relations       :: database__has_relations              // Does entity have a parent or children?
         is_relation_of      :: database__is_relation_of             // Does `e` relate to `target` directly (as child or parent)?
 
+        is_root             :: database__is_root                    // Has no parent AND at least one child?
+        roots               :: database__roots                      // All roots, as a slice of an internal buffer - use immediately
+        walk_subtree        :: database__walk_subtree               // root's descendants, breadth-first - use immediately
+        walk_hierarchy      :: database__walk_hierarchy              // Whole forest, breadth-first + level boundaries - use immediately
+
     //
-    // Component enable/disable (soft toggle, see database.odin) — component/row stays
+    // Component enable/disable (soft toggle) - component/row stays
     // put, just excluded from (disable_component) or restored to (enable_component) queries.
     //
         disable_component :: proc {
@@ -371,7 +400,7 @@ package ode_ecs
             tiny_table__remove_component,
         }
 
-        // Rerun filters of views subscribed to a table, for one entity — call after
+        // Rerun filters of views subscribed to a table, for one entity - call after
         // mutating component data a view filter depends on (or use refilter for bulk)
         rerun_views_filters :: proc {
             table__rerun_views_filters,
@@ -436,6 +465,28 @@ package ode_ecs
         has_tag :: tag_table__has_tag
 
         //
+        // Pairs (many-to-many relations) - Pair_Table(T), built on a Tag_Table. 
+        // Unlike Relations_Table, a Pair_Table's presence table DOES
+        // affect Views: {&some_pairs.presence} is usable in view_init's includes/
+        // excludes/any_of. Auto-terminated by database__terminate (same as
+        // Relations_Table); destroying a holder OR a target both clean up their pair
+        // rows automatically; serialization- and Command_Buffer-aware
+        // (cmd_pair_add/cmd_pair_remove). 
+
+        pair_init       :: pair_table__init
+        pair_terminate  :: pair_table__terminate
+
+        pair_add        :: pair_table__add            // Adds (holder -> target); no-op on an exact duplicate
+        pair_remove     :: pair_table__remove          // Removes one (holder, target) pair
+        pair_remove_all :: pair_table__remove_all      // Removes all of holder's pairs
+
+        pair_has_pair   :: pair_table__has_pair
+        pair_has_any    :: pair_table__has_any         // == has_tag(&pairs.presence, holder)
+        pair_first_target :: pair_table__first_target  // O(1): most-recently-added target, arbitrary among several
+        pair_first_data   :: pair_table__first_data
+        pair_targets_of   :: pair_table__targets_of    // holder's targets as a slice of an internal buffer - use immediately
+
+        //
         // Other
         //
 
@@ -463,11 +514,11 @@ package ode_ecs
             group__pack,
         }
 
-        // Pause tail swapping — at the Database (all tables + all groups), a
+        // Pause tail swapping - at the Database (all tables + all groups), a
         // single table (rejected with API_Error.Cannot_Pause_Table_Owned_By_Group
         // if owned by a Group), or a Group (all tables it owns, as one atomic
         // unit) level. Table/group-level pause is independent of the
-        // database-wide pause — useful to isolate one table or group (e.g. from
+        // database-wide pause - useful to isolate one table or group (e.g. from
         // another thread) without deferring packing everywhere.
         pause_packing       :: proc {
             database__pause_packing,
@@ -509,15 +560,15 @@ package ode_ecs
         }
 
         // Live rows as one contiguous slice. Prefer over reading a table's `rows`
-        // field directly in a hot loop — see table__slice's doc comment for why.
+        // field directly in a hot loop - see table__slice's doc comment for why.
         slice :: proc {
             table__slice,
             compact_table__slice,
             tiny_table__slice,
             tag_table__slice,
-            view__slice,          // slice(&view, &table) — nil if the view isn't dense-aligned
-            group__slice,         // slice(&group, &table) — nil while the group is dirty
-            group__slice_arch,    // slice(&group, &arch_table, T) — nil while the group is dirty
+            view__slice,          // slice(&view, &table) - nil if the view isn't dense-aligned
+            group__slice,         // slice(&group, &table) - nil while the group is dirty
+            group__slice_arch,    // slice(&group, &arch_table, T) - nil while the group is dirty
         }
         
         // For backwards compatibility
@@ -545,6 +596,8 @@ package ode_ecs
             command_buffer__memory_usage,
             sync_channel__memory_usage,
             sync_decoder__memory_usage,
+            pair_table__memory_usage,
+            observer__memory_usage,
         }
 
         is_valid            :: proc {
@@ -561,6 +614,8 @@ package ode_ecs
             command_buffer__is_valid,
             sync_channel__is_valid,
             sync_decoder__is_valid,
+            pair_table__is_valid,
+            observer__is_valid,
         }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -570,12 +625,15 @@ package ode_ecs
     // IDs
     //
 
-        entity_id ::        oc.ix_gen           // index + generation
-        table_id ::         distinct int
-        table_record_id ::  distinct int
-        view_id ::          distinct int
-        view_record_id ::   distinct u32     // view row index; u32 halves the per-view eid_to_rid array
-        view_column_id ::   int
+        entity_id ::            oc.ix_gen           // index + generation
+        table_id ::             distinct int
+        table_record_id ::      distinct int
+        view_id ::              distinct int
+        view_record_id ::       distinct u32     // view row index; u32 halves the per-view eid_to_rid array
+        view_column_id ::       int
+        pair_table_id ::        distinct int     // Database.pair_tables registry index 
+        command_buffer_id ::    distinct int    // Database.command_buffers registry index 
+        observer_id ::          distinct int     // Database.observers registry index 
 
     //
     // Enums
@@ -616,7 +674,7 @@ package ode_ecs
             Table_Already_Owned_By_Group,     // a table can have at most one owner group
             Cannot_Pause_Table_Owned_By_Group, // pause/resume_packing reject a table owned by a Group; pause/resume the Group instead
             Table_Cannot_Be_Included_And_Excluded, // view_init got the same table in `includes` and `excludes`
-            Table_Cannot_Be_Included_And_Any_Of,   // view_init got the same table in `includes` and `any_of` (always redundant — AND already guarantees it)
+            Table_Cannot_Be_Included_And_Any_Of,   // view_init got the same table in `includes` and `any_of` (always redundant - AND already guarantees it)
             Snapshot_Invalid,                 // bad magic/endianness, truncated or corrupt snapshot buffer
             Snapshot_Version_Mismatch,        // snapshot was written by an incompatible library version
             Snapshot_Schema_Mismatch,         // tables/types of the target database differ from the saved ones
@@ -629,8 +687,9 @@ package ode_ecs
             Sync_Too_Many_Fields,             // component has more top-level fields than SYNC_MAX_FIELDS
             Sync_Table_Already_Registered,    // table is already registered with this channel/decoder
             Sync_Buffer_Too_Small,            // buffer can't even hold the delta header
-            Sync_Feature_Disabled,            // built with the default -define:ECS_SYNC_ENABLED=false; see SYNC_ENABLED in ecs.odin
-            Tables_Cap_Exceeds_Compile_Time_Limit, // database__init's tables_cap was greater than TABLES_CAP — table ids are bit-indexed into Uni_Bits, whose width is fixed at compile time via ECS_TABLES_MULT; raise that to raise TABLES_CAP
+            Sync_Feature_Disabled,            // built with the default -define:ECS_SYNC_ENABLED=false
+            Tables_Cap_Exceeds_Compile_Time_Limit, // database__init's tables_cap was greater than TABLES_CAP - table ids are bit-indexed into Uni_Bits, whose width is fixed at compile time via ECS_TABLES_MULT; raise that to raise TABLES_CAP
+            Observers_Feature_Disabled,       // built with the default -define:ECS_OBSERVERS_ENABLED=false
         }
 
         Error :: union #shared_nil {

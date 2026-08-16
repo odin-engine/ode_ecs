@@ -917,3 +917,74 @@ package ode_ecs__tests
             testing.expect(t, ecs.is_expired(&db2, eid2))
             testing.expect(t, ecs.table_len(&positions2) == 0) // destroy also removed the component
     }
+
+    @(test)
+    cb_database_auto_terminate__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            positions: ecs.Table(Position)
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+            testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
+
+            cb: ecs.Command_Buffer
+            testing.expect(t, ecs.command_buffer_init(&cb, &db, commands_cap = 8, payload_cap = 256) == nil)
+
+            eid, err := ecs.create_entity(&db)
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.cmd_add_component(&cb, &positions, eid, Position{1, 1}) == nil)
+
+            // No explicit command_buffer_terminate — database termination alone
+            // must free it (and not double-free if it happens to run twice).
+            testing.expect(t, ecs.terminate(&db) == nil)
+            testing.expect(t, cb.state == ecs.Object_State.Not_Initialized)
+
+            // Explicitly terminating an already-database-terminated Command_Buffer
+            // is a clean, expected no-op error, not a crash/double-free.
+            testing.expect(t, ecs.command_buffer_terminate(&cb) == ecs.API_Error.Object_Invalid)
+    }
+
+    // One buffer explicitly terminated early, one left for the database to
+    // catch — confirms both end up cleanly terminated with no interaction
+    // between them via the shared command_buffers registry.
+    @(test)
+    cb_database_auto_terminate_multi__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+
+            cb_a, cb_b: ecs.Command_Buffer
+            testing.expect(t, ecs.command_buffer_init(&cb_a, &db, commands_cap = 8, payload_cap = 64) == nil)
+            testing.expect(t, ecs.command_buffer_init(&cb_b, &db, commands_cap = 8, payload_cap = 64) == nil)
+
+            // cb_a terminated early by the caller.
+            testing.expect(t, ecs.command_buffer_terminate(&cb_a) == nil)
+            testing.expect(t, cb_a.state == ecs.Object_State.Not_Initialized)
+
+            // cb_b left for database termination to catch.
+            testing.expect(t, ecs.terminate(&db) == nil)
+            testing.expect(t, cb_b.state == ecs.Object_State.Not_Initialized)
+
+            // Both are clean no-ops to terminate again.
+            testing.expect(t, ecs.command_buffer_terminate(&cb_a) == ecs.API_Error.Object_Invalid)
+            testing.expect(t, ecs.command_buffer_terminate(&cb_b) == ecs.API_Error.Object_Invalid)
+    }

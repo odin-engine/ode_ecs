@@ -503,6 +503,269 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Hierarchy walk: is_root, roots, walk_subtree, walk_hierarchy
+
+    @(test)
+    relations_table__is_root__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            rt: ecs.Relations_Table
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.relations_table__init(&rt, &db, 10) == nil)
+
+            a, _ := ecs.create_entity(&db) // untouched
+            b, _ := ecs.create_entity(&db) // will become a root (has a child)
+            c, _ := ecs.create_entity(&db) // b's child — has a parent, not a root
+
+            res, err := ecs.is_root(&db, a)
+            testing.expect(t, err == nil && !res) // untouched is not a root
+
+            testing.expect(t, ecs.set_parent(&db, c, b) == nil)
+
+            res, err = ecs.is_root(&db, b)
+            testing.expect(t, err == nil && res) // no parent, has a child
+            res, err = ecs.is_root(&db, c)
+            testing.expect(t, err == nil && !res) // has a parent, even though...
+
+            testing.expect(t, ecs.set_parent(&db, a, c) == nil) // ...c now also has a child
+            res, err = ecs.is_root(&db, c)
+            testing.expect(t, err == nil && !res) // still not a root: it has a parent
+    }
+
+    @(test)
+    relations_table__roots__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            rt: ecs.Relations_Table
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.relations_table__init(&rt, &db, 10) == nil)
+
+            root_check, root_check_err := ecs.roots(&db)
+            testing.expect(t, root_check_err == nil)
+            testing.expect(t, len(root_check) == 0)
+
+            // Two disjoint subtrees + one untouched entity.
+            r1, _ := ecs.create_entity(&db)
+            c1, _ := ecs.create_entity(&db)
+            r2, _ := ecs.create_entity(&db)
+            c2, _ := ecs.create_entity(&db)
+            u,  _ := ecs.create_entity(&db)
+
+            testing.expect(t, ecs.set_parent(&db, c1, r1) == nil)
+            testing.expect(t, ecs.set_parent(&db, c2, r2) == nil)
+
+            roots, rerr := ecs.roots(&db)
+            testing.expect(t, rerr == nil)
+            testing.expect(t, len(roots) == 2)
+            testing.expect(t, slice.contains(roots, r1))
+            testing.expect(t, slice.contains(roots, r2))
+            testing.expect(t, !slice.contains(roots, c1))
+            testing.expect(t, !slice.contains(roots, u))
+
+            // Destroying a root removes it from the set (children orphaned by default).
+            testing.expect(t, ecs.destroy_entity(&db, r1) == nil)
+            roots, rerr = ecs.roots(&db)
+            testing.expect(t, rerr == nil)
+            testing.expect(t, len(roots) == 1)
+            testing.expect(t, slice.contains(roots, r2))
+
+            // c1, orphaned, has no children yet, so it is NOT a new root...
+            testing.expect(t, !slice.contains(roots, c1))
+            // ...until it gains one.
+            testing.expect(t, ecs.set_parent(&db, u, c1) == nil)
+            roots, rerr = ecs.roots(&db)
+            testing.expect(t, rerr == nil)
+            testing.expect(t, len(roots) == 2)
+            testing.expect(t, slice.contains(roots, c1))
+            testing.expect(t, slice.contains(roots, r2))
+    }
+
+    @(test)
+    relations_table__walk_subtree__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            rt: ecs.Relations_Table
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.relations_table__init(&rt, &db, 10) == nil)
+
+            // Childless root: no descendants.
+            leaf, _ := ecs.create_entity(&db)
+            desc, err := ecs.walk_subtree(&db, leaf)
+            testing.expect(t, err == nil)
+            testing.expect(t, len(desc) == 0)
+
+            // Straight chain: root <- a <- b <- c. Depth order == chain order.
+            root, _ := ecs.create_entity(&db)
+            a, _ := ecs.create_entity(&db)
+            b, _ := ecs.create_entity(&db)
+            c, _ := ecs.create_entity(&db)
+            testing.expect(t, ecs.set_parent(&db, a, root) == nil)
+            testing.expect(t, ecs.set_parent(&db, b, a) == nil)
+            testing.expect(t, ecs.set_parent(&db, c, b) == nil)
+
+            desc, err = ecs.walk_subtree(&db, root)
+            testing.expect(t, err == nil)
+            testing.expect(t, len(desc) == 3)
+            testing.expect(t, desc[0] == a) // root not included, a is depth-1
+            testing.expect(t, desc[1] == b)
+            testing.expect(t, desc[2] == c)
+
+            // Branching subtree: p <- {x, y}, x <- {x1}. Parent-before-child by position.
+            p, _ := ecs.create_entity(&db)
+            x, _ := ecs.create_entity(&db)
+            y, _ := ecs.create_entity(&db)
+            x1, _ := ecs.create_entity(&db)
+            testing.expect(t, ecs.set_parent(&db, x, p) == nil)
+            testing.expect(t, ecs.set_parent(&db, y, p) == nil)
+            testing.expect(t, ecs.set_parent(&db, x1, x) == nil)
+
+            desc, err = ecs.walk_subtree(&db, p)
+            testing.expect(t, err == nil)
+            testing.expect(t, len(desc) == 3)
+            x_pos, y_pos, x1_pos := -1, -1, -1
+            for e, i in desc {
+                if e == x  do x_pos = i
+                if e == y  do y_pos = i
+                if e == x1 do x1_pos = i
+            }
+            testing.expect(t, x_pos >= 0 && y_pos >= 0 && x1_pos >= 0)
+            testing.expect(t, x_pos < x1_pos) // x (parent) strictly before x1 (child)
+    }
+
+    @(test)
+    relations_table__walk_hierarchy__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            rt: ecs.Relations_Table
+            defer ecs.terminate(&db)
+
+            testing.expect(t, ecs.init(&db, entities_cap=20, allocator=allocator) == nil)
+            testing.expect(t, ecs.relations_table__init(&rt, &db, 20) == nil)
+
+            // Empty table -> empty walk, one level (level 0, empty).
+            ents, levels, err := ecs.walk_hierarchy(&db)
+            testing.expect(t, err == nil)
+            testing.expect(t, len(ents) == 0)
+            testing.expect(t, len(levels) == 1)
+
+            // Two roots, r1 depth 2, r2 depth 1:
+            //   r1 <- {a, b}; a <- {a1}
+            //   r2 <- {x}
+            r1, _ := ecs.create_entity(&db)
+            a,  _ := ecs.create_entity(&db)
+            b,  _ := ecs.create_entity(&db)
+            a1, _ := ecs.create_entity(&db)
+            r2, _ := ecs.create_entity(&db)
+            x,  _ := ecs.create_entity(&db)
+
+            testing.expect(t, ecs.set_parent(&db, a, r1) == nil)
+            testing.expect(t, ecs.set_parent(&db, b, r1) == nil)
+            testing.expect(t, ecs.set_parent(&db, a1, a) == nil)
+            testing.expect(t, ecs.set_parent(&db, x, r2) == nil)
+
+            ents, levels, err = ecs.walk_hierarchy(&db)
+            testing.expect(t, err == nil)
+            testing.expect(t, len(ents) == 6)
+            testing.expect(t, len(levels) == 4) // 3 levels: roots, {a,b,x}, {a1}
+
+            level0 := ents[levels[0]:levels[1]]
+            level1 := ents[levels[1]:levels[2]]
+            level2 := ents[levels[2]:levels[3]]
+
+            testing.expect(t, len(level0) == 2)
+            testing.expect(t, slice.contains(level0, r1))
+            testing.expect(t, slice.contains(level0, r2))
+
+            testing.expect(t, len(level1) == 3)
+            testing.expect(t, slice.contains(level1, a))
+            testing.expect(t, slice.contains(level1, b))
+            testing.expect(t, slice.contains(level1, x))
+
+            testing.expect(t, len(level2) == 1)
+            testing.expect(t, level2[0] == a1)
+
+            // A single chain filling `cap` exactly must not overflow the derived
+            // walk_buf/level_offsets bounds (cap*2 / cap+2 — see file header).
+            db2: ecs.Database
+            rt2: ecs.Relations_Table
+            defer ecs.terminate(&db2)
+
+            CHAIN_CAP :: 8
+            testing.expect(t, ecs.init(&db2, entities_cap=CHAIN_CAP+1, allocator=allocator) == nil)
+            testing.expect(t, ecs.relations_table__init(&rt2, &db2, CHAIN_CAP) == nil)
+
+            prev, _ := ecs.create_entity(&db2)
+            chain_root := prev
+            for i in 0..<CHAIN_CAP {
+                next, _ := ecs.create_entity(&db2)
+                testing.expect(t, ecs.set_parent(&db2, next, prev) == nil)
+                prev = next
+            }
+
+            chain_ents, chain_levels, chain_err := ecs.walk_hierarchy(&db2)
+            testing.expect(t, chain_err == nil)
+            testing.expect(t, len(chain_ents) == CHAIN_CAP + 1) // root + CHAIN_CAP descendants
+            testing.expect(t, len(chain_levels) == CHAIN_CAP + 2) // root level + CHAIN_CAP descendant levels, +1 end boundary
+            testing.expect(t, chain_ents[0] == chain_root)
+
+            // Structural change invalidates the previous walk's buffer contents,
+            // and reparenting x away from r2 leaves r2 childless and parentless —
+            // it drops out of the forest entirely (same is_root semantics as above).
+            testing.expect(t, ecs.set_parent(&db, x, a) == nil) // reparent x from r2 to a
+            ents2, levels2, err2 := ecs.walk_hierarchy(&db)
+            testing.expect(t, err2 == nil)
+            testing.expect(t, len(ents2) == 5) // r2 fell out; r1,a,b,a1,x remain
+            testing.expect(t, !slice.contains(ents2, r2))
+            testing.expect(t, len(levels2) == 4) // 3 levels: {r1}, {a,b}, {a1,x}
+    }
+
+///////////////////////////////////////////////////////////////////////////////
 // Fuzz: random ops cross-checked against a naive shadow model
 
     // Shadow model: child ix -> {child, parent} for every live link.
@@ -522,6 +785,19 @@ package ode_ecs__tests
             if link.parent == child do return true
             p = link.parent
         }
+    }
+
+    // Depth of e per the shadow: 0 for a root, else 1 + its parent's depth.
+    rel_shadow__depth_of :: proc(shadow: ^map[int]Rel_Shadow_Link, e: ecs.entity_id) -> int {
+        depth := 0
+        cur := e
+        for {
+            link, ok := shadow[cur.ix]
+            if !ok do break
+            depth += 1
+            cur = link.parent
+        }
+        return depth
     }
 
     // Mirrors destroy_entity in the shadow: removes eid's own parent link,
@@ -583,6 +859,55 @@ package ode_ecs__tests
             has, herr := ecs.has_relations(db, e)
             testing.expect(t, herr == nil)
             testing.expect(t, has == (has_parent || len(expected) > 0))
+
+            // is_root consistency: root iff no parent AND at least one child.
+            is_root, rerr := ecs.is_root(db, e)
+            testing.expect(t, rerr == nil)
+            testing.expect(t, is_root == (!has_parent && len(expected) > 0))
+        }
+
+        // roots() must equal exactly the alive entities with no parent and >= 1 child.
+        expected_roots: [dynamic]ecs.entity_id
+        defer delete(expected_roots)
+        for e in alive {
+            _, has_parent := shadow[e.ix]
+            has_child := false
+            for _, l in shadow do if l.parent == e { has_child = true; break }
+            if !has_parent && has_child do append(&expected_roots, e)
+        }
+        roots, rerr := ecs.roots(db)
+        testing.expect(t, rerr == nil)
+        testing.expect(t, len(roots) == len(expected_roots))
+        for e in expected_roots do testing.expect(t, slice.contains(roots, e))
+
+        // walk_hierarchy: every entity lands in the level matching its shadow
+        // depth, and the total count is exactly roots + every entity with a
+        // parent (the two sets are disjoint by construction).
+        ents, levels, werr := ecs.walk_hierarchy(db)
+        testing.expect(t, werr == nil)
+        testing.expect(t, len(ents) == len(expected_roots) + len(shadow))
+        for lvl := 0; lvl < len(levels) - 1; lvl += 1 {
+            for i in levels[lvl]..<levels[lvl + 1] {
+                testing.expect(t, rel_shadow__depth_of(shadow, ents[i]) == lvl)
+            }
+        }
+
+        // walk_subtree: for each root, matches the shadow's BFS-reachable
+        // descendant set exactly (order-insensitive).
+        for root in expected_roots {
+            queue: [dynamic]ecs.entity_id
+            defer delete(queue)
+            append(&queue, root)
+            for head := 0; head < len(queue); head += 1 {
+                cur := queue[head]
+                for _, l in shadow do if l.parent == cur do append(&queue, l.child)
+            }
+            expected_desc := queue[1:] // exclude root itself
+
+            desc, derr := ecs.walk_subtree(db, root)
+            testing.expect(t, derr == nil)
+            testing.expect(t, len(desc) == len(expected_desc))
+            for c in expected_desc do testing.expect(t, slice.contains(desc, c))
         }
     }
 

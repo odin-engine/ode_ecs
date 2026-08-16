@@ -36,13 +36,13 @@ package ode_ecs
         col_payload_offsets: []int,    // byte offset of each column inside one packed row payload (Command_Buffer)
         payload_size: int,
 
-        rid_to_eid: []entity_id,       // shared across ALL columns, len == cap, always full length (see arch_table__len)
+        rid_to_eid: []entity_id,       // shared across ALL columns, len == cap, always full length
         eid_to_rid: []u32,             // shared across ALL columns, len == entities_cap; ARCH_TABLE_NO_RID when absent
 
         len: int,                      // live row count [0, cap] — plain field, not a slice-length hijack: unlike
                                         // Table (rows hijacked, rid_to_eid full-length), Arch_Table has only one shared index slice.
 
-        owner: ^Group,                 // Group ownership hook lands in a later phase; always nil for now
+        owner: ^Group,                 // Group that owns this Arch_Table (at most one), nil when not owned
 
         cap: int,
 
@@ -58,13 +58,13 @@ package ode_ecs
         last_col_idx: int,
 
         // Sizes subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-        // when they're lazily allocated on first attach (see arch_table__attach_subscriber etc.).
+        // when they're lazily allocated on first attach.
         subscribers_cap: int,
 
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
-        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
-        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table 
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table
     }
 
     arch_table__is_valid :: proc(self: ^Arch_Table) -> bool {
@@ -137,8 +137,6 @@ package ode_ecs
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
-        // Lazily allocated on first attach (see arch_table__attach_subscriber) — keeps
-        // tables without filtered/excluding/any_of subscribers at zero cost.
 
         self.id = database__attach_table(db, self) or_return
         self.state = Object_State.Normal
@@ -216,8 +214,6 @@ package ode_ecs
         return self.eid_to_rid[eid.ix] != ARCH_TABLE_NO_RID
     }
 
-    // Soft toggle: excludes the component from View matching without removing it — see
-    // database.odin's "Component enable/disable" section.
     arch_table__disable_component :: proc(self: ^Arch_Table, eid: entity_id) -> Error {
         return database__disable_component(self.db, eid, self.id)
     }
@@ -374,6 +370,7 @@ package ode_ecs
         self.rid_to_eid[new_rid] = eid
 
         database__add_component(self.db, eid, self.id)
+        database__notify_observers(self.db, .Arch_Entity_Added, eid, table_id = self.id)
 
         self.len += 1
 
@@ -428,6 +425,10 @@ package ode_ecs
 
         target_rid := self.eid_to_rid[target_eid.ix]
         if target_rid == ARCH_TABLE_NO_RID do return oc.Core_Error.Not_Found
+
+        // Fires before any mutation below (a whole row spans several columns, so
+        // there's no single pointer to hand back — `data` stays nil).
+        database__notify_observers(self.db, .Arch_Entity_Removed, target_eid, table_id = self.id)
 
         // Cached once: nothing between here and the deferred-tail-swap check
         // below changes the pause state.
@@ -536,8 +537,7 @@ package ode_ecs
         return nil
     }
 
-    // Compact holes left by removals made while tail swap was paused
-    // (see database__pause_packing). Callable mid-pause too.
+    // Compact holes left by removals made while tail swap was paused. Callable mid-pause too.
     arch_table__pack :: proc(self: ^Arch_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -758,7 +758,7 @@ package ode_ecs
 
     @(private)
     // A view excluding this table may newly match after a component removal here.
-    // Skipped mid-destroy (later removals would just evict it again). #force_inline: see table_base__notify_excluding_views.
+    // Skipped mid-destroy (later removals would just evict it again).
     arch_table__notify_excluding_views :: #force_inline proc(self: ^Arch_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {
@@ -774,7 +774,6 @@ package ode_ecs
     }
 
     @(private)
-    // See table_base__notify_any_of_views. #force_inline: see table_base__notify_excluding_views.
     arch_table__notify_any_of_views :: #force_inline proc(self: ^Arch_Table, eid: entity_id) {
         for view in self.subscribers_any_of.items {
             if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)

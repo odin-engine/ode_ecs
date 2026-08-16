@@ -21,7 +21,7 @@ package ode_ecs
         state: Object_State,
 
         // Active entity ID space: overbase_storage (owned) or a shared external
-        // Overbase attached via database__init_from_overbase. See overbase.odin.
+        // Overbase attached via database__init_from_overbase. 
         overbase: ^Overbase,
         owns_overbase: bool,
         overbase_storage: Overbase,
@@ -30,14 +30,12 @@ package ode_ecs
 
         views: oc.Sparse_Arr(View),
 
-        // Owned groups (group.odin); each owns >= 1 table exclusively,
-        // so there can never be more groups than tables.
         groups: oc.Dense_Arr(^Group),
 
         eid_to_bits: []Uni_Bits,
 
         // Set bit = table disabled for this entity — still present in eid_to_bits
-        // but excluded from query matching until enable_component. See view__components_match.
+        // but excluded from query matching until enable_component. 
         eid_to_disabled_bits: []Uni_Bits,
 
         // Sticky true once any database__disable_component call has run (reset by
@@ -54,9 +52,18 @@ package ode_ecs
         // Optional parent/child relations, at most one per database.
         relations: ^Relations_Table,
 
+        // Externally-owned Pair_Table(T) instances attached via pair_table__init
+        // — any number per database, unlike relations.
+        // Stable index-as-id (like tables/views, not groups): pair_table_id is
+        // just the registry index, needed by Command_Buffer staleness checks and
+        // snapshot section<->instance matching.
+        pair_tables: oc.Sparse_Arr(Pair_Table_Base),
+
+        command_buffers: oc.Sparse_Arr(Command_Buffer),
+        observers: oc.Sparse_Arr(Observer),
+
         // When true, component removal clears in place (leaving a hole) instead of
         // tail-swapping, so rows/pointers stay stable while iterating.
-        // See database__pause_packing / database__resume_packing.
         tail_swap_paused: bool,
 
         // eid.ix of the entity inside database__destroy_entity's removal loop,
@@ -73,6 +80,9 @@ package ode_ecs
         if !oc.sparse_arr__is_valid(&self.tables) do return false
         if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid(&self.groups) do return false
+        if !oc.sparse_arr__is_valid(&self.pair_tables) do return false
+        if !oc.sparse_arr__is_valid(&self.command_buffers) do return false
+        if !oc.sparse_arr__is_valid(&self.observers) do return false
         if self.eid_to_bits == nil do return false
         if self.eid_to_disabled_bits == nil do return false
         if self.tiny_table_subscriber_slots == nil do return false
@@ -80,7 +90,7 @@ package ode_ecs
         return true
     }
 
-    database__init :: proc(self: ^Database, entities_cap: u32, allocator := context.allocator, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
+    database__init :: proc(self: ^Database, entities_cap: u32, allocator := context.allocator, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP, pair_tables_cap: int = PAIR_TABLES_CAP, command_buffers_cap: int = COMMAND_BUFFERS_CAP, observers_cap: int = OBSERVERS_CAP) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
@@ -108,6 +118,9 @@ package ode_ecs
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
         oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.pair_tables, pair_tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.command_buffers, command_buffers_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.observers, observers_cap, self.allocator) or_return
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
@@ -121,12 +134,8 @@ package ode_ecs
     }
 
     // Attach this Database to a shared, already-initialized Overbase instead of
-    // creating its own — entity IDs created/destroyed through this Database, a
-    // sibling Database on the same Overbase, or the Overbase itself all refer to
-    // the same entity set. If allocator is nil, the Overbase's allocator is used.
-    // database__terminate will not terminate a shared Overbase — the caller owns
-    // its lifetime (see overbase_terminate).
-    database__init_from_overbase :: proc(self: ^Database, overbase: ^Overbase, allocator: Maybe(runtime.Allocator) = nil, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP) -> Error {
+    // creating its own — entity IDs created/destroyed through this Database.
+    database__init_from_overbase :: proc(self: ^Database, overbase: ^Overbase, allocator: Maybe(runtime.Allocator) = nil, tables_cap: int = TABLES_CAP, views_cap: int = VIEWS_CAP, tiny_tables_cap: int = TINY_TABLES_CAP, pair_tables_cap: int = PAIR_TABLES_CAP, command_buffers_cap: int = COMMAND_BUFFERS_CAP, observers_cap: int = OBSERVERS_CAP) -> Error {
         when VALIDATIONS {
             assert(self != nil)
             assert(self.state == Object_State.Not_Initialized)
@@ -151,6 +160,9 @@ package ode_ecs
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
         oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.pair_tables, pair_tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.command_buffers, command_buffers_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.observers, observers_cap, self.allocator) or_return
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
@@ -195,6 +207,28 @@ package ode_ecs
         }
         oc.dense_arr__terminate(&self.groups, self.allocator) or_return
 
+        for pt in self.pair_tables.items {
+            if pt == nil do continue
+            if pt.state == Object_State.Normal do pair_table_base__terminate(pt) or_return
+        }
+        oc.sparse_arr__terminate(&self.pair_tables, self.allocator) or_return
+
+        for cb in self.command_buffers.items {
+            if cb == nil do continue
+            if cb.state == Object_State.Normal do command_buffer__terminate(cb) or_return
+        }
+        oc.sparse_arr__terminate(&self.command_buffers, self.allocator) or_return
+
+        // No code path fires an Observer_Event during database__terminate
+        // itself (table termination just frees memory / invalidates views, it
+        // never calls *_remove_component_sized), so this has no ordering
+        // dependency on the registries above or below it.
+        for o in self.observers.items {
+            if o == nil do continue
+            if o.state == Object_State.Normal do observer__terminate(o) or_return
+        }
+        oc.sparse_arr__terminate(&self.observers, self.allocator) or_return
+
         // Terminating a Tiny_Table calls database__detach_tiny_table_subscribers,
         // which writes into tiny_table_subscriber_slots — so that slice must stay
         // live here, unlike eid_to_bits (freed early; ranging a nil slice is a
@@ -229,7 +263,7 @@ package ode_ecs
         self.owns_overbase = false
 
         // Leave the db in Not_Initialized state (not Terminated) so the same
-        // struct can be re-init'd without zeroing it first. See issue #8.
+        // struct can be re-init'd without zeroing it first. 
         self.state = Object_State.Not_Initialized
         return nil
     }
@@ -286,11 +320,12 @@ package ode_ecs
             assert(self != nil)
         }
 
-        return overbase__create_entity(self.overbase)
+        eid, err := overbase__create_entity(self.overbase)
+        if err == nil do database__notify_observers(self, .Entity_Created, eid)
+
+        return eid, err
     }
 
-    // #force_inline: collapses into overbase__destroy_entity_impl directly —
-    // see the note on overbase__destroy_entity.
     database__destroy_entity :: #force_inline proc(self: ^Database, eid: entity_id, destroy_children := false) -> Error  {
         when VALIDATIONS {
             assert(self != nil)
@@ -310,6 +345,10 @@ package ode_ecs
     // boundary left over from splitting this out of the old monolithic proc.
     @(private)
     database__destroy_entity_local :: #force_inline proc(self: ^Database, eid: entity_id, destroy_children: bool) -> Error {
+        // Fires before any cleanup below, so an Entity_Destroyed observer can
+        // still read the entity's full live state (components, relations, pairs).
+        database__notify_observers(self, .Entity_Destroyed, eid)
+
         // Without a Relations_Table, destroy_children is a no-op — no entity can have children.
         rt := self.relations
         if rt != nil && rt.state == Object_State.Normal {
@@ -381,6 +420,16 @@ package ode_ecs
                     database__remove_component_by_table_id(self, wi * BIT_SET_VALUES_CAP + b, eid) or_return
                 }
             }
+        }
+
+        // Pair_Table target-side cleanup: a Pair_Table isn't a Shared_Table, so
+        // it has no bit in `bits` above and the loop just run never touches it.
+        // O(#pairs referencing eid as a target) per attached Pair_Table, via
+        // first_pair_by_target — not O(pairs_cap), so this costs nothing for
+        // entities that never appear as a pair target.
+        for pt in self.pair_tables.items {
+            if pt == nil || pt.state != Object_State.Normal do continue
+            pair_table_base__remove_target(pt, eid) or_return
         }
 
         uni_bits__clear(&self.eid_to_bits[eid.ix])
@@ -463,6 +512,18 @@ package ode_ecs
 
         if self.relations != nil do total += relations_table__memory_usage(self.relations)
 
+        for pt in self.pair_tables.items {
+            if pt != nil do total += pair_table_base__memory_usage(pt)
+        }
+
+        for cb in self.command_buffers.items {
+            if cb != nil do total += command_buffer__memory_usage(cb)
+        }
+
+        for o in self.observers.items {
+            if o != nil do total += observer__memory_usage(o)
+        }
+
         return total
     }
 
@@ -544,6 +605,38 @@ package ode_ecs
         return relations_table__is_relation_of(self.relations, target, eid)
     }
 
+    database__is_root :: proc(self: ^Database, eid: entity_id) -> (bool, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return false, API_Error.Relations_Table_Not_Created
+        return relations_table__is_root(self.relations, eid)
+    }
+
+    database__roots :: proc(self: ^Database) -> ([]entity_id, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return nil, API_Error.Relations_Table_Not_Created
+        return relations_table__roots(self.relations)
+    }
+
+    database__walk_subtree :: proc(self: ^Database, root: entity_id) -> ([]entity_id, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return nil, API_Error.Relations_Table_Not_Created
+        return relations_table__walk_subtree(self.relations, root)
+    }
+
+    database__walk_hierarchy :: proc(self: ^Database) -> ([]entity_id, []int, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return nil, nil, API_Error.Relations_Table_Not_Created
+        return relations_table__walk_hierarchy(self.relations)
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Private
 
@@ -617,6 +710,32 @@ package ode_ecs
     }
 
     @(private)
+    database__attach_pair_table :: proc(self: ^Database, pt: ^Pair_Table_Base) -> (pair_table_id, Error) {
+        id, err := oc.sparse_arr__add_growing(&self.pair_tables, pt, self.allocator)
+        if err != nil do return DELETED_INDEX, err
+
+        return cast(pair_table_id) id, nil
+    }
+
+    @(private)
+    database__detach_pair_table :: proc(self: ^Database, pt: ^Pair_Table_Base) {
+        oc.sparse_arr__remove_by_index(&self.pair_tables, cast(int) pt.id)
+    }
+
+    @(private)
+    database__attach_command_buffer :: proc(self: ^Database, cb: ^Command_Buffer) -> (command_buffer_id, Error) {
+        id, err := oc.sparse_arr__add_growing(&self.command_buffers, cb, self.allocator)
+        if err != nil do return DELETED_INDEX, err
+
+        return cast(command_buffer_id) id, nil
+    }
+
+    @(private)
+    database__detach_command_buffer :: proc(self: ^Database, cb: ^Command_Buffer) {
+        oc.sparse_arr__remove_by_index(&self.command_buffers, cast(int) cb.id)
+    }
+
+    @(private)
     // Removes entity's component from the table with id `id` during entity destruction.
     // Stale bits (table terminated / id reused) are tolerated.
     database__remove_component_by_table_id :: #force_inline proc(self: ^Database, #any_int id: int, eid: entity_id) -> Error {
@@ -638,7 +757,6 @@ package ode_ecs
     }
 
     @(private)
-    // #no_bounds_check: see database__add_component
     database__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__remove(&self.eid_to_bits[eid.ix], table_id)
     }
@@ -660,6 +778,8 @@ package ode_ecs
         uni_bits__add(&self.eid_to_disabled_bits[eid.ix], id)
         self.has_disabled_components = true
 
+        database__notify_observers(self, .Component_Disabled, eid, table_id = id)
+
         table := self.tables.items[int(id)]
         for view in shared_table__subscribers(table) {
             if view == nil do continue
@@ -679,6 +799,8 @@ package ode_ecs
         database__is_entity_correct(self, eid) or_return
 
         uni_bits__remove(&self.eid_to_disabled_bits[eid.ix], id)
+
+        database__notify_observers(self, .Component_Enabled, eid, table_id = id)
 
         table := self.tables.items[int(id)]
         for view in shared_table__subscribers(table) {

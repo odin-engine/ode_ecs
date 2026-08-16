@@ -1,6 +1,6 @@
 ## 💾 Saving and loading (snapshots)
 
-A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags and parent/child relations. Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
+A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags, parent/child relations, and [`Pair_Table`](/docs/pair_table.md) many-to-many relations (including their payload data — `presence` round-trips as an ordinary `Tag_Table` section, and the `(holder, target, data)` rows round-trip alongside it). Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
 
 ```odin
 // to/from a file (the only allocation is a temporary buffer):
@@ -17,7 +17,7 @@ ecs.deserialize(&db, buf[:written])
 
 Rules:
 
-* **Load into a matching schema.** `deserialize` requires an already-initialized `Database` with the same tables initialized in the same order (and the same init/terminate history, so table ids coincide), the same component types, and capacities that are **at least** as large as the saved data (`entities_cap` and table caps may be larger). Anything else fails with `Snapshot_Schema_Mismatch` / `Snapshot_Capacity_Too_Small` — the buffer is fully validated before anything is mutated, so a failed load never leaves the database in a torn state.
+* **Load into a matching schema.** `deserialize` requires an already-initialized `Database` with the same tables **and the same `Pair_Table`s** initialized in the same order (and the same init/terminate history, so table/pair-table ids coincide), the same component types, and capacities that are **at least** as large as the saved data (`entities_cap` and table caps may be larger). Anything else fails with `Snapshot_Schema_Mismatch` / `Snapshot_Capacity_Too_Small` — the buffer is fully validated before anything is mutated, so a failed load never leaves the database in a torn state.
 * **Components must be POD** — plain old data (POD) with no pointers, slices, strings, maps or dynamic arrays inside (component rows are copied as raw bytes). `serialize` rejects non-POD component types with `Snapshot_Component_Not_POD`; pass `allow_non_pod = true` to blob-copy them anyway (only meaningful if you fix such fields up yourself after loading). Per-table custom serialization callbacks are planned for a future version.
 * **Pack before saving.** While packing is paused (or tables still hold holes), `serialize` returns `Cannot_Serialize_While_Packing_Paused` — call `resume_packing`/`pack` first.
 * Entity generations are 32-bit: an `entity_id` held across exactly 4,294,967,296 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_expired` to catch them.

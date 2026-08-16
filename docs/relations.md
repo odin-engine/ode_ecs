@@ -6,7 +6,7 @@ Like everything else in ODE_ECS, all memory is preallocated at init, and set/rem
 
 At most **one** `Relations_Table` per [Database](database.md) (a second `relations_init` returns `Relations_Table_Already_Exists`).
 
-> **NOTE:** Relations are *not* components — they never affect [Views](view.md). If you need to iterate "all entities that have a parent", pair relations with a [Tag_Table](tables.md#tag_table) you tag on `set_parent`.
+> **NOTE:** Relations are *not* components — they never affect [Views](view.md). `roots`/`walk_hierarchy` below cover "iterate entities that participate in the hierarchy" directly; pair relations with a [Tag_Table](tables.md#tag_table) you tag on `set_parent` only if you specifically need that to show up in a View.
 
 ## Setup
 
@@ -23,7 +23,7 @@ ecs.init(&my_ecs, entities_cap = 1000)
 ecs.relations_init(&rt, &my_ecs, cap = 500) // long form: ecs.relations_table__init
 ```
 
-The table is terminated automatically with the database. Memory cost: `entities_cap * 36` bytes + `cap * 8` bytes.
+The table is terminated automatically with the database. Memory cost: `entities_cap * 36` bytes + `cap * 32 + 16` bytes.
 
 Once initialized, all relation operations go through **database-level procedures**. Calling them before `relations_init` returns `API_Error.Relations_Table_Not_Created`.
 
@@ -66,16 +66,47 @@ yes, _  = ecs.has_relations(&my_ecs, soldier)          // does it have a parent 
 yes, _  = ecs.is_relation_of(&my_ecs, squad, soldier)  // direct link in either direction
 ```
 
-Checking for "no parent":
+Checking for "no parent" — or use `is_root` below, which additionally requires at least one child (see why in "Hierarchy walk"):
 
 ```odin
 p, _ := ecs.parent_of(&my_ecs, eid)
 if p.ix == ecs.DELETED_INDEX {
-    // eid is a root (no parent)
+    // eid has no parent
 }
 ```
 
 > **NOTE:** The slice returned by `children_of` points into an internal preallocated scratch buffer. It is valid only until the next `children_of` call or any structural change (`set_parent` / `remove_parent` / `destroy_entity` / `clear`) — use it immediately, do not store it and do not mutate relations while walking it. Copy it first if you need to.
+
+## Hierarchy walk
+
+Read-only traversal helpers, always parent-before-child order — the same order `destroy_entity(..., destroy_children = true)` relies on internally (reversed, to destroy deepest-first), exposed here for reading instead.
+
+```odin
+is_r, _ := ecs.is_root(&my_ecs, squad)   // no parent AND at least one child
+                                          // (an entity that never touched relations
+                                          // at all is not a root, just untouched)
+
+roots, _ := ecs.roots(&my_ecs)           // every root, O(entities_cap) scan —
+                                          // no dense index of "has relations" exists
+
+desc, _ := ecs.walk_subtree(&my_ecs, squad)   // squad's descendants, breadth-first
+                                                // (squad itself is not included, same
+                                                // convention as children_of)
+
+entities, levels, _ := ecs.walk_hierarchy(&my_ecs)
+// entities: every root, then their children, then grandchildren, ... (whole forest)
+// levels:   level boundaries — levels[i]..<levels[i+1] indexes `entities` for depth i
+for i in 0..<len(levels)-1 {
+    level := entities[levels[i]:levels[i+1]]
+    // process one full depth level at a time, e.g. propagate a transform top-down
+}
+```
+
+> **NOTE:** `roots`, `walk_subtree`, and `walk_hierarchy` all return slices of internal buffers, valid only until the next call to any of them, or any structural change — same "use immediately, don't store" contract as `children_of`.
+
+`walk_hierarchy` discovers every root itself, so it is a materially different (and more expensive) traversal than repeated `walk_subtree` calls — reach for `walk_subtree` when you already have a specific root and don't need level boundaries, `walk_hierarchy` when you need the whole forest or per-level processing.
+
+See [Sample15](/samples/sample15/main.odin) for a complete example, including per-level transform propagation.
 
 ## Automatic cleanup on destroy
 

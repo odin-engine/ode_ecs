@@ -56,6 +56,27 @@ package ode_ecs__tests
     }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Observers is off by default; observer_init must report Observers_Feature_Disabled.
+// Only compiles when the feature is NOT enabled (opposite gate from
+// observer_test.odin) — with ECS_OBSERVERS_ENABLED=true this assertion would fail.
+    when !ecs.OBSERVERS_ENABLED {
+        @(test)
+        observer_init_disabled_by_default__test :: proc(t: ^testing.T) {
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+
+            db: ecs.Database
+            defer ecs.terminate(&db)
+            testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+
+            noop_callback :: proc(event: ^ecs.Observer_Event, user_data: rawptr) {}
+
+            obs: ecs.Observer
+            testing.expect(t, ecs.observer_init(&obs, &db, noop_callback) == ecs.API_Error.Observers_Feature_Disabled)
+        }
+    }
+
+///////////////////////////////////////////////////////////////////////////////
 // Database
 
     @(test)
