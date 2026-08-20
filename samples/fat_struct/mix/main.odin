@@ -79,8 +79,8 @@ package ode_ecs_fat_struct_mix
 // World setup/teardown
 //
 
-    world_init :: proc(world: ^World, max_entities: int) {
-        world.entities = make([dynamic]Entity, 0, max_entities)
+    world_init :: proc(world: ^World, max_entities: u32) {
+        world.entities = make([dynamic]Entity, 0, int(max_entities))
 
         ecs.init(&world.db, max_entities)
         ecs.compact_table__init(&world.inventories, &world.db, 10)
