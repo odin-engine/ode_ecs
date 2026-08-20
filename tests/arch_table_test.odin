@@ -37,7 +37,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_cap(&at) == 5)
         testing.expect(t, at.type == ecs.Table_Type.Arch_Table)
 
-        // table id recycling: terminate + re-init should reuse the same slot
         id_before := at.id
         testing.expect(t, ecs.arch_table__terminate(&at) == nil)
         testing.expect(t, ecs.arch_table__init(&at, &db, 5, {Position, AI}) == nil)
@@ -59,10 +58,6 @@ package ode_ecs__tests
         at: ecs.Arch_Table
         testing.expect(t, ecs.arch_table__init(&at, &db, 5, {}) == ecs.API_Error.Tables_Array_Should_Not_Be_Empty)
     }
-
-    // arch_table__init asserts every component is non-zero-sized (use Tag_Table
-    // for markers). No test here: catching the assert hangs this sandbox's
-    // test runner — covered by manual verification only.
 
     @(test)
     arch_table__create_entity_and_get_component__test :: proc(t: ^testing.T) {
@@ -95,7 +90,6 @@ package ode_ecs__tests
         ai.IQ = 100
         ai.neurons_count = 42
 
-        // reads round-trip
         pos2 := ecs.get_component(&at, eid, Position)
         testing.expect(t, pos2.x == 1 && pos2.y == 2)
         ai2 := ecs.get_component(&at, eid, AI)
@@ -137,7 +131,6 @@ package ode_ecs__tests
     }
 
     @(test)
-    // Guards against only one column getting swapped on a middle-row removal.
     arch_table__remove_entity_swaps_every_column__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -166,7 +159,6 @@ package ode_ecs__tests
         ecs.get_component(&at, e2, Position).x = 300
         ecs.get_component(&at, e2, AI).neurons_count = 3000
 
-        // remove the middle entity (e1) — e2 (the tail) must tail-swap into e1's row
         testing.expect(t, ecs.arch_table__remove_entity(&at, e1) == nil)
 
         testing.expect(t, ecs.table_len(&at) == 2)
@@ -177,11 +169,9 @@ package ode_ecs__tests
         testing.expect(t, ecs.get_component(&at, e0, Position).x == 100)
         testing.expect(t, ecs.get_component(&at, e0, AI).neurons_count == 1000)
 
-        // e2 moved — both columns must carry over to its new row
         testing.expect(t, ecs.get_component(&at, e2, Position).x == 300)
         testing.expect(t, ecs.get_component(&at, e2, AI).neurons_count == 3000)
 
-        // removing the tail is a simpler path (no swap) — exercise it too
         testing.expect(t, ecs.arch_table__remove_entity(&at, e2) == nil)
         testing.expect(t, ecs.table_len(&at) == 1)
         testing.expect(t, !ecs.has_component(&at, e2))
@@ -214,7 +204,6 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.pause_packing(&at) == nil)
 
-        // removing the middle row while paused leaves a hole; no row moves
         testing.expect(t, ecs.arch_table__remove_entity(&at, e1) == nil)
         testing.expect(t, ecs.get_component(&at, e0, Position).x == 1)
         testing.expect(t, ecs.get_component(&at, e2, Position).x == 3)
@@ -222,15 +211,12 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.resume_packing(&at) == nil)
 
-        // after resume, the table is packed: e0 and e2 remain, values intact
         testing.expect(t, ecs.table_len(&at) == 2)
         testing.expect(t, ecs.get_component(&at, e0, Position).x == 1)
         testing.expect(t, ecs.get_component(&at, e2, Position).x == 3)
     }
 
     @(test)
-    // Hole-check is guarded behind holes_count > 0 for perf; proves it still
-    // skips a paused-removal hole via ecs.next(), not just direct access.
     arch_iterator__skips_hole_while_paused__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -255,7 +241,7 @@ package ode_ecs__tests
         ecs.get_component(&at, e2, Position).x = 3
 
         testing.expect(t, ecs.pause_packing(&at) == nil)
-        testing.expect(t, ecs.arch_table__remove_entity(&at, e1) == nil) // leaves a hole at e1's old row
+        testing.expect(t, ecs.arch_table__remove_entity(&at, e1) == nil)
 
         it: ecs.Arch_Iterator
         testing.expect(t, ecs.arch_iterator_init(&it, &at) == nil)
@@ -263,7 +249,7 @@ package ode_ecs__tests
         seen_x := 0
         visited := 0
         for _, pos in ecs.next(&it, Position) {
-            testing.expect(t, pos.x == 1 || pos.x == 3) // never the hole's stale/zeroed row
+            testing.expect(t, pos.x == 1 || pos.x == 3)
             seen_x += pos.x
             visited += 1
         }
@@ -292,7 +278,6 @@ package ode_ecs__tests
         eid, _ := ecs.create_entity(&at)
         testing.expect(t, ecs.table_len(&at) == 1)
 
-        // destroy_entity walks eid_to_bits generically; no Arch_Table-specific code needed
         testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
         testing.expect(t, ecs.table_len(&at) == 0)
         testing.expect(t, !ecs.has_component(&at, eid))
@@ -346,11 +331,9 @@ package ode_ecs__tests
         testing.expect(t, sum_x == 101 + 102 + 103)
         testing.expect(t, sum_neurons == 10 + 20 + 30)
 
-        // mutation through the loop persisted
         testing.expect(t, ecs.get_component(&at, e0, Position).x == 101)
         testing.expect(t, ecs.get_component(&at, e2, Position).x == 103)
 
-        // non-for-loop direct call form, mirroring Table's iterate() precedent
         it2: ecs.Arch_Iterator
         testing.expect(t, ecs.arch_iterator_init(&it2, &at) == nil)
         eid, pos, cond := ecs.next(&it2, Position)
@@ -380,7 +363,6 @@ package ode_ecs__tests
             ecs.get_component(&at, eid, Position).x = i
         }
 
-        // batch [0, 3)
         it: ecs.Arch_Iterator
         testing.expect(t, ecs.arch_iterator_init(&it, &at, start_row = 0, end_row = 3) == nil)
         count := 0
@@ -401,8 +383,6 @@ package ode_ecs__tests
         }
         testing.expect(t, count2 == 3)
 
-        // a type not in this archetype: next() is "contextless" so it can't
-        // assert — cond stays false forever instead of erroring (see arch_iterator.odin)
         no_ai: ecs.Arch_Table
         defer ecs.arch_table__terminate(&no_ai)
         testing.expect(t, ecs.arch_table__init(&no_ai, &db, 5, {Position}) == nil)
@@ -445,7 +425,6 @@ package ode_ecs__tests
         seen := 0
         sum_x := 0
         sum_neurons := 0
-        // no column types passed at all — get_component is called manually per entity
         for eid in ecs.next(&it) {
             pos := ecs.arch_table__get_component(&at, eid, Position)
             ai := ecs.arch_table__get_component(&at, eid, AI)
@@ -458,7 +437,6 @@ package ode_ecs__tests
         testing.expect(t, sum_x == 33)
         testing.expect(t, sum_neurons == 333)
 
-        // manual step form (no for-loop)
         it2: ecs.Arch_Iterator
         testing.expect(t, ecs.arch_iterator_init(&it2, &at) == nil)
         eid, cond := ecs.next(&it2)
@@ -531,11 +509,10 @@ package ode_ecs__tests
         defer ecs.command_buffer_terminate(&cb)
         testing.expect(t, ecs.command_buffer_init(&cb, &db, commands_cap = 16, payload_cap = 512) == nil)
 
-        // record: add a fresh entity's row via the buffer, not the database yet
         eid, err := ecs.create_entity(&db)
         testing.expect(t, err == nil)
         testing.expect(t, ecs.cmd_arch_add_entity(&cb, &at, eid, Position{x = 7, y = 8}, AI{IQ = 99, neurons_count = 5}) == nil)
-        testing.expect(t, ecs.table_len(&at) == 0) // untouched until replay
+        testing.expect(t, ecs.table_len(&at) == 0)
 
         skipped, rerr := ecs.replay(&cb)
         testing.expect(t, rerr == nil)
@@ -547,17 +524,15 @@ package ode_ecs__tests
         ai := ecs.get_component(&at, eid, AI)
         testing.expect(t, ai.IQ == 99 && ai.neurons_count == 5)
 
-        // record: overwrite the same row ("last write wins")
         testing.expect(t, ecs.cmd_arch_add_entity(&cb, &at, eid, Position{x = 1, y = 1}, AI{IQ = 1, neurons_count = 1}) == nil)
         skipped2, rerr2 := ecs.replay(&cb)
         testing.expect(t, rerr2 == nil)
-        testing.expect(t, skipped2 == 0) // overwrite counts as applied, not skipped
-        testing.expect(t, ecs.table_len(&at) == 1) // still one row, not two
+        testing.expect(t, skipped2 == 0)
+        testing.expect(t, ecs.table_len(&at) == 1)
         testing.expect(t, ecs.get_component(&at, eid, Position).x == 1)
 
-        // record: remove the row via the buffer
         testing.expect(t, ecs.cmd_remove_component(&cb, &at, eid) == nil)
-        testing.expect(t, ecs.has_component(&at, eid)) // untouched until replay
+        testing.expect(t, ecs.has_component(&at, eid))
 
         skipped3, rerr3 := ecs.replay(&cb)
         testing.expect(t, rerr3 == nil)
@@ -565,7 +540,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&at) == 0)
         testing.expect(t, !ecs.has_component(&at, eid))
 
-        // removing again is idempotent (skipped, not an error)
         testing.expect(t, ecs.cmd_remove_component(&cb, &at, eid) == nil)
         skipped4, rerr4 := ecs.replay(&cb)
         testing.expect(t, rerr4 == nil)
@@ -595,7 +569,6 @@ package ode_ecs__tests
         testing.expect(t, err == nil)
         testing.expect(t, ecs.cmd_arch_add_entity(&cb, &at, eid, Position{x = 1, y = 1}) == nil)
 
-        // table terminated between record and replay — command__table_matches must reject it
         testing.expect(t, ecs.arch_table__terminate(&at) == nil)
 
         skipped, rerr := ecs.replay(&cb)
@@ -683,7 +656,6 @@ package ode_ecs__tests
         defer ecs.terminate(&dst_db)
         testing.expect(t, ecs.init(&dst_db, entities_cap = 10, allocator = allocator) == nil)
 
-        // different column count than the source archetype
         dst_at: ecs.Arch_Table
         testing.expect(t, ecs.arch_table__init(&dst_at, &dst_db, 5, {Position}) == nil)
 
@@ -691,8 +663,6 @@ package ode_ecs__tests
     }
 
     @(test)
-    // Arch_Table mixed into a View with a regular Table; Arch_Table columns
-    // aren't part of iterator__next1..7, so they're read via get_component(&table, &it, $T).
     arch_table__mixed_view_with_table__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
@@ -712,7 +682,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.arch_table__init(&at, &db, 10, {Position, AI}) == nil)
         testing.expect(t, ecs.view_init(&view, &db, {&speeds, &at}) == nil)
 
-        // e0: Speed + archetype row -> matches the view
         e0, _ := ecs.create_entity(&db)
         spd0, sperr0 := ecs.add_component(&speeds, e0)
         testing.expect(t, sperr0 == nil)
@@ -721,12 +690,10 @@ package ode_ecs__tests
         ecs.get_component(&at, e0, Position).x = 11
         ecs.get_component(&at, e0, AI).neurons_count = 111
 
-        // e1: Speed only -> not a member (missing the archetype row)
         e1, _ := ecs.create_entity(&db)
         _, sperr1 := ecs.add_component(&speeds, e1)
         testing.expect(t, sperr1 == nil)
 
-        // e2: archetype row only -> not a member (missing Speed)
         e2, _ := ecs.create_entity(&db)
         testing.expect(t, ecs.arch_table__add_entity(&at, e2) == nil)
 
@@ -753,7 +720,76 @@ package ode_ecs__tests
         }
         testing.expect(t, visited == 1)
 
-        // adding the archetype row to e1 now brings it into the view (live updates)
         testing.expect(t, ecs.arch_table__add_entity(&at, e1) == nil)
         testing.expect(t, ecs.view_len(&view) == 2)
+    }
+
+    @(test)
+    arch_table__view_auto_register_arch_columns__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        speeds: ecs.Table(Speed)
+        at: ecs.Arch_Table
+        view: ecs.View
+
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+        testing.expect(t, ecs.table_init(&speeds, &db, 10) == nil)
+        testing.expect(t, ecs.arch_table__init(&at, &db, 10, {Position, AI}) == nil)
+
+        e0, _ := ecs.create_entity(&db)
+        _, sperr0 := ecs.add_component(&speeds, e0)
+        testing.expect(t, sperr0 == nil)
+        testing.expect(t, ecs.arch_table__add_entity(&at, e0) == nil)
+        ecs.get_component(&at, e0, Position).x = 11
+        ecs.get_component(&at, e0, AI).neurons_count = 111
+
+        testing.expect(t, ecs.view_init(&view, &db, {&speeds, &at}) == nil)
+        testing.expect(t, ecs.view_len(&view) == 0)
+        testing.expect(t, ecs.rebuild(&view) == nil)
+        testing.expect(t, ecs.view_len(&view) == 1)
+
+        pos_slice := ecs.slice(&view, Position)
+        ai_slice := ecs.slice(&view, AI)
+        spd_slice := ecs.slice(&view, Speed)
+        eids := ecs.entities_slice(&view)
+
+        testing.expect(t, len(pos_slice) == 1)
+        testing.expect(t, eids[0] == e0)
+        testing.expect(t, pos_slice[0].x == 11)
+        testing.expect(t, ai_slice[0].neurons_count == 111)
+        testing.expect(t, pos_slice[0] == ecs.get_component(&at, e0, Position))
+        testing.expect(t, ai_slice[0] == ecs.get_component(&at, e0, AI))
+        testing.expect(t, spd_slice[0] == ecs.get_component(&speeds, e0))
+
+        e1, _ := ecs.create_entity(&db)
+        _, sperr1 := ecs.add_component(&speeds, e1)
+        testing.expect(t, sperr1 == nil)
+        testing.expect(t, ecs.arch_table__add_entity(&at, e1) == nil)
+        ecs.get_component(&at, e1, Position).x = 22
+        ecs.get_component(&at, e1, AI).neurons_count = 222
+
+        testing.expect(t, ecs.view_len(&view) == 2)
+        pos_slice = ecs.slice(&view, Position)
+        ai_slice = ecs.slice(&view, AI)
+        eids = ecs.entities_slice(&view)
+        for i in 0..<len(pos_slice) {
+            testing.expect(t, pos_slice[i] == ecs.get_component(&at, eids[i], Position))
+            testing.expect(t, ai_slice[i] == ecs.get_component(&at, eids[i], AI))
+        }
+
+        testing.expect(t, ecs.remove_component(&speeds, e0) == nil)
+        testing.expect(t, ecs.view_len(&view) == 1)
+        pos_slice = ecs.slice(&view, Position)
+        ai_slice = ecs.slice(&view, AI)
+        eids = ecs.entities_slice(&view)
+        testing.expect(t, eids[0] == e1)
+        testing.expect(t, pos_slice[0] == ecs.get_component(&at, e1, Position))
+        testing.expect(t, ai_slice[0] == ecs.get_component(&at, e1, AI))
     }

@@ -47,7 +47,7 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 * [Sample11](/samples/sample11/main.odin) – Demonstrates multithreading: parallel batched View iteration + a single-threaded sync point (see [F.A.Q. #1](faq.md)).
 * [Sample12](/samples/sample12/main.odin) – Demonstrates `Overbase`: sharing one entity ID space across two Databases.
 * [Sample13](/samples/sample13/main.odin) – Demonstrates `Overbase` serialization: saving and restoring a shared entity ID space and two attached Databases.
-* [Sample14](/samples/sample14/main.odin) – Demonstrates `Arch_Table`: whole-row create/get_component/iteration with `Arch_Iterator`, and mixing an `Arch_Table` into a `View` and a `Group` alongside a regular `Table`.
+* [Sample14](/samples/sample14/main.odin) – Demonstrates `Arch_Table`: whole-row create/get_component/iteration with `slice(&units)`/`slice(&units, T)`, and mixing an `Arch_Table` into a `View` and a `Group` alongside a regular `Table`.
 * [Sample15](/samples/sample15/main.odin) – Demonstrates relations hierarchy walk.
 * [Sample16](/samples/sample16/main.odin) – Demonstrates `Pair_Table`: many-to-many relations.
 * [Sample17](/samples/sample17/main.odin) – Demonstrates `enable_component`/`disable_component`.

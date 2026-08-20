@@ -38,12 +38,12 @@ Systems contain **all the code and zero state**. A system queries for entities t
 ```odin
 movement_system :: proc(view: ^View) {
 
-	it: ecs.Iterator
-	ecs.iterator_init(&it, view)
-	
-	for _, pos, vel in ecs.next(&it, &positions, &velocities) {
-		pos.x += vel.dx
-		pos.y += vel.dy
+	pos_slice := ecs.slice(view, Position)
+	vel_slice := ecs.slice(view, Velocity)
+
+	for i in 0..<len(pos_slice) {
+		pos_slice[i].x += vel_slice[i].dx
+		pos_slice[i].y += vel_slice[i].dy
 	}
 }
 

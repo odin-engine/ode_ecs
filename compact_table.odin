@@ -24,26 +24,20 @@ package ode_ecs
 
         type_info: ^runtime.Type_Info,
         rid_to_eid: []entity_id,
-        // eid.ix -> row id; 8-byte map items instead of 16. The
-        // component address is derived as &rows[rid] on lookup, so a tail swap
-        // patches a rid value here instead of a pointer.
         eid_to_rid: oc_maps.Rh_Map32,
 
         cap: int,
 
-        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping
         holes_count: int,
         first_hole_rid: int,
 
-        // Sizes the subscriber lists below, lazily allocated on first attach.
         subscribers_cap: int,
 
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
-        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table
-        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table
+        subscribers_excluding: oc.Dense_Arr(^View),
+        subscribers_any_of: oc.Dense_Arr(^View),
 
-        // Sizes sync_watchers, lazily allocated on first sync_register regardless of SYNC_ENABLED.
         sync_channels_cap: int,
         sync_watchers: oc.Dense_Arr(^Sync_Channel),
     }
@@ -73,12 +67,10 @@ package ode_ecs
 
         self.rid_to_eid = make([]entity_id, self.cap, db.allocator) or_return
 
-        // load factor 0.5 and make it power of two
         oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
         self.sync_channels_cap = sync_channels_cap
-        // subscriber lists and sync_watchers are allocated lazily, on first attach.
 
         return nil
     }
@@ -125,7 +117,7 @@ package ode_ecs
         if err != nil do return err
 
         err = oc.dense_arr__remove_by_value(&self.subscribers_with_filter, view)
-        if err == oc.Core_Error.Not_Found do return nil // not found is ok, it means view has no filter
+        if err == oc.Core_Error.Not_Found do return nil
         return err
     }
 
@@ -203,7 +195,7 @@ package ode_ecs
         }
     }
 
-    @(private) 
+    @(private)
     compact_table_base__notify_sync_remove :: #force_inline proc(self: ^Compact_Table_Base, eid: entity_id) {
         when SYNC_ENABLED {
             for ch in self.sync_watchers.items {
@@ -231,7 +223,6 @@ package ode_ecs
 
         total += oc_maps.rh_map32__memory_usage(&self.eid_to_rid)
 
-        // rows
         total += self.type_info.size * self.cap
 
         total += oc.dense_arr__memory_usage(&self.subscribers)
@@ -262,7 +253,6 @@ package ode_ecs
         return compact_table_raw__rid_to_ptr_sized(self, rid, self.type_info.size)
     }
 
-    // elem_size as an explicit parameter
     @(private)
     compact_table_raw__rid_to_ptr_sized :: #force_inline proc "contextless" (self: ^Compact_Table_Raw, #any_int rid: int, elem_size: int) -> rawptr {
         return rawptr(uintptr(raw_data(self.rows)) + uintptr(rid) * uintptr(elem_size))
@@ -282,7 +272,6 @@ package ode_ecs
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
         for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
 
-        // Clear this table's bit from all entities
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
 
         database__detach_table(self.db, self)
@@ -297,22 +286,16 @@ package ode_ecs
     }
 
     @(private)
-    // Type-erased entry point (Command_Buffer replay, database-wide sweeps):
-    // reads self.type_info.size.
     compact_table_raw__remove_component :: proc(self: ^Compact_Table_Raw, target_eid: entity_id, loc:= #caller_location) -> (err: Error) {
         return compact_table_raw__remove_component_sized(self, target_eid, self.type_info.size, loc)
     }
 
     @(private)
-    // elem_size explicit parameter
-    // #no_bounds_check: row indexes derive from raw.len < cap or from the rid map
     compact_table_raw__remove_component_sized :: #force_inline proc(self: ^Compact_Table_Raw, target_eid: entity_id, elem_size: int, loc:= #caller_location) -> (err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
         if raw.len <= 0 do return oc.Core_Error.Not_Found
 
-        // One lookup serves both the existence check and the removal below —
-        // remove_at reuses the slot index instead of re-probing the key
         target_rid, target_slot := oc_maps.rh_map32__get_with_index(&self.eid_to_rid, u32(target_eid.ix))
 
         if target_slot == oc.DELETED_INDEX do return oc.Core_Error.Not_Found
@@ -320,12 +303,8 @@ package ode_ecs
         T_size := elem_size
         target := compact_table_raw__rid_to_ptr_sized(self, target_rid, elem_size)
 
-        // Fires before any mutation below, so an observer can still read the
-        // about-to-be-removed value through `data`.
         database__notify_observers(self.db, .Component_Removed, target_eid, table_id = self.id, data = target)
 
-        // Deferred tail swap: clear the component in place, leaving a hole.
-        // Nothing moves, so component pointers stay stable while iterating.
         if shared_table__is_packing_paused(cast(^Shared_Table) self) {
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
@@ -333,7 +312,6 @@ package ode_ecs
 
             if int(target_rid) == raw.len - 1 {
                 raw.len -= 1
-                // absorb trailing holes so they never need packing
                 for raw.len > 0 && is_not_set(self.rid_to_eid[raw.len - 1]) {
                     raw.len -= 1
                     self.holes_count -= 1
@@ -362,7 +340,6 @@ package ode_ecs
 
         tail := compact_table_raw__rid_to_ptr_sized(self, tail_rid, elem_size)
 
-        // Replace removed component with tail
         if int(target_rid) == tail_rid {
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
@@ -376,18 +353,16 @@ package ode_ecs
         else {
             mem.copy(target, tail, T_size)
 
-            // Value-only update — slots don't move, so target_slot stays valid for the remove_at
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(tail_eid.ix), target_rid)
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
             self.rid_to_eid[target_rid] = tail_eid
             self.rid_to_eid[tail_rid].ix = DELETED_INDEX
 
-            // Notify subscribed views
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    view__update_component_rid(view, self, tail_eid, target_rid)
+                    view__update_component_ptr(view, self, tail_eid, target)
                 } else {
                     view__missed_update_for_member(view, target_eid)
                     view__missed_update_for_member(view, tail_eid)
@@ -408,24 +383,14 @@ package ode_ecs
     }
 
     @(private)
-    // Type-erased entry point (Command_Buffer replay): reads self.type_info.size.
     compact_table_raw__add_component :: proc(self: ^Compact_Table_Raw, eid: entity_id, data: rawptr = nil) -> (component: rawptr, err: Error) {
         return compact_table_raw__add_component_sized(self, eid, self.type_info.size, data)
     }
 
     @(private)
-    // Adds (or finds) the entity's row and returns a pointer to the component. If
-    // `data` is not nil it is copied in before notifications run, and overwrites the
-    // existing value on the Component_Already_Exist path — "last write wins", used
-    // by Command_Buffer. elem_size explicit parameter.
-    // #no_bounds_check: callers validate eid; row indexes derive from raw.len < cap or the rid map.
     compact_table_raw__add_component_sized :: #force_inline proc(self: ^Compact_Table_Raw, eid: entity_id, elem_size: int, data: rawptr = nil) -> (component: rawptr, err: Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        // One probe serves both the existence check and the insert below — get_or_insert
-        // reuses the located slot instead of get() then add() re-walking the same chain.
-        // Capacity is gated on can_insert (not checked up front) since re-adding an
-        // existing component on a full table must still report Component_Already_Exist.
         rid, found, gerr := oc_maps.rh_map32__get_or_insert(&self.eid_to_rid, u32(eid.ix), u32(raw.len), raw.len < self.cap)
 
         if !found {
@@ -448,7 +413,6 @@ package ode_ecs
             if data != nil {
                 mem.copy(component, data, elem_size)
                 compact_table_base__mark_touched(self, eid)
-                // An overwrite can flip a view's filter verdict, and the add-notify below skips existing members
                 for view in self.subscribers_with_filter.items {
                     if !view.suspended do view__rerun_filter(view, eid)
                 }
@@ -456,19 +420,14 @@ package ode_ecs
             err = API_Error.Component_Already_Exist
         }
 
-        // Notify subscribed views. Also runs on the already-exists path on purpose: it
-        // recovers a view membership that a previous add failed to register (e.g. view was at cap).
         for view in self.subscribers.items {
             if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 
-        // Views any_of-ing this table may have gained their (first) matching table for
-        // this entity (no-op if already a member via another any_of table).
         for view in self.subscribers_any_of.items {
             if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
         }
 
-        // Views excluding this table lose the entity (no-op if it wasn't a member)
         for view in self.subscribers_excluding.items {
             if !view.suspended do view__remove_record(view, eid)
         }
@@ -476,14 +435,11 @@ package ode_ecs
         return
     }
 
-    // Type-erased entry point (database-wide resume_packing sweeps): reads
-    // self.type_info.size.
     @(private)
     compact_table_raw__pack :: proc(self: ^Compact_Table_Raw) -> Error {
         return compact_table_raw__pack_sized(self, self.type_info.size)
     }
 
-    // Compact holes left by removals made while tail swap was paused.
     @(private)
     compact_table_raw__pack_sized :: #force_inline proc(self: ^Compact_Table_Raw, elem_size: int) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
@@ -500,17 +456,14 @@ package ode_ecs
         back := raw.len - 1
 
         for self.holes_count > 0 {
-            // shrink span past trailing holes
             for back >= 0 && is_not_set(self.rid_to_eid[back]) {
                 back -= 1
                 self.holes_count -= 1
             }
             if self.holes_count <= 0 do break
 
-            // next hole from the front; guaranteed to exist below back
             for !is_not_set(self.rid_to_eid[front]) do front += 1
 
-            // move the last live row into the hole
             dst := rawptr(uintptr(rows) + uintptr(front) * uintptr(T_size))
             src := rawptr(uintptr(rows) + uintptr(back)  * uintptr(T_size))
             mem.copy(dst, src, T_size)
@@ -522,7 +475,7 @@ package ode_ecs
             mem.zero(src, T_size)
 
             for view in self.subscribers.items {
-                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                if !view.suspended do view__update_component_ptr(view, self, moved_eid, dst)
                 else do view__missed_update_for_member(view, moved_eid)
             }
 
@@ -557,7 +510,6 @@ package ode_ecs
         return (^runtime.Raw_Slice)(&self.rows).len
     }
 
-    // clear data, nothing else
     compact_table_raw__clear :: proc (self: ^Compact_Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
@@ -566,7 +518,7 @@ package ode_ecs
         }
 
         oc_maps.rh_map32__clear(&self.eid_to_rid)
-       
+
         if zero_components && self.cap > 0 && self.rows != nil {
             raw := (^runtime.Raw_Slice)(&self.rows)
             mem.zero(raw_data(self.rows), self.type_info.size * raw.len)
@@ -584,12 +536,11 @@ package ode_ecs
 
     Compact_Table :: struct($T: typeid) {
         using base: Compact_Table_Base,
-        // table_record_id => component
-        rows: []T,     
+        rows: []T,
     }
 
     compact_table__is_valid :: proc(self: ^Compact_Table($T)) -> bool {
-        if self == nil do return false 
+        if self == nil do return false
         if !compact_table_base__is_valid(&self.base) do return false
         if self.rows == nil do return false
 
@@ -602,8 +553,8 @@ package ode_ecs
             assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
-            assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
-            assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
+            assert(cap <= db.overbase.id_factory.cap, loc = loc)
+            assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc)
             assert(size_of(T) != 0, "component type T must not be zero-sized — use Tag_Table for a marker/tag component that carries no data", loc = loc)
         }
 
@@ -615,7 +566,6 @@ package ode_ecs
 
         self.rows = make([]T, cap, db.allocator) or_return
 
-        // database__attach_table is capacity-limited and must not leak the allocations above on failure.
         id, aerr := database__attach_table(db, self)
         if aerr != nil {
             delete(self.rows, db.allocator)
@@ -626,7 +576,7 @@ package ode_ecs
 
         self.state = Object_State.Normal
 
-        compact_table_raw__clear(cast(^Compact_Table_Raw)self) or_return 
+        compact_table_raw__clear(cast(^Compact_Table_Raw)self) or_return
 
         return nil
     }
@@ -642,7 +592,7 @@ package ode_ecs
 
         return nil
     }
-    
+
     compact_table__add_component :: proc(self: ^Compact_Table($T), eid: entity_id) -> (component: ^T, err: Error) {
         when VALIDATIONS {
             assert(self != nil)
@@ -657,7 +607,6 @@ package ode_ecs
         return cast(^T) c, aerr
     }
 
-    // Compact holes left by removals made while tail swap was pause. Callable mid-pause too.
     compact_table__pack :: proc(self: ^Compact_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -665,8 +614,6 @@ package ode_ecs
         return compact_table_raw__pack_sized(cast(^Compact_Table_Raw) self, size_of(T))
     }
 
-    // Pause tail swapping for this table only, independent of the
-    // database-wide pause_packing.
     compact_table__pause_packing :: proc(self: ^Compact_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -674,7 +621,6 @@ package ode_ecs
         return compact_table_raw__pause_packing(cast(^Compact_Table_Raw) self)
     }
 
-    // Resume tail swapping for this table and pack the holes it accumulated.
     compact_table__resume_packing :: proc(self: ^Compact_Table($T)) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -694,7 +640,6 @@ package ode_ecs
         return compact_table_raw__remove_component_sized(cast(^Compact_Table_Raw) self, eid, size_of(T), loc)
     }
 
-    // Goes through subscribed views with filters and reruns filter for entity `eid` and its components
     compact_table__rerun_views_filters :: proc(self: ^Compact_Table($T), eid: entity_id) -> Error {
         database__is_entity_correct(self.db, eid) or_return
 
@@ -713,12 +658,13 @@ package ode_ecs
         return compact_table_base__cap(self)
     }
 
-    // Live rows as one contiguous slice — `rows` is already length-bounded to the
-    // live row count. See table__slice's doc comment (table.odin) for why returning
-    // it by value from a call matters for codegen, not just convenience.
     @(require_results)
     compact_table__slice :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> []T {
         return self.rows
+    }
+
+    compact_table__entities_slice :: #force_inline proc "contextless" (self: ^Compact_Table($T)) -> []entity_id {
+        return self.rid_to_eid[:compact_table_raw__len(cast(^Compact_Table_Raw) self)]
     }
 
     @(require_results)
@@ -735,8 +681,6 @@ package ode_ecs
         return cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
     }
 
-    // Same as compact_table__get_component_by_entity, but marks eid touched in
-    // every Sync_Channel watching this table.
     @(require_results)
     compact_table__get_component_mut :: proc (self: ^Compact_Table($T), eid: entity_id) -> ^T {
         when VALIDATIONS {
@@ -768,7 +712,6 @@ package ode_ecs
         return oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED
     }
 
-    // Soft toggle: excludes the component from View matching without removing it
     compact_table__disable_component :: proc(self: ^Compact_Table($T), eid: entity_id) -> Error {
         return database__disable_component(self.db, eid, self.id)
     }
@@ -786,21 +729,18 @@ package ode_ecs
         return compact_table_base__get_entity_by_row_number(self, row_number)
     }
 
-    compact_table__memory_usage :: proc (self: ^Compact_Table($T)) -> int {    
+    compact_table__memory_usage :: proc (self: ^Compact_Table($T)) -> int {
        return compact_table_base__memory_usage(cast(^Compact_Table_Base) self)
     }
- 
-    // Component data for entity `eid`` is copied into `dest` table from `src` table and linked to enitity `eid`
+
     compact_table__copy_component :: proc(dest: ^Compact_Table($T), src: ^Compact_Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error) {
-        // Validate eid once per db (src/dest may belong to different Databases)
-        // instead of the get/get/add path re-validating dest three times over.
         database__is_entity_correct(src.db, eid) or_return
         database__is_entity_correct(dest.db, eid) or_return
 
         src_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) src, eid)
         if src_component == nil do return nil, src_component, oc.Core_Error.Not_Found
 
-        dest_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) dest, eid) // if it exists we will overwrite data
+        dest_component = cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) dest, eid)
         if dest_component == nil {
             c, aerr := compact_table_raw__add_component(cast(^Compact_Table_Raw) dest, eid)
             if aerr != nil do return nil, src_component, aerr
@@ -812,7 +752,6 @@ package ode_ecs
         return dest_component, src_component, nil
     }
 
-    // Component data for entity `eid`` is moved into `dest` table from `src` table and linked to enitity `eid`
     compact_table__move_component :: proc(dest: ^Compact_Table($T), src: ^Compact_Table(T), eid: entity_id) -> (dest_component: ^T, err: Error) {
         dest_component, _ = compact_table__copy_component(dest, src, eid) or_return
 

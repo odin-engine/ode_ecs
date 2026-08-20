@@ -23,7 +23,11 @@
         iter_group_slice    both columns of the same population via an owned group
                             (slice) — enforced alignment, raw SoA sweep
         iter_arch_slice     both columns of an Arch_Table (Position+Velocity) via
-                            arch_table__dense_slice — always aligned, no group needed
+                            arch_table__column_slice — always aligned, no group needed
+        iter_arch_slice_eids  same Arch_Table, but via slice(&arch) + slice(&arch, T) —
+                            the entities_slice + column_slice idiom now recommended for
+                            View, applied to Arch_Table for a direct, apples-to-apples
+                            contrast against iter_arch_it below
         iter_arch_it        same Arch_Table via Arch_Iterator + ecs.next(&it, T1, T2)
         iter_view_arch_mixed  a View including both a Table and an Arch_Table, read
                             through one Iterator via manual iterator_next +
@@ -73,144 +77,6 @@
                             contrast against pair_first_target's O(1) number
         churn_pair          steady-state pair_add (fan-out 16) + pair_remove_all
                             per holder — Pair_Table's structural churn cost
-
-    Measured dead ends (do not re-attempt without new evidence):
-    - Merging the id-factory entry with eid_to_bits into one per-entity record
-      ({id, bits}): neutral at CHURN_N=10K, clear LOSS at 500K shuffled — churn
-      +20%, churn_partial +50% (interleaved A/B). The split arrays' independent
-      loads already overlap (MLP), so co-locating saves no latency; meanwhile
-      u128 alignment pads the 24 B record to 32 B, a third more hot footprint.
-    - An "unchecked" get_component that skips entity validation showed zero gain
-      at N=100K and N=1M — the validation load and the lookup are independent,
-      so the CPU overlaps them (MLP); validation is effectively free.
-    - Per-column dense reads in Iterator (mask consulted when only some view
-      columns are aligned): cost the fully-dense loop ~60% and gained the mixed
-      loop nothing. Per-column alignment lives in slice instead.
-    - Bits pre-filter on remove notifications (skip view__remove_record when
-      view.bits can't be a subset of the entity's bits): churn 10.9 -> 12.0,
-      churn_partial 9.4 -> 10.2 ns/op at CHURN_N=500K shuffled, its own
-      best case. Per-view eid_to_ptr probes are independent loads the CPU
-      overlaps (MLP); the bits test adds a dependent branch that serializes
-      the loop.
-    - Adaptive View eid_to_rid (Rh_Map32 backing for small views instead of the
-      entities_cap-sized array): churn_small_view 9.3 -> 11.5 ns/op (+23%) in
-      the map's own best case, and the array path paid +6% churn / +9%
-      churn_partial for the backing-choice branch alone. At N=100K the 400 KB
-      array is L2-resident with overlapping loads (MLP); the map probe is a
-      dependent hash->load->compare chain.
-    - Rh_Map32 "high bits" Fibonacci hash ((k*C) >> shift instead of & mask):
-      hits 1.48 -> 1.8 ns/op, misses 5.3 -> 6.0. Entity indexes are dense
-      consecutive ints, and the low-bits multiplicative hash is already a
-      bijection on any aligned power-of-2 key range — zero collisions, beating
-      a "well-mixed" hash here. Likewise the Robin Hood probe-distance early
-      exit for misses was neutral at best (chains are already ~1 long) and cost
-      extra per-probe hash work in one variant (hit cost up to 3.2 ns/op).
-    - #force_inline on the database__create_entity -> overbase__create_entity ->
-      oc.ix_gen_factory__new_id wrapper chain: no gain, create_entity
-      ~3.7-4.0 ns/op either way, B lost 3/5 interleaved rounds. Unlike
-      database__destroy_entity_local (a large, branchy proc where the same
-      trick gave a consistent 2.3-2.6% win, see database.odin), this chain's
-      callees are already tiny and were likely auto-inlined regardless.
-    - Merging Tiny_Table's tt_map__get + tt_map__add into a single
-      tt_map__find_item probe (mirroring the Rh_Map32 get_or_insert change
-      below): neutral, churn_tiny ~12.6-13.9 ns/op either way with no
-      consistent direction across 10 rounds. TINY_TABLE__ROW_CAP=8 against a
-      32-slot map keeps chains so short (~1 slot) that the second walk is
-      already in the noise floor, and unlike Rh_Map32 there was no
-      auto-inlining loss to offset. Reverted.
-    - A CORE_VALIDATIONS #config flag in ode_core (mirroring VALIDATIONS)
-      gating ix_gen_factory__free_id's checks and the bounds_check_error_loc
-      calls in dense_arr/sparse_arr/ix_gen_factory: zero gain on destroy
-      (8/32 tables) and get_random either way (~21.7-21.8 and ~0.52-0.55 ns/op)
-      — same "validation is free" pattern as the unchecked-get_component dead
-      end above. Reverted: skipping the Already_Freed/Not_Found checks risks
-      a silent double-free for no measured benefit.
-    - #force_inline on table__/compact_table__/tiny_table__get_component_by_entity
-      (2-line validate-then-delegate wrappers): inconclusive across 5
-      interleaved rounds — get_random/get_random_compact had no consistent
-      winner, get_random_compact_miss leaned slightly inlined but within
-      noise. Same pattern as the create_entity chain above: already tiny,
-      single-call-site, likely auto-inlined regardless. Reverted.
-
-    Measured wins / accepted costs (2026-07):
-    - Tiny_Table remove: deriving the tail pointer as &rows[len-1] instead of a
-      tt_map probe — churn_tiny ~13.1 -> ~12.6 ns/op (-3.5%) at release flags,
-      consistent across interleaved rounds.
-    - Suspended-view stale guard (view__missed_update_for_member in the remove/
-      move notify loops): VALIDATIONS-gated after measuring ~2% on churn
-      scenarios when unconditional; release builds (ECS_VALIDATIONS=false)
-      measure neutral with the gate.
-    - view__rebuild/refilter over shared_table__rid_to_eid_slice (type dispatch
-      once per scan instead of a 5-case switch per row): rebuild ~5.3 -> ~5.0
-      ns/op (-5%) at release flags, consistent across interleaved rounds.
-    - destroy: ctz (count_trailing_zeros) set-bit extraction instead of Odin's
-      full-domain `for id in bit_set` scan — neutral at TABLES_MULT=1 (the 128
-      register-resident bit tests overlapped the removal work), kept for the
-      true O(components) iteration: at TABLES_MULT>1 the old form scanned
-      128*MULT positions per destroy, ctz touches only set bits, each word once.
-    - iter_arch_it was ~1.8-1.9x iter_dense_it (0.73-0.81 vs 0.38-0.43 ns/op)
-      when first added; root-caused and fixed in two steps (interleaved A/B,
-      reproducible across 3-5 rounds):
-        1. arch_table__component_ptr_by_col used col.type_info.size (a runtime
-           load) instead of size_of(T) (a compile-time constant, since T is
-           already a $T poly param) for the byte-offset multiply — same trick
-           table_raw__rid_to_ptr_sized documents. Fixed: 0.73 -> 0.53 (-27%).
-        2. arch_iterator__next1..7 paid a per-row is_not_set(rid_to_eid[index])
-           load+branch to skip holes left by pause_packing — necessary when
-           holes exist, pure overhead otherwise (the common case). Table's
-           View-based Iterator never pays this: View.rows is kept hole-free by
-           construction, so it only compares a counter. Guarded the hole-skip
-           loop behind `if it.table.holes_count > 0`: 0.53 -> 0.42 (-21%,
-           matches iter_dense_it). #force_inline on the next-family procs
-           (tried first) made no measurable difference — already auto-inlined
-           under -o:speed, same pattern as the create_entity chain above.
-      Net: 0.73-0.81 -> 0.42 ns/op (~45% faster), parity with iter_dense_it.
-    - Group ownership of Arch_Table (Phase 4): extending group__swap_in/
-      swap_out (loop over self.tables, then self.arch_tables — empty for every
-      pre-existing Table-only group) and group__on_add (added a
-      len(self.tables) > 0 branch before indexing self.tables[0], to also
-      handle an Arch_Table-only group) regressed churn_vel (group) by ~6% AND
-      churn_vel (no group) by ~3% — reproducible both call orders, not noise.
-      Root cause: these three procs weren't #force_inline; growing their
-      bodies pushed them past Odin's automatic inlining threshold at their
-      call site in table_raw__add/remove_component_sized, which changed those
-      callers' generated code for EVERY caller — why even the no-group
-      scenario regressed despite never touching Group. Fix: mark
-      group__swap_in/swap_out/on_add #force_inline — restored exact parity
-      with the pre-Phase-4 baseline, interleaved A/B, 3+ rounds each
-      direction. Unlike the iter_arch_it #force_inline attempt above (which
-      changed nothing, already small enough to auto-inline), here the hint
-      was load-bearing: these procs grew just past the compiler's automatic
-      (non-forced) inlining threshold.
-    - iter_view_arch_mixed (View spanning a Table + an Arch_Table): the
-      view_row__get_component_for_arch_table path called arch_table__column_index
-      unconditionally on every get_component (a linear scan of self.columns) —
-      unlike Arch_Iterator's nextN, which resolves col_idx once and caches it
-      for the iterator's lifetime (see the doc comment above iter_view_arch_mixed
-      and on view_row__get_component_for_arch_table in view.odin, both written
-      when this gap was first identified but left unaddressed). Added a 1-entry
-      memo (last_col_type/last_col_idx) on Arch_Table itself, checked before the
-      scan: 0.77-0.86 -> 0.67-0.70 ns/op (~10-15%), consistent across 5
-      interleaved A/B rounds; iter_dense_it/iter_arch_slice/iter_arch_it/
-      churn_arch/churn_group_mixed unaffected (those paths don't call
-      arch_table__column_index per-row, or already cache it). Reset the memo in
-      arch_table__init (issue #8 re-init pattern) so a stale entry from a
-      previous life can't alias into the freshly allocated columns array.
-    - view__components_match (called on every add_component/remove_component
-      notification to every subscribed view — the core of churn/churn_partial/
-      churn_compact/churn_tag/rebuild) unconditionally loaded and intersected
-      db.eid_to_disabled_bits[eid.ix], even though disable_component/
-      enable_component is a rarely-used soft-toggle feature most databases never
-      touch. Added Database.has_disabled_components, sticky-true from the first
-      database__disable_component call (and set conservatively true after
-      snapshot restore, since a snapshot can carry disabled bits without going
-      through disable_component — see serialization.odin), reset false by
-      database__init/init_from_overbase/clear; view__components_match now skips
-      the load+intersect entirely while it's false. churn 11.1-11.2 -> 10.9-11.0,
-      churn_compact 13.2-14.2 -> 12.3-12.7, churn_tag 12.9-13.6 -> 12.3-12.4
-      ns/op, consistent across 5 interleaved A/B rounds; churn_partial/
-      churn_vel/churn_small_view/rebuild neutral (rebuild's ~5 ns/op scale is
-      noise-dominated — no consistent direction across rounds).
 */
 package ode_ecs_benchmarks
 
@@ -233,12 +99,12 @@ package ode_ecs_benchmarks
 //
 // Config
 //
-    N :: #config(BENCH_N, 100_000) // entities for iteration/lookup scenarios
-    CHURN_N :: #config(BENCH_CHURN_N, 10_000) // entities for churn/destroy scenarios
+    N :: #config(BENCH_N, 100_000)
+    CHURN_N :: #config(BENCH_CHURN_N, 10_000)
     REPS :: 9
     SEED :: 881982019898081
 
-    g_sink: f64 // checksum accumulator, prevents dead-code elimination
+    g_sink: f64
 
 //
 // Helpers
@@ -252,13 +118,13 @@ package ode_ecs_benchmarks
     }
 
 //
-// Globals (data lives on the heap; keeping roots global keeps main() readable)
+// Globals
 //
     db: ecs.Database
     positions: ecs.Table(Position)
     velocities: ecs.Table(Velocity)
     ais: ecs.Compact_Table(AI)
-    ais_half: ecs.Compact_Table(AI) // only every 2nd entity — for the miss benchmark
+    ais_half: ecs.Compact_Table(AI)
     both: ecs.View
     eids: []ecs.entity_id
     shuffled: []ecs.entity_id
@@ -274,14 +140,12 @@ package ode_ecs_benchmarks
     g_group: ecs.Group
 
     arch_db: ecs.Database
-    arch_pv: ecs.Arch_Table // Position + Velocity, every entity has both — same
-                            // population shape as the main db, for a direct
-                            // comparison against iter_dense_slice / iter_dense_it
+    arch_pv: ecs.Arch_Table
 
     mv_db: ecs.Database
     mv_positions: ecs.Table(Position)
-    mv_arch: ecs.Arch_Table // Velocity + AI
-    mv_view: ecs.View       // includes both mv_positions and mv_arch
+    mv_arch: ecs.Arch_Table
+    mv_view: ecs.View
 
 main :: proc() {
     rand.reset(SEED)
@@ -291,7 +155,6 @@ main :: proc() {
 
     setup_main_db()
     bench_iter_table()
-    bench_iter_dense_slice()
     bench_iter_dense_it()
 
     setup_mixed_db()
@@ -303,6 +166,7 @@ main :: proc() {
 
     setup_arch_db()
     bench_iter_arch_slice()
+    bench_iter_arch_slice_eids()
     bench_iter_arch_it()
 
     setup_mixed_view_arch_db()
@@ -337,8 +201,12 @@ main :: proc() {
     bench_pair_targets_of()
     bench_pair_churn()
 
+    bench_plain_view_iter()
+    bench_iterator_manual_get_component()
+    bench_exp_view_iter()
+
     fmt.println()
-    fmt.println("checksum:", g_sink) // consume results so nothing is optimized away
+    fmt.println("checksum:", g_sink)
 }
 
 //
@@ -393,8 +261,6 @@ setup_mixed_db :: proc() {
     if ecs.table_init(&m_velocities, &mixed_db, N) != nil do panic("m_velocities init failed")
     if ecs.view_init(&m_both, &mixed_db, {&m_positions, &m_velocities}) != nil do panic("m_both init failed")
 
-    // every entity has Position, every 2nd also Velocity -> the view's Position
-    // refs don't line up with view rows, forcing the pointer (non-dense) path
     for i in 0..<N {
         eid, err := ecs.create_entity(&mixed_db)
         if err != nil do panic("create_entity failed")
@@ -432,30 +298,6 @@ bench_iter_table :: proc() {
     }
 
     report("iter_table", best, N)
-}
-
-bench_iter_dense_slice :: proc() {
-    sw: time.Stopwatch
-    best: i64 = max(i64)
-
-    for _ in 0..<REPS {
-        s: f32 = 0
-        time.stopwatch_reset(&sw)
-        time.stopwatch_start(&sw)
-
-        ps := ecs.slice(&both, &positions)
-        vs := ecs.slice(&both, &velocities)
-        if ps == nil || vs == nil do panic("expected dense-aligned view")
-        for i in 0..<len(ps) {
-            s += ps[i].x + vs[i].dx
-        }
-
-        time.stopwatch_stop(&sw)
-        best = min(best, elapsed_ns(&sw))
-        g_sink += f64(s)
-    }
-
-    report("iter_dense_slice", best, N)
 }
 
 bench_iter_dense_it :: proc() {
@@ -510,16 +352,12 @@ bench_iter_mixed_it :: proc() {
     report("iter_mixed_it", best, ops)
 }
 
-// A system that reads a single column of a misaligned view (e.g. only Velocity of the
-// pos+vel view). Before per-column alignment this was forced onto the pointer path;
-// now the still-aligned column is sliceable on its own.
 bench_iter_mixed_1col :: proc() {
     sw: time.Stopwatch
     best: i64 = max(i64)
     it: ecs.Iterator
     ops := ecs.view_len(&m_both)
 
-    // pointer path baseline
     for _ in 0..<REPS {
         s: f32 = 0
         time.stopwatch_reset(&sw)
@@ -536,27 +374,6 @@ bench_iter_mixed_1col :: proc() {
         g_sink += f64(s)
     }
     report("iter_mixed_1col_it", best, ops)
-
-    // per-column dense slice: velocities follow view-row order (they complete the
-    // entity), positions do not — so vel is sliceable while pos is not
-    best = max(i64)
-    for _ in 0..<REPS {
-        s: f32 = 0
-        time.stopwatch_reset(&sw)
-        time.stopwatch_start(&sw)
-
-        vs := ecs.slice(&m_both, &m_velocities)
-        if vs == nil do panic("expected vel column dense-aligned")
-        for i in 0..<len(vs) {
-            s += vs[i].dx
-        }
-
-        time.stopwatch_stop(&sw)
-        best = min(best, elapsed_ns(&sw))
-        g_sink += f64(s)
-    }
-    if ecs.slice(&m_both, &m_positions) != nil do panic("expected pos column misaligned")
-    report("iter_mixed_1col_sl", best, ops)
 }
 
 setup_group_db :: proc() {
@@ -565,8 +382,6 @@ setup_group_db :: proc() {
     if ecs.table_init(&g_velocities, &group_db, N) != nil do panic("g_velocities init failed")
     if ecs.group_init(&g_group, &group_db, {&g_positions, &g_velocities}) != nil do panic("group init failed")
 
-    // same population as the mixed db: every entity has Position, every 2nd also
-    // Velocity — but here the group keeps the matching half in an aligned prefix
     for i in 0..<N {
         eid, err := ecs.create_entity(&group_db)
         if err != nil do panic("create_entity failed")
@@ -585,9 +400,6 @@ setup_group_db :: proc() {
     if ecs.group_len(&g_group) != N / 2 do panic("unexpected group size")
 }
 
-// Same work as iter_mixed_it (sum a Position and a Velocity field of every
-// pos+vel entity), but through the group's always-aligned prefix: a raw SoA
-// sweep with no per-row rid records and no alignment rescans.
 bench_iter_group_slice :: proc() {
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -631,9 +443,6 @@ setup_arch_db :: proc() {
     }
 }
 
-// Same work as iter_dense_slice (sum a Position and a Velocity field of every
-// entity), but through an Arch_Table's own columns: always aligned by
-// construction, no group needed to get the same raw SoA sweep.
 bench_iter_arch_slice :: proc() {
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -643,8 +452,8 @@ bench_iter_arch_slice :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-        ps := ecs.arch_table__dense_slice(&arch_pv, Position)
-        vs := ecs.arch_table__dense_slice(&arch_pv, Velocity)
+        ps := ecs.arch_table__column_slice(&arch_pv, Position)
+        vs := ecs.arch_table__column_slice(&arch_pv, Velocity)
         if ps == nil || vs == nil do panic("expected arch dense slices")
         for i in 0..<len(ps) {
             s += ps[i].x + vs[i].dx
@@ -658,8 +467,31 @@ bench_iter_arch_slice :: proc() {
     report("iter_arch_slice", best, N)
 }
 
-// Same work via Arch_Iterator + the ecs.next(&it, T1, T2) sugar — comparable to
-// iter_dense_it (both go through a per-row cursor + typed component fetch).
+bench_iter_arch_slice_eids :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+
+        eids := ecs.slice(&arch_pv)
+        ps := ecs.slice(&arch_pv, Position)
+        vs := ecs.slice(&arch_pv, Velocity)
+        if ps == nil || vs == nil do panic("expected arch slices")
+        for i in 0..<len(eids) {
+            s += ps[i].x + vs[i].dx
+        }
+
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("iter_arch_slice_eids", best, N)
+}
+
 bench_iter_arch_it :: proc() {
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -683,11 +515,6 @@ bench_iter_arch_it :: proc() {
     report("iter_arch_it", best, N)
 }
 
-// Phase 3 (View/Iterator integration): every entity has Position (a plain
-// Table) AND a row in mv_arch (an Arch_Table, Velocity+AI) — a View spanning
-// both, read with the manual iterator_next + get_component(&table, &it) /
-// get_component(&arch, &it, T) form (Arch_Table columns aren't part of
-// iterator__next1..7 / ecs.iterate, see their doc comments).
 setup_mixed_view_arch_db :: proc() {
     if ecs.init(&mv_db, N, context.allocator) != nil do panic("mv db init failed")
     if ecs.table_init(&mv_positions, &mv_db, N) != nil do panic("mv_positions init failed")
@@ -886,9 +713,6 @@ bench_churn :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// Two-table views subscribed to the churned table, but the entities never have the
-// second component: every remove notifies both views about an entity that is not in
-// them. Measures the cost of pointless view notifications during removal.
 bench_churn_partial :: proc() {
     churn_db: ecs.Database
     churn_pos: ecs.Table(Position)
@@ -910,8 +734,6 @@ bench_churn_partial :: proc() {
         if err != nil do panic("create_entity failed")
         churn_eids[i] = eid
     }
-    // removals in scattered order (creation order would be prefetcher-friendly
-    // and hide the cost of the per-view random reads this scenario measures)
     rand.shuffle(churn_eids)
 
     sw: time.Stopwatch
@@ -941,9 +763,6 @@ bench_churn_partial :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// The price of group maintenance on structural churn: every add of the 2nd
-// component joins the group (a row swap per owned table), every remove leaves it.
-// Run once without a group as the baseline, once with.
 bench_churn_group :: proc() {
     run :: proc(name: string, with_group: bool) {
         churn_db: ecs.Database
@@ -969,7 +788,7 @@ bench_churn_group :: proc() {
             p.x = 1
             churn_eids[i] = eid
         }
-        rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+        rand.shuffle(churn_eids)
 
         sw: time.Stopwatch
         best: i64 = max(i64)
@@ -1002,10 +821,6 @@ bench_churn_group :: proc() {
     run("churn_vel (group)", true)
 }
 
-// Same 2-component churn as churn_vel_group, but as a single Arch_Table row:
-// one arch_table__add_entity/remove_entity call moves both columns in one
-// swap, instead of Group's swap-per-owned-table pair — the direct measure of
-// Arch_Table's "single shared index, single swap" design vs Group's approach.
 bench_churn_arch :: proc() {
     churn_db: ecs.Database
     churn_pv: ecs.Arch_Table
@@ -1021,7 +836,7 @@ bench_churn_arch :: proc() {
         if err != nil do panic("create_entity failed")
         churn_eids[i] = eid
     }
-    rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+    rand.shuffle(churn_eids)
 
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -1047,13 +862,6 @@ bench_churn_arch :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// Phase 4 (Group ownership of Arch_Table): a Group owns one Table (Position,
-// present on every entity from setup, never churned) and one Arch_Table
-// (Velocity+AI, joins/leaves the group every cycle) — same shape as
-// bench_churn_group's "with_group" run, but one owned "table" is an
-// Arch_Table. group__swap_in/out now loop over both self.tables and
-// self.arch_tables; compare against churn_vel_group (Table-only) to see the
-// cost of that generalization.
 bench_churn_group_mixed :: proc() {
     churn_db: ecs.Database
     churn_pos: ecs.Table(Position)
@@ -1076,7 +884,7 @@ bench_churn_group_mixed :: proc() {
         p.x = 1
         churn_eids[i] = eid
     }
-    rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+    rand.shuffle(churn_eids)
 
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -1103,8 +911,6 @@ bench_churn_group_mixed :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// Same shape as churn, but the churned table is a Compact_Table — measures the
-// Rh_Map32 add/remove path (hash + probe + backward shift) under scattered ids.
 bench_churn_compact :: proc() {
     churn_db: ecs.Database
     churn_pos: ecs.Compact_Table(Position)
@@ -1124,7 +930,7 @@ bench_churn_compact :: proc() {
         if err != nil do panic("create_entity failed")
         churn_eids[i] = eid
     }
-    rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+    rand.shuffle(churn_eids)
 
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -1152,11 +958,8 @@ bench_churn_compact :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// Tiny_Table structural churn. The table holds at most TINY_TABLE__ROW_CAP (8)
-// rows, so the 8 slots are cycled CHURN_N/8 times per rep — measures the
-// Tt_Map add/remove path including its backward-shift on remove.
 bench_churn_tiny :: proc() {
-    TINY :: 8 // ecs.TINY_TABLE__ROW_CAP
+    TINY :: 8
 
     churn_db: ecs.Database
     churn_pos: ecs.Tiny_Table(Position)
@@ -1206,8 +1009,6 @@ bench_churn_tiny :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// Tag_Table structural churn — measures the tag map add/remove path (the sole
-// production user of that map) under scattered ids, with 2 subscribed views.
 bench_churn_tag :: proc() {
     churn_db: ecs.Database
     is_alive: ecs.Tag_Table
@@ -1227,7 +1028,7 @@ bench_churn_tag :: proc() {
         if err != nil do panic("create_entity failed")
         churn_eids[i] = eid
     }
-    rand.shuffle(churn_eids) // scattered order, see bench_churn_partial
+    rand.shuffle(churn_eids)
 
     sw: time.Stopwatch
     best: i64 = max(i64)
@@ -1253,11 +1054,6 @@ bench_churn_tag :: proc() {
     if ecs.terminate(&churn_db) != nil do panic("churn db terminate failed")
 }
 
-// A small view (cap 512) inside a LARGE database (entities_cap N): the view's
-// eid_to_rid bookkeeping is indexed by entity ix scattered across the whole
-// 0..N range, so its per-entity representation (array of N vs small map) is
-// what this scenario measures. Member eids are spread evenly over the ix range
-// and shuffled.
 bench_churn_small_view :: proc() {
     SMALL :: 512
 
@@ -1279,7 +1075,6 @@ bench_churn_small_view :: proc() {
         all_eids[i] = eid
     }
 
-    // members spread across the whole entity ix range
     member_eids := make([]ecs.entity_id, SMALL)
     defer delete(member_eids)
     stride := N / SMALL
@@ -1349,7 +1144,6 @@ bench_create_entity :: proc() {
         time.stopwatch_stop(&sw)
         best = min(best, elapsed_ns(&sw))
 
-        // reset outside the timed section for the next rep
         for eid in ce_eids {
             if ecs.destroy_entity(&ce_db, eid) != nil do panic("destroy failed")
         }
@@ -1382,7 +1176,6 @@ bench_destroy :: proc(table_count: int) {
     best: i64 = max(i64)
 
     for _ in 0..<REPS {
-        // setup outside the timed section: 3 components per entity
         for i in 0..<CHURN_N {
             eid, err := ecs.create_entity(&des_db)
             if err != nil do panic("create_entity failed")
@@ -1408,10 +1201,6 @@ bench_destroy :: proc(table_count: int) {
     if ecs.terminate(&des_db) != nil do panic("destroy db terminate failed")
 }
 
-// Shared fixture for walk_hierarchy/roots: WH_ROOTS root chains, each
-// CHURN_N/WH_ROOTS entities deep — a forest with real depth (unlike a flat
-// one-child-per-root shape), so walk_hierarchy's level-by-level expansion
-// actually crosses multiple levels.
 WH_ROOTS :: 100
 
 bench_setup_forest :: proc(db: ^ecs.Database, rt: ^ecs.Relations_Table) {
@@ -1480,10 +1269,6 @@ bench_roots :: proc() {
     if ecs.terminate(&r_db) != nil do panic("roots db terminate failed")
 }
 
-// Shared fixture for the Pair_Table benchmarks: PAIR_FANOUT targets per
-// holder, a many-to-many fan-out representative of e.g. faction alliances or
-// equipped-item slots. Large enough that pair_targets_of's O(n) walk is
-// clearly distinguishable from pair_first_target's O(1) cost.
 PAIR_FANOUT :: 16
 PAIR_HOLDERS :: CHURN_N / PAIR_FANOUT
 
@@ -1555,18 +1340,11 @@ bench_pair_targets_of :: proc() {
         best = min(best, elapsed_ns(&sw))
     }
 
-    // Reported per HOLDER (not per pair visited) so it's directly comparable
-    // to pair_first_target's number above — same call shape, one query per
-    // holder — making the O(1)-vs-O(n) cost of the fan-out walk legible.
     report("pair_targets_of", best, PAIR_HOLDERS)
 
     if ecs.terminate(&p_db) != nil do panic("pair_targets_of db terminate failed")
 }
 
-// Steady-state structural churn: pair_add every (holder, target) pair in the
-// fixture, then pair_remove_all every holder, repeated. Isolated from
-// bench_setup_pairs above (which leaves pairs populated) since churn needs
-// entities pre-created but pairs NOT pre-added, so the add cost is measured too.
 bench_pair_churn :: proc() {
     c_db: ecs.Database
     c_pt: ecs.Pair_Table(Pair_Data)
@@ -1615,3 +1393,129 @@ bench_pair_churn :: proc() {
 
     if ecs.terminate(&c_db) != nil do panic("churn_pair db terminate failed")
 }
+
+bench_plain_view_iter :: proc() {
+    p_db: ecs.Database
+    p_positions: ecs.Table(Position)
+    p_velocities: ecs.Table(Velocity)
+    p_view: ecs.View
+
+    if ecs.init(&p_db, N, context.allocator) != nil do panic("plain_view_iter db init failed")
+    if ecs.table_init(&p_positions, &p_db, N) != nil do panic("plain_view_iter positions init failed")
+    if ecs.table_init(&p_velocities, &p_db, N) != nil do panic("plain_view_iter velocities init failed")
+    if ecs.view_init(&p_view, &p_db, {&p_positions, &p_velocities}) != nil do panic("plain_view_iter view init failed")
+
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&p_db)
+        if err != nil do panic("create_entity failed")
+        if _, aerr := ecs.add_component(&p_positions, eid); aerr != nil do panic("add_component failed")
+        if _, verr := ecs.add_component(&p_velocities, eid); verr != nil do panic("add_component failed")
+    }
+
+    it: ecs.Iterator
+    if ecs.iterator_init(&it, &p_view) != nil do panic("iterator_init failed")
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        ecs.iterator_reset(&it)
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid, pos, vel in ecs.next(&it, &p_positions, &p_velocities) {
+            pos.x += vel.dx
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    g_sink += f64(ecs.view_len(&p_view))
+    report("plain_view_iter", best, N)
+
+    if ecs.terminate(&p_db) != nil do panic("plain_view_iter db terminate failed")
+}
+
+bench_iterator_manual_get_component :: proc() {
+    r_db: ecs.Database
+    r_positions: ecs.Table(Position)
+    r_velocities: ecs.Table(Velocity)
+    r_view: ecs.View
+
+    if ecs.init(&r_db, N, context.allocator) != nil do panic("iterator_manual_get_component db init failed")
+    if ecs.table_init(&r_positions, &r_db, N) != nil do panic("iterator_manual_get_component positions init failed")
+    if ecs.table_init(&r_velocities, &r_db, N) != nil do panic("iterator_manual_get_component velocities init failed")
+    if ecs.view_init(&r_view, &r_db, {&r_positions, &r_velocities}) != nil do panic("iterator_manual_get_component view init failed")
+
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&r_db)
+        if err != nil do panic("create_entity failed")
+        if _, aerr := ecs.add_component(&r_positions, eid); aerr != nil do panic("add_component failed")
+        if _, verr := ecs.add_component(&r_velocities, eid); verr != nil do panic("add_component failed")
+    }
+
+    it: ecs.Iterator
+    if ecs.iterator_init(&it, &r_view) != nil do panic("iterator_init failed")
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        ecs.iterator_reset(&it)
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for ecs.next(&it) {
+            pos := ecs.get_component(&r_positions, &it)
+            vel := ecs.get_component(&r_velocities, &it)
+            pos.x += vel.dx
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    g_sink += f64(ecs.view_len(&r_view))
+    report("iterator_manual_get_component", best, N)
+
+    if ecs.terminate(&r_db) != nil do panic("iterator_manual_get_component db terminate failed")
+}
+
+bench_exp_view_iter :: proc() {
+    x_db: ecs.Database
+    x_positions: ecs.Table(Position)
+    x_velocities: ecs.Table(Velocity)
+    x_view: ecs.View
+
+    if ecs.init(&x_db, N, context.allocator) != nil do panic("exp_view_iter db init failed")
+    if ecs.table_init(&x_positions, &x_db, N) != nil do panic("exp_view_iter positions init failed")
+    if ecs.table_init(&x_velocities, &x_db, N) != nil do panic("exp_view_iter velocities init failed")
+    if ecs.view_init(&x_view, &x_db, {&x_positions, &x_velocities}) != nil do panic("exp_view_iter view init failed")
+
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&x_db)
+        if err != nil do panic("create_entity failed")
+        if _, aerr := ecs.add_component(&x_positions, eid); aerr != nil do panic("add_component failed")
+        if _, verr := ecs.add_component(&x_velocities, eid); verr != nil do panic("add_component failed")
+    }
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        pos_col := ecs.view_column_slice(&x_view, Position)
+        vel_col := ecs.view_column_slice(&x_view, Velocity)
+
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for i in 0..<ecs.view_len(&x_view) {
+            pos_col[i].x += vel_col[i].dx
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+
+    g_sink += f64(ecs.view_len(&x_view))
+    report("exp_view_iter", best, N)
+
+    if ecs.view_terminate(&x_view) != nil do panic("exp_view_iter view terminate failed")
+    if ecs.terminate(&x_db) != nil do panic("exp_view_iter db terminate failed")
+}
+

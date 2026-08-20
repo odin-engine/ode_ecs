@@ -147,11 +147,13 @@ package ode_ecs
         return self.cap
     }
 
-    // Tagged entities as one contiguous slice — `rows` is already the full row-slot span (see
-    // tag_table__len's holes-while-paused note). Returned by value from a call — see table__slice's doc comment (table.odin) for why that matters for codegen.
     @(require_results)
     tag_table__slice :: #force_inline proc "contextless" (self: ^Tag_Table) -> []entity_id {
         return self.rows
+    }
+
+    tag_table__entities_slice :: #force_inline proc "contextless" (self: ^Tag_Table) -> []entity_id {
+        return tag_table__slice(self)
     }
 
     tag_table__get_entity_by_row_number :: #force_inline proc "contextless" (self: ^Tag_Table, #any_int row_number: int) -> entity_id {
@@ -292,9 +294,9 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    // tag columns carry no component data, but this also feeds the dense safety
-                    // net — the moved tag now occupies the removed row's id.
-                    view__update_component_rid(view, self, tail_eid, target_rid)
+                    // tag columns carry no component data — keep the view's cached
+                    // pointer nil rather than stashing the moved-to rid.
+                    view__update_component_ptr(view, self, tail_eid, nil)
                 } else {
                     view__missed_update_for_member(view, target_eid)
                     view__missed_update_for_member(view, tail_eid)
@@ -380,10 +382,10 @@ package ode_ecs
 
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(moved_eid.ix), u32(front))
 
-            // keep subscriber rids current, same as the other tables' pack (tag columns carry
-            // no data, but see the remove_tag note on the dense safety net)
+            // tag columns carry no component data — keep the view's cached pointer nil,
+            // same as remove_tag above
             for view in self.subscribers.items {
-                if !view.suspended do view__update_component_rid(view, self, moved_eid, front)
+                if !view.suspended do view__update_component_ptr(view, self, moved_eid, nil)
                 else do view__missed_update_for_member(view, moved_eid)
             }
 

@@ -75,9 +75,38 @@ pos.x // still there, unchanged — disabling never touches the data
 ecs.enable_component(&units, robot) // robot re-enters those views
 ```
 
-## Iterating with Arch_Iterator
+## Iterating with `slice(&units, T)`
 
-`Arch_Iterator` walks an `Arch_Table`'s own dense rows directly — there is no `View` involved, since every column is already packed in lockstep. There is a single `Arch_Iterator` type (not one struct per arity); component types are supplied at each `ecs.next` call instead of at init — this mirrors how `ecs.iterate` takes its tables at each call for the sparse-dense `Iterator`:
+`slice(&units, T)` hands you a column as `[]T` — row order, always packed, no alignment check
+needed — and `slice(&units)` gives the matching entity ids in the same order. This is the same
+`entities_slice` + `column_slice` idiom used for [View](view.md#iterating-with-sliceview-t):
+
+```odin
+eids     := ecs.slice(&units)
+pos_slice := ecs.slice(&units, Position)
+ai_slice  := ecs.slice(&units, AI)
+
+for i in 0..<len(eids) {
+    pos_slice[i].x += ai_slice[i].neurons_count
+    fmt.println(eids[i], pos_slice[i])
+}
+```
+
+The slices are re-derived from the archetype's column storage each call — no allocation — but
+they're only valid until the next structural change (add/remove entity); don't hold them across
+one. Splitting the range into batches (e.g. across worker threads) is plain index math on
+`eids`/the column slices — see [View's Batching](view.md#batching-eg-across-threads) for the same
+pattern.
+
+## Arch_Iterator (deprecated, back-compat)
+
+`Arch_Iterator` is the older, per-row way to walk an `Arch_Table`'s own dense rows directly — kept
+for whoever's already using it. `slice(&units)` + `slice(&units, T)` above covers the same ground
+and is the recommended way to iterate now; the two are measured at parity (see
+`benchmarks/main.odin`'s `iter_arch_slice_eids` vs `iter_arch_it`).
+
+There is a single `Arch_Iterator` type (not one struct per arity); component types are supplied at
+each `ecs.next` call instead of at init:
 
 ```odin
 it: ecs.Arch_Iterator
@@ -96,28 +125,6 @@ The first `next` call after `arch_iterator_init` (or `arch_iterator_reset`) reso
 eid, pos, ai, cond := ecs.next(&it, Position, AI)
 ```
 
-### Type-free iteration
-
-`ecs.next(&it)` — with no type arguments at all — just advances the cursor and returns the entity id, doing no column resolution whatsoever. Fetch whichever components you actually need afterward with `arch_table__get_component`:
-
-```odin
-for eid in ecs.next(&it) {
-    pos := ecs.arch_table__get_component(&units, eid, Position)
-    ai  := ecs.arch_table__get_component(&units, eid, AI)
-    // ...
-}
-```
-
-Reach for this when you don't want to commit to a fixed column set at the call site (e.g. generic code walking archetypes of varying shape) — the typed `next(&it, T1, ...)` form above is faster (cached column lookups, no per-entity re-scan) and should be preferred whenever the columns you need are known up front.
-
-Use `start_row`/`end_row` on `arch_iterator_init` to process an archetype in batches (e.g. across worker threads):
-
-```odin
-ecs.arch_iterator_init(&it, &units, start_row = 0, end_row = 250)
-```
-
-`ecs.next` supports 1 to 7 component types per call (you can declare more than 7 columns on the `Arch_Table` itself — the arity limit is only on how many columns a single `next` call reads at once). Passing a type that isn't one of the archetype's columns doesn't error — `next` is `"contextless"`, so it can't assert; it simply reports `cond == false` forever, as if the iterator were already exhausted.
-
 ## Other operations
 
 ```odin
@@ -129,12 +136,15 @@ ecs.pause_packing(&units)       // defer this archetype's removals to holes
 ecs.resume_packing(&units)      // resume and pack
 ecs.memory_usage(&units)        // bytes
 ecs.is_valid(&units)
-ecs.arch_table__dense_slice(&units, Position) // []Position, row order, always packed (no alignment check needed)
+ecs.slice(&units, Position)    // []Position, row order, always packed (no alignment check needed)
+ecs.slice(&units)              // []entity_id, same row order
 ```
 
 ## Mixing with sparse-dense tables in a View
 
-An `Arch_Table` can be one of the tables in a [`View`](view.md)'s `includes`/`excludes` list, alongside `Table`/`Compact_Table`/`Tiny_Table`/`Tag_Table` — an entity must have a row in the archetype (and every other included table) to match. Arch_Table columns aren't part of the `Table($T)`-only `iterator__next1..7`/`ecs.iterate` sugar, so read them with the manual `iterator_next` + `get_component(&table, &it)` form, passing the component type for the archetype column:
+An `Arch_Table` can be one of the tables in a [`View`](view.md)'s `includes`/`excludes` list, alongside `Table`/`Compact_Table`/`Tiny_Table`/`Tag_Table` — an entity must have a row in the archetype (and every other included table) to match.
+
+Every component of an included `Arch_Table` is automatically available through `slice(&view, T)`, the same as a `Table`/`Compact_Table`/`Tiny_Table` column — `view_init` caches a real pointer per row for each of the archetype's component types, since that set never changes after `arch_table__init`, so there's nothing to opt into later:
 
 ```odin
 speeds: ecs.Table(Speed)
@@ -143,6 +153,19 @@ units:  ecs.Arch_Table // Position + AI
 view: ecs.View
 ecs.view_init(&view, &my_ecs, {&speeds, &units})
 
+spd_slice := ecs.slice(&view, Speed)
+pos_slice := ecs.slice(&view, Position)
+ai_slice  := ecs.slice(&view, AI)
+eids      := ecs.entities_slice(&view)
+
+for i in 0..<len(spd_slice) {
+    // spd_slice[i], pos_slice[i], ai_slice[i] and eids[i] are the same entity
+}
+```
+
+`Iterator` still works too, for a manual per-row walk — pass the component type to `get_component(&table, &it, T)`:
+
+```odin
 it: ecs.Iterator
 ecs.iterator_init(&it, &view)
 for ecs.next(&it) {
@@ -154,7 +177,7 @@ for ecs.next(&it) {
 }
 ```
 
-This path doesn't cache the archetype's column index the way `Arch_Iterator` does (there's nowhere on a shared `View`/`Iterator` to cache it per column-type), so it's slower per read than `Arch_Iterator` + `ecs.next` — prefer iterating an archetype on its own with `Arch_Iterator` when you don't also need to filter/read sparse-dense columns in the same pass.
+Both paths read the same cached pointer now, so neither is slower than the other for an Arch_Table column specifically — and `slice(&units)`/`slice(&units, T)` on the archetype directly (above) is measured at parity with `Arch_Iterator` + `ecs.next` for iterating an archetype on its own, so prefer `slice` there too unless you already have an `Arch_Iterator` in hand.
 
 ## Command_Buffer support
 

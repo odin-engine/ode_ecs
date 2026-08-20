@@ -49,46 +49,43 @@ package ode_ecs
     @(private)
     Command_Kind :: enum u8 {
         Destroy_Entity,
-        Add_Component,      // Table / Compact_Table / Tiny_Table; value in payload
-        Remove_Component,   // Table / Compact_Table / Tiny_Table / Arch_Table (whole row)
+        Add_Component,
+        Remove_Component,
         Add_Tag,
         Remove_Tag,
-        Set_Parent,         // requires a Relations_Table on the database
+        Set_Parent,
         Remove_Parent,
-        Arch_Add_Entity,    // Arch_Table; packed multi-column row value in payload
-        Add_Pair,           // Pair_Table(T); value in payload
+        Arch_Add_Entity,
+        Add_Pair,
         Remove_Pair,
     }
 
     @(private)
     Command :: struct {
         kind: Command_Kind,
-        destroy_children: bool,     // Destroy_Entity only
-        eid: entity_id,             // the child for Set_Parent/Remove_Parent, the holder for Add_Pair/Remove_Pair
-        parent: entity_id,          // Set_Parent only
-        target: entity_id,          // Add_Pair / Remove_Pair only — a dedicated field rather than
-                                     // reusing `parent`, which already has its own meaning for Set_Parent
-        table: ^Shared_Table,       // nil for Destroy_Entity / Set_Parent / Remove_Parent / Add_Pair / Remove_Pair
-        table_id: table_id,         // id at record time — stale-table guard at replay
-        pair_table: ^Pair_Table_Base, // Add_Pair / Remove_Pair only — nil otherwise
-        pair_table_id: pair_table_id, // id at record time — stale-registry guard at replay, mirrors table_id
-        payload_offset: int,        // Add_Component / Add_Pair only
-        payload_size: int,          // Add_Component / Add_Pair only, == size_of(T) at record time
+        destroy_children: bool,
+        eid: entity_id,
+        parent: entity_id,
+        target: entity_id,
+        table: ^Shared_Table,
+        table_id: table_id,
+        pair_table: ^Pair_Table_Base,
+        pair_table_id: pair_table_id,
+        payload_offset: int,
+        payload_size: int,
     }
 
     Command_Buffer :: struct {
         state: Object_State,
         db: ^Database,
-        id: command_buffer_id,      // Database.command_buffers registry index
+        id: command_buffer_id,
 
         commands: []Command,
         count: int,
 
-        payload: []byte,            // component values for Add_Component commands
+        payload: []byte,
         payload_used: int,
 
-        // Recording into a buffer that is being replayed is forbidden: view filters
-        // run during replay, and one recording into the same buffer would mutate it mid-loop.
         replaying: bool,
     }
 
@@ -111,7 +108,6 @@ package ode_ecs
             assert(payload_cap > 0, loc = loc)
         }
 
-        // A re-init'd struct (issue #8) may carry counters from its previous life.
         self.count = 0
         self.payload_used = 0
         self.replaying = false
@@ -151,14 +147,11 @@ package ode_ecs
         database__detach_command_buffer(self.db, self)
         self.db = nil
 
-        // Leave the buffer in Not_Initialized state (not Terminated) so the same
-        // struct can be re-init'd without zeroing it first. 
         self.state = Object_State.Not_Initialized
 
         return nil
     }
 
-    // Drop all recorded commands without applying them.
     command_buffer__clear :: proc(self: ^Command_Buffer) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
@@ -168,7 +161,6 @@ package ode_ecs
         return nil
     }
 
-    // Number of recorded (not yet replayed) commands
     command_buffer__len :: #force_inline proc "contextless" (self: ^Command_Buffer) -> int {
         return self.count
     }
@@ -187,9 +179,7 @@ package ode_ecs
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Recording — never touches the database, only appends to the buffer. A full
-// buffer returns Container_Is_Full and records nothing. Entity ids are not
-// validated here — replay skips whatever expired by the time it applies.
+// Recording
 
     command_buffer__destroy_entity :: proc(self: ^Command_Buffer, eid: entity_id, destroy_children := false, loc := #caller_location) -> Error {
         when VALIDATIONS {
@@ -253,9 +243,6 @@ package ode_ecs
         return command_buffer__record_simple(self, Command_Kind.Remove_Component, cast(^Shared_Table) table, eid, loc)
     }
 
-    // Record: add an entity's row to an Arch_Table (values copied into the buffer
-    // now, written at replay; overwrites an existing row — "last write wins". 
-    // Values must match column declaration order.
     command_buffer__arch_add_entity1 :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, v1: $T1, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(arch_table__is_valid(arch), loc = loc)
@@ -320,8 +307,6 @@ package ode_ecs
         return command_buffer__append(self, cmd)
     }
 
-    // Record: remove an entity's whole row from an Arch_Table. Reuses
-    // Command_Kind.Remove_Component — its Arch_Table case already does whole-row removal.
     command_buffer__remove_entity_for_arch_table :: proc(self: ^Command_Buffer, table: ^Arch_Table, eid: entity_id, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(arch_table__is_valid(table), loc = loc)
@@ -343,8 +328,6 @@ package ode_ecs
         return command_buffer__record_simple(self, Command_Kind.Remove_Tag, cast(^Shared_Table) table, eid, loc)
     }
 
-    // Record: make `parent` the parent of `child` (applied via database__set_parent
-    // at replay) — a missing Relations_Table surfaces then as Relations_Table_Not_Created.
     command_buffer__set_parent :: proc(self: ^Command_Buffer, child: entity_id, parent: entity_id, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(command_buffer__is_valid(self), loc = loc)
@@ -360,8 +343,6 @@ package ode_ecs
         })
     }
 
-    // Record: remove `child`'s parent link (applied by replay through
-    // database__remove_parent; a child that has no parent by then is a skip).
     command_buffer__remove_parent :: proc(self: ^Command_Buffer, child: entity_id, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(command_buffer__is_valid(self), loc = loc)
@@ -375,8 +356,6 @@ package ode_ecs
         })
     }
 
-    // Record: add (holder -> target) with payload `data` to a Pair_Table.
-    // Unlike cmd_add_component's last-write-wins overwrite semantics.
     command_buffer__pair_add :: proc(self: ^Command_Buffer, pt: ^Pair_Table($T), holder: entity_id, target: entity_id, data: T, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(pair_table__is_valid(pt), loc = loc)
@@ -386,8 +365,6 @@ package ode_ecs
         return command_buffer__record_pair_add(self, &pt.base, holder, target, &value, size_of(T), align_of(T), loc)
     }
 
-    // Record: remove one (holder, target) pair (applied via pair_table_base__remove
-    // at replay — a pair no longer present by then is a skip, same as cmd_remove_component).
     command_buffer__pair_remove :: proc(self: ^Command_Buffer, pt: ^Pair_Table($T), holder: entity_id, target: entity_id, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(command_buffer__is_valid(self), loc = loc)
@@ -408,18 +385,6 @@ package ode_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // Replay
-    // Applies all recorded commands in order, then clears the buffer (even on
-    // failure — a half-replayed buffer must not replay again).
-    //
-    // `skipped` counts commands dropped harmlessly: expired entity id (destroy/remove
-    // become idempotent, dead-entity adds no-ops), component/tag already absent,
-    // recorded table terminated/re-init'd since record time, or a Set_Parent/Remove_Parent
-    // whose parent/child link no longer applies. Adding an already-existing component is
-    // NOT a skip — the recorded value overwrites it (last write wins).
-    //
-    // Real errors (e.g. a full table) don't abort replay: remaining commands still run
-    // and the first error is returned. Replaying while packing is paused is allowed; 
-    // holes don't free capacity until packed.
     command_buffer__replay :: proc(self: ^Command_Buffer, loc := #caller_location) -> (skipped: int, err: Error) {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -432,7 +397,6 @@ package ode_ecs
         self.replaying = true
         defer self.replaying = false
 
-        // Clear even on error — a half-applied buffer must not replay again.
         defer {
             self.count = 0
             self.payload_used = 0
@@ -441,7 +405,6 @@ package ode_ecs
         for i := 0; i < self.count; i += 1 {
             cmd := &self.commands[i]
 
-            // Entity gone by the time this command applies — skip.
             if database__is_entity_correct(self.db, cmd.eid) != nil {
                 skipped += 1
                 continue
@@ -459,7 +422,7 @@ package ode_ecs
                     }
                     data := rawptr(uintptr(raw_data(self.payload)) + uintptr(cmd.payload_offset))
                     _, aerr := shared_table__add_component(cmd.table, cmd.eid, data)
-                    if aerr == API_Error.Component_Already_Exist do aerr = nil // overwrite: last write wins
+                    if aerr == API_Error.Component_Already_Exist do aerr = nil
                     if aerr != nil && err == nil do err = aerr
 
                 case Command_Kind.Arch_Add_Entity:
@@ -469,7 +432,7 @@ package ode_ecs
                     }
                     data := rawptr(uintptr(raw_data(self.payload)) + uintptr(cmd.payload_offset))
                     _, aerr := shared_table__add_component(cmd.table, cmd.eid, data)
-                    if aerr == API_Error.Component_Already_Exist do aerr = nil // overwrite: last write wins
+                    if aerr == API_Error.Component_Already_Exist do aerr = nil
                     if aerr != nil && err == nil do err = aerr
 
                 case Command_Kind.Remove_Component, Command_Kind.Remove_Tag:
@@ -478,7 +441,7 @@ package ode_ecs
                         continue
                     }
                     rerr := shared_table__remove_component(cmd.table, cmd.eid)
-                    if rerr == oc.Core_Error.Not_Found { // already absent — idempotent
+                    if rerr == oc.Core_Error.Not_Found {
                         skipped += 1
                         continue
                     }
@@ -489,12 +452,10 @@ package ode_ecs
                         skipped += 1
                         continue
                     }
-                    terr := tag_table__add_tag(cast(^Tag_Table) cmd.table, cmd.eid) // idempotent
+                    terr := tag_table__add_tag(cast(^Tag_Table) cmd.table, cmd.eid)
                     if terr != nil && err == nil do err = terr
 
                 case Command_Kind.Set_Parent:
-                    // Parent gone by the time this applies — the link is moot,
-                    // the child (alive, checked above) just stays as it is.
                     if database__is_entity_correct(self.db, cmd.parent) != nil {
                         skipped += 1
                         continue
@@ -504,16 +465,13 @@ package ode_ecs
 
                 case Command_Kind.Remove_Parent:
                     perr := database__remove_parent(self.db, cmd.eid)
-                    if perr == oc.Core_Error.Not_Found { // no parent — idempotent
+                    if perr == oc.Core_Error.Not_Found {
                         skipped += 1
                         continue
                     }
                     if perr != nil && err == nil do err = perr
 
                 case Command_Kind.Add_Pair:
-                    // Target gone by the time this applies — same treatment as
-                    // Set_Parent's parent check (cmd.eid, the holder, is already
-                    // checked above).
                     if database__is_entity_correct(self.db, cmd.target) != nil {
                         skipped += 1
                         continue
@@ -536,7 +494,7 @@ package ode_ecs
                         continue
                     }
                     prerr := pair_table_base__remove(cmd.pair_table, cmd.eid, cmd.target)
-                    if prerr == oc.Core_Error.Not_Found { // already absent — idempotent
+                    if prerr == oc.Core_Error.Not_Found {
                         skipped += 1
                         continue
                     }
@@ -585,11 +543,8 @@ package ode_ecs
             assert(eid.ix >= 0, loc = loc)
         }
 
-        // Command capacity first — a payload bump for a command that never lands would leak arena space.
         if self.count >= len(self.commands) do return oc.Core_Error.Container_Is_Full
 
-        // Reserve an aligned payload slot. Absolute-address alignment, so the
-        // slot is reinterpretable as ^T regardless of the arena base address.
         base := uintptr(raw_data(self.payload))
         aligned := mem.align_forward_uintptr(base + uintptr(self.payload_used), uintptr(align))
         offset := int(aligned - base)
@@ -620,7 +575,6 @@ package ode_ecs
             assert(holder.ix >= 0, loc = loc)
         }
 
-        // Command capacity first — a payload bump for a command that never lands would leak arena space.
         if self.count >= len(self.commands) do return oc.Core_Error.Container_Is_Full
 
         base := uintptr(raw_data(self.payload))
@@ -646,9 +600,6 @@ package ode_ecs
     }
 
     @(private)
-    // Reserves a payload_size-byte slot (aligned to the widest column) and returns
-    // the ready-to-append Command header; callers write each column via
-    // command_buffer__write_arch_payload_column, then command_buffer__append it.
     command_buffer__record_arch_add_header :: proc(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, loc := #caller_location) -> (offset: int, cmd: Command, err: Error) {
         when VALIDATIONS {
             assert(command_buffer__is_valid(self), loc = loc)
@@ -657,7 +608,6 @@ package ode_ecs
             assert(eid.ix >= 0, loc = loc)
         }
 
-        // Command capacity first — a payload bump for a command that never lands would leak arena space.
         if self.count >= len(self.commands) do return 0, Command{}, oc.Core_Error.Container_Is_Full
 
         max_align := 1
@@ -692,14 +642,11 @@ package ode_ecs
     }
 
     @(private)
-    // Is the recorded table still the one it was at record time? Terminate/re-init
-    // changes id or state; an Add whose component size changed is also rejected.
-    // Undetectable: the table struct itself freed between record and replay (documented lifetime requirement).
     command__table_matches :: proc(cmd: ^Command) -> bool {
         t := cmd.table
         if t == nil do return false
         if t.state != Object_State.Normal do return false
-        if t.type == Table_Type.Unknown do return false
+        if t.type == Table_Type.Auto do return false
         if t.id != cmd.table_id do return false
 
         if cmd.kind == Command_Kind.Add_Component {
@@ -716,10 +663,6 @@ package ode_ecs
     }
 
     @(private)
-    // Is the recorded Pair_Table still the one it was at record time? Mirrors
-    // command__table_matches exactly (state + id), using pair_table_id — a
-    // Pair_Table isn't a Shared_Table, so it has no separate generation
-    // counter; the registry id already changes on re-init the same way table_id does.
     command__pair_table_matches :: proc(cmd: ^Command) -> bool {
         pt := cmd.pair_table
         if pt == nil do return false

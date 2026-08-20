@@ -62,12 +62,18 @@ ecs.remove_component(&positions, robot)
 rather than the `rows` field directly:
 
 ```odin
-for &pos, index in ecs.slice(&positions) {
-    eid := ecs.get_entity(&positions, index)   // entity that owns this row
-    ai  := ecs.get_component(&ais, eid)        // reach its other components
-    fmt.println(eid, pos, ai)
+positions_dense := ecs.slice(&positions)
+entities := ecs.entities_slice(&positions)
+for i in 0..<len(positions_dense) {
+    eid := entities[i]
+    ai  := ecs.get_component(&ais, eid)
+    fmt.println(eid, positions_dense[i], ai)
 }
 ```
+
+`entities_slice(&positions)` returns the row-aligned `[]entity_id` for the
+table's own dense storage — same idea as `entities_slice(&view)`, but
+without a `get_entity(&positions, index)` lookup per row.
 
 > **NOTE:** `for &pos in positions.rows` (the raw field) and
 > `for &pos in ecs.slice(&positions)` iterate the same data, but not with the same
@@ -76,7 +82,7 @@ for &pos, index in ecs.slice(&positions) {
 > pointer from `positions` after every store — measured ~30-40% slower on a 1M-entity sweep.
 > `slice` returns the slice by value from a call, giving the loop a fresh local with
 > no such aliasing concern. Same idea as `compact_table__slice`/`tiny_table__slice`/
-> `arch_table__dense_slice` for the other table types.
+> `arch_table__column_slice` for the other table types.
 
 To iterate entities that have a specific *set* of components, use a [View](view.md) instead.
 
@@ -132,6 +138,8 @@ ai.neurons_count = 88
 
 `add_component`, `remove_component`, `get_component`, `has_component`, `copy_component`, `move_component`, `table_len`, `table_cap`, `clear`, `pack` all work through the same proc groups. The difference is purely internal: `eid → component` lookups go through a hash map, saving `(entities_cap - cap) * 8` bytes at a small lookup cost.
 
+`slice(&ais)` / `entities_slice(&ais)` work the same way as `Table`.
+
 ## Tiny_Table(T)
 
 Fixed capacity of `ecs.TINY_TABLE__ROW_CAP` (8) rows, stored inline in the struct — no per-table row allocation. There is no `cap` parameter:
@@ -158,9 +166,11 @@ err = ecs.tiny_table__init(&pos_table, &db)
 **Iteration example:**
 
 ```odin
-for i := 0; i < ecs.table_len(&pos_table); i += 1 {
-    component := &pos_table.rows[i]
-    eid := ecs.get_entity(&pos_table, i)
+components := ecs.slice(&pos_table)
+entities := ecs.entities_slice(&pos_table)
+for i in 0..<len(components) {
+    component := &components[i]
+    eid := entities[i]
 
     if eid == human {
         fmt.println("Human: ", eid, component)
@@ -193,10 +203,13 @@ ecs.untag(&is_alive, human)    // alias: ecs.remove_tag
 if ecs.has_tag(&is_alive, human) { /* ... */ }
 
 // Iterate tagged entities directly
-for eid in is_alive.rows {
+for eid in ecs.slice(&is_alive) {
     fmt.println("alive:", eid)
 }
 ```
+
+`ecs.entities_slice(&is_alive)` returns the same thing — `slice`/`entities_slice`
+are interchangeable for `Tag_Table`, since its rows already are entity ids.
 
 Tags participate in views exactly like components, which is their main use — narrowing a view to tagged entities without paying for component storage:
 

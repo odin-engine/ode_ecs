@@ -22,7 +22,7 @@ ecs.table_init(&ais, &my_ecs, 100)
 ecs.view_init(&view, &my_ecs, {&positions, &ais})
 ```
 
-Any table variant can be included — `Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`. A `Tag_Table` in the include list restricts the view to tagged entities.
+Any table variant can be included — `Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`, `Arch_Table`. A `Tag_Table` in the include list restricts the view to tagged entities.
 
 The view's capacity is the smallest capacity among the included tables (`ecs.view_cap`). Like tables, views are terminated automatically with the database; terminating one of a view's tables early marks the view `Invalid`.
 
@@ -32,7 +32,74 @@ If the view is created **before** entities/components exist, it stays up to date
 ecs.rebuild(&view) // O(n) over the smallest included table
 ```
 
-## Iterating with an Iterator
+## Iterating with `slice(&view, T)`
+
+`slice(&view, T)` hands you a column as `[]^T` — live component pointers, in view row order —
+and `entities_slice(&view)` gives the matching entity ids in the same order:
+
+```odin
+pos_slice := ecs.slice(&view, Position)
+ai_slice  := ecs.slice(&view, AI)
+eids      := ecs.entities_slice(&view)
+
+for i in 0..<len(pos_slice) {
+    eid := eids[i]
+    pos := pos_slice[i]
+    ai  := ai_slice[i]
+
+    pos.x += 1
+    fmt.println(eid, pos, ai)
+}
+```
+
+Covers `Table`/`Compact_Table`/`Tiny_Table` columns, and every component of an included
+`Arch_Table` too — `view_init` caches a real pointer per row for each of the archetype's
+component types automatically (its component set never changes after `arch_table__init`, so
+there's nothing to opt into later); see
+[Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view). `Tag_Table` columns carry
+no data at all and are never sliceable; use the `Iterator` below (or membership alone, via
+`excludes`/`any_of`/a `Tag_Table` in `includes`) for those.
+
+The slices are re-derived from the view's column storage each call — no allocation — but they're
+only valid until the next structural change (add/remove component, create/destroy entity); don't
+hold them across one.
+
+### Batching (e.g. across threads)
+
+`slice(&view, T)` is a plain Odin slice, so splitting it into disjoint batches is plain index
+math — derive the bounds from the view's actual length, then index (or sub-slice) within them:
+
+```odin
+batch := ecs.view_len(&view) / N_WORKERS
+// worker i: start = i * batch, end = i == N_WORKERS-1 ? ecs.view_len(&view) : (i+1) * batch
+
+pos_slice := ecs.slice(&view, Position)
+vel_slice := ecs.slice(&view, Velocity)
+
+for i in start..<end {
+    pos_slice[i].x += vel_slice[i].dx
+    pos_slice[i].y += vel_slice[i].dy
+}
+```
+
+Two workers touching disjoint index ranges of the same slice is race-free — nothing about this is
+View-specific, it's the same rule as any parallel-disjoint-slice-write pattern. What *is*
+View-specific: don't do structural changes (create/destroy entity, add/remove component) during
+the parallel phase — they'd move rows and invalidate the slices out from under a batch that hasn't
+finished reading them yet. Record them into a per-worker `Command_Buffer` instead and replay at a
+single-threaded sync point; see [Sample11](../samples/sample11/main.odin).
+
+The bounds must come from `ecs.view_len(&view)` (or the slice's own `len`) at split time, not a
+hardcoded literal — a stale constant silently drifts out of sync with the view's actual size as
+entities are added/removed over the program's life, producing either an out-of-bounds index or
+unprocessed rows.
+
+## Iterator (back-compat)
+
+`Iterator` is the older, per-row way to walk a view — kept for `Tag_Table` columns, which carry
+no data and are never sliceable.
+Everything else, `Arch_Table` columns included, is covered by `slice(&view, T)`; prefer it — it's
+faster and doesn't need a cursor object.
 
 ```odin
 it: ecs.Iterator
@@ -48,11 +115,7 @@ for ecs.next(&it) {
 }
 ```
 
-`ecs.next(&it)` with no table arguments just advances the cursor and reports whether a row is left (same proc as the old `ecs.iterator_next`, now folded into the unified `next` name) — fetch the entity/components yourself, as above.
-
-Mutating component **values** while iterating is fine. Structural changes (add/remove component, create/destroy entity) are not reflected by a running iterator — call `ecs.iterator_reset(&it)` after them, or avoid structural changes mid-loop (see [pause_packing](database.md#pausing-tail-swap-mutating-tables-while-iterating) for removal-while-iterating patterns).
-
-Or, pass the tables you want read as extra arguments to fuse `get_entity`/`get_component` into the same call — same `it`, same loop, and the entity id comes back too:
+`ecs.next(&it)` with no table arguments just advances the cursor and reports whether a row is left — fetch the entity/components yourself, as above. Or fuse `get_entity`/`get_component` into the same call, `Table($T)` columns only, arity 0-7:
 
 ```odin
 for eid, pos, ai in ecs.next(&it, &positions, &ais) {
@@ -60,47 +123,11 @@ for eid, pos, ai in ecs.next(&it, &positions, &ais) {
 }
 ```
 
-The typed form only takes `Table($T)` columns (not `Compact_Table`/`Tiny_Table` — same restriction as `slice` below, and the same restriction `Arch_Table` columns have, see [Arch_Table](arch_table.md#mixing-with-sparse-dense-tables-in-a-view)). It's plain sugar over the loop above: cursor-advance plus `get_entity` plus `get_component` per column, nothing new on the hot path, and it shares the same `it` — freely mix the 0-arg and typed forms on that `it` in the same or a different loop.
+Mutating component **values** while iterating is fine. Structural changes (add/remove component, create/destroy entity) are not reflected by a running iterator — call `ecs.iterator_reset(&it)` after them, or avoid structural changes mid-loop (see [pause_packing](database.md#pausing-tail-swap-mutating-tables-while-iterating) for removal-while-iterating patterns).
 
-Component counts 0 through 7 are supported: `for ecs.next(&it) { ... }` (no columns, manual `get_entity`/`get_component`) up to `for eid, a, b, c, d, e, f, g in ecs.next(&it, &t1, &t2, &t3, &t4, &t5, &t6, &t7) { ... }`.
+> `ecs.iterate` (component counts 1–4, no entity id in the return) also still exists, predating `ecs.next` — same back-compat status.
 
-> `ecs.iterate` (component counts 1–4, no entity id in the return) still exists and works exactly as before — `ecs.next` is the newer, preferred form going forward.
-
-### Batched iteration
-
-`iterator_init` takes optional `start_row` / `end_row`, letting you split a view into batches — e.g. to process them on separate threads (parallel *reads* are safe; do structural changes in a single-threaded phase):
-
-```odin
-half := ecs.view_len(&view) / 2
-
-it1, it2: ecs.Iterator
-ecs.iterator_init(&it1, &view, 0, half)
-ecs.iterator_init(&it2, &view, half, ecs.view_len(&view))
-```
-
-## The dense fast path and `slice`
-
-The iterator automatically uses a *dense fast path* when the view is "aligned" — when view row `i` corresponds to row `i` in every `Table` of the view. This is the common case (it holds when components are added in the same order per entity and survives despawn/respawn churn) and reads components straight from the tables' dense arrays, roughly 2× faster. It is fully automatic with a transparent fallback.
-
-For the absolute fastest iteration, `slice` hands you the raw component slices in view-row order (or `nil` when the view is not aligned):
-
-```odin
-pos_slice := ecs.slice(&view, &positions)
-ai_slice  := ecs.slice(&view, &ais)
-
-if pos_slice != nil && ai_slice != nil {
-    for i in 0..<len(pos_slice) {
-        // pos_slice[i] and ai_slice[i] belong to the same entity (view row i)
-        pos_slice[i].x += ai_slice[i].neurons_count
-    }
-} else {
-    // Not dense-aligned right now: fall back to the Iterator
-}
-```
-
-Only `Table` columns participate (`Compact_Table`/`Tiny_Table`/`Tag_Table` columns never do). The slices are invalidated by any structural change — use them immediately, never store them.
-
-Alignment here is *detected*, so it can be lost (e.g. an entity removes one component but keeps the other). If you need slices that are **always** valid for a hot set of components, a [Group](group.md) enforces alignment instead of detecting it — at the cost of a row swap per membership change.
+Internally, `Iterator` still uses a dense fast path when the view is "aligned" (view row `i` corresponds to row `i` in every `Table` column) — this is automatic and not something you opt into or check. `iterator_init` also takes optional `start_row`/`end_row` for batching, the same idea as [Batching](#batching-eg-across-threads) above, just via a cursor instead of index math — kept for whoever's already using it, not the recommended way to start.
 
 ## Excludes
 

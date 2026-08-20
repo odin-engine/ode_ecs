@@ -50,12 +50,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -83,7 +82,6 @@ main :: proc() {
         robot, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
-        // Two throwaway entities, just to increase the entity count
         _, err = ecs.create_entity(&db)
         if err != nil { report_error(err); return }
 
@@ -116,11 +114,6 @@ main :: proc() {
         bird_pos.x = 100
         bird_pos.y = 200
 
-        //
-        // NOTE: Tiny_Table.rows is a fixed TINY_TABLE__ROW_CAP-size array with no length metadata,
-        // so `for x in pos_table.rows` visits all eight slots regardless of how many are live.
-        // Use `ecs.slice(&pos_table)` instead to get just the live prefix.
-        //
         fmt.println("Using `for &pos, index in pos_table.rows` loop (the gotcha — visits all eight slots):")
         fmt.println("--------------------------------------------------------------")
         for &pos, index in pos_table.rows {
@@ -138,12 +131,13 @@ main :: proc() {
 
         fmt.println()
 
-        fmt.println("Using `for &pos, index in ecs.slice(&pos_table)` loop:")
+        fmt.println("Using `ecs.slice(&pos_table)` + `ecs.entities_slice(&pos_table)` loop:")
         fmt.println("--------------------------------------------------------------")
-        // Better: only visits valid components, and also avoids a codegen pitfall where reading
-        // `.rows` directly in a hot loop compiles worse than a slice returned by value (see table__slice's doc comment).
-        for &component, index in ecs.slice(&pos_table) {
-            eid := ecs.get_entity(&pos_table, index)
+        pos_dense := ecs.slice(&pos_table)
+        pos_eids := ecs.entities_slice(&pos_table)
+        for i in 0..<len(pos_dense) {
+            component := &pos_dense[i]
+            eid := pos_eids[i]
 
             if eid == human {
                 fmt.println("Human: ", eid, component)
@@ -172,8 +166,6 @@ main :: proc() {
         is_alive_tag_table : ecs.Tag_Table
         err = ecs.tag_table__init(&is_alive_tag_table, &db, 20)
         if err != nil { report_error(err); return }
-
-        //ecs.tag_table__terminate(&is_alive_tag_table)
 
         //
         // Compact_Table
@@ -219,26 +211,22 @@ main :: proc() {
         bird_inventory.items[0][0] = Item_Type.Food
         bird_inventory.item_count = 1
 
-        //
-        // Rebuild view: Positions were added to pos_table before the view was created
-        //
         ecs.view__rebuild(&view)
-        //
-        //
 
-        it: ecs.Iterator
-        err = ecs.iterator_init(&it, &view)
-        if err != nil { report_error(err); return }
+        view_eids := ecs.entities_slice(&view)
+        pos_slice := ecs.slice(&view, Position)
+        health_slice := ecs.slice(&view, Health)
+        inventory_slice := ecs.slice(&view, Inventory)
 
         fmt.println()
         fmt.println("Iterating over view that is on top of Tiny_Table, Table, Compact_Table and Tag_Table tables:")
         fmt.println("--------------------------------------------------------------")
-        for ecs.next(&it) {
-            eid := ecs.get_entity(&it)
+        for i in 0..<len(view_eids) {
+            eid := view_eids[i]
 
-            pos := ecs.get_component(&pos_table, &it)
-            health := ecs.get_component(&health_table, &it)
-            inventory := ecs.get_component(&inventory_table, &it)
+            pos := pos_slice[i]
+            health := health_slice[i]
+            inventory := inventory_slice[i]
 
             if eid == human {
                 fmt.printfln("HUMAN id=%d position(x: %v, y: %v) health: %v/%v inventory: %v", eid.ix, pos.x, pos.y, health.hp, health.max_hp, inventory.items[0][0])
@@ -279,8 +267,11 @@ main :: proc() {
         fmt.println()
         fmt.println("Iterate over tags_table:")
         fmt.println("--------------------------------------------------------------")
-        for &tag, index in ecs.slice(&tags_table) {
-            eid := ecs.get_entity(&tags_table, index)
+        tags_dense := ecs.slice(&tags_table)
+        tags_eids := ecs.entities_slice(&tags_table)
+        for i in 0..<len(tags_dense) {
+            tag := &tags_dense[i]
+            eid := tags_eids[i]
 
             if eid == human {
                 fmt.println("Human is", tag)
@@ -292,9 +283,6 @@ main :: proc() {
             }
         }
 
-        //
-        // A bool table: usually better to use a struct so you can add fields later, but any type works
-        // 
         bool_table : ecs.Table(bool)
 
         err = ecs.table_init(&bool_table, &db, 10)
@@ -311,8 +299,11 @@ main :: proc() {
         fmt.println()
         fmt.println("Iterate over bool_table:")
         fmt.println("--------------------------------------------------------------")
-        for &comp, index in ecs.slice(&bool_table) {
-            eid := ecs.get_entity(&bool_table, index)
+        bool_dense := ecs.slice(&bool_table)
+        bool_eids := ecs.entities_slice(&bool_table)
+        for i in 0..<len(bool_dense) {
+            comp := &bool_dense[i]
+            eid := bool_eids[i]
 
             if eid == human {
                 fmt.println("Human is", comp)

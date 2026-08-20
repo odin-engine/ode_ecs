@@ -61,8 +61,11 @@ package ode_ecs_fat_struct_ecs
 
     // Cold loop — get_entity replaces the manual owner_id back-reference.
     update_inventories :: proc(inventories: ^ecs.Compact_Table(Inventory)) {
-        for &inv, index in ecs.slice(inventories) {
-            owner := ecs.get_entity(inventories, index)
+        dense := ecs.slice(inventories)
+        entities := ecs.entities_slice(inventories)
+        for i in 0..<len(dense) {
+            inv := &dense[i]
+            owner := entities[i]
 
             if inv.gold > 0 {
                 // Process owner-specific inventory logic
@@ -74,8 +77,11 @@ package ode_ecs_fat_struct_ecs
     // Cold loop — same as update_inventories; ai.target is looked up via
     // get_component instead of a target_id field.
     update_ai :: proc(ais: ^ecs.Compact_Table(AI_State), positions: ^ecs.Table(Position)) {
-        for &ai, index in ecs.slice(ais) {
-            owner := ecs.get_entity(ais, index)
+        dense := ecs.slice(ais)
+        entities := ecs.entities_slice(ais)
+        for i in 0..<len(dense) {
+            ai := &dense[i]
+            owner := entities[i]
 
             owner_pos  := ecs.get_component(positions, owner)
             target_pos := ecs.get_component(positions, ai.target)

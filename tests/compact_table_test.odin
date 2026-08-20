@@ -20,9 +20,6 @@ package ode_ecs__tests
 ///////////////////////////////////////////////////////////////////////////////
 // Database
 
-    // No test for the zero-sized-component assert: expect_assert_message hangs
-    // in this project's sandboxed test env, so it's covered by manual verification only.
-
     @(test)
     compact_table__attaching_detaching_tables__test :: proc(t: ^testing.T) {
         //
@@ -31,7 +28,7 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
@@ -87,7 +84,7 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
@@ -147,7 +144,7 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
             ecs_1: ecs.Database
 
@@ -195,7 +192,7 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
@@ -264,8 +261,8 @@ package ode_ecs__tests
             ai.IQ = 66
             ai2.IQ = 42
 
-            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == 0) // row 0
-            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 1) // row 1
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == 0)
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 1)
             testing.expect(t, positions.rid_to_eid[0] == eid_1)
             testing.expect(t, positions.rid_to_eid[1] == eid_2)
             testing.expect(t, ecs.compact_table__len(&positions) == 2)
@@ -279,7 +276,7 @@ package ode_ecs__tests
             testing.expect(t, pos2.y == 0)
 
             testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_1.ix)) == oc_maps.RH_MAP32_DELETED)
-            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 0) // tail-swapped into row 0
+            testing.expect(t, oc_maps.rh_map32__get(&positions.eid_to_rid, u32(eid_2.ix)) == 0)
             testing.expect(t, positions.rid_to_eid[0] == eid_2)
             testing.expect(t, positions.rid_to_eid[1].ix == ecs.DELETED_INDEX)
             testing.expect(t, ecs.compact_table__len(&positions) == 1)
@@ -364,15 +361,16 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 0)
  
-        r := ecs.view__get_row(view1, 0)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        eids1 := ecs.entities_slice(view1)
+        ais1 := ecs.slice(view1, AI)
+        pos1 := ecs.slice(view1, Position)
+        testing.expect(t, eids1[0] == eid_2)
+        testing.expect(t, ais1[0] == ecs.get_component(ais, eid_2))
+        testing.expect(t, pos1[0] == ecs.get_component(positions, eid_2))
 
-        r = ecs.view__get_row(view1, 1)
-        testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, eids1[1] == eid_1)
+        testing.expect(t, ais1[1] == ecs.get_component(ais, eid_1))
+        testing.expect(t, pos1[1] == ecs.get_component(positions, eid_1))
 
         pos, err = ecs.add_component(positions, eid_3)
         pos.x = 333
@@ -381,58 +379,60 @@ package ode_ecs__tests
         testing.expect(t, ecs.view_len(view3) == 1)
 
         ai, err = ecs.add_component(ais, eid_3)
-        testing.expect(t, err == nil) 
+        testing.expect(t, err == nil)
         testing.expect(t, ecs.view_len(view1) == 3)
         testing.expect(t, ecs.view_len(view3) == 1)
 
-        r = ecs.view__get_row(view1, 2)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        eids1 = ecs.entities_slice(view1)
+        ais1 = ecs.slice(view1, AI)
+        pos1 = ecs.slice(view1, Position)
+        testing.expect(t, eids1[2] == eid_3)
+        testing.expect(t, ais1[2] == ecs.get_component(ais, eid_3))
+        testing.expect(t, pos1[2] == ecs.get_component(positions, eid_3))
 
-        ecs.remove_component(ais, eid_1) 
+        ecs.remove_component(ais, eid_1)
         testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 1)
 
-        r = ecs.view__get_row(view1, 0)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        eids1 = ecs.entities_slice(view1)
+        ais1 = ecs.slice(view1, AI)
+        pos1 = ecs.slice(view1, Position)
+        testing.expect(t, eids1[0] == eid_2)
+        testing.expect(t, ais1[0] == ecs.get_component(ais, eid_2))
+        testing.expect(t, pos1[0] == ecs.get_component(positions, eid_2))
 
-        r = ecs.view__get_row(view1, 1)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
-        
-        // ais row for eid_3 moved (tail-swapped) when eid_1's ais was removed
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
+        testing.expect(t, eids1[1] == eid_3)
+        testing.expect(t, pos1[1] == ecs.get_component(positions, eid_3))
+
+        testing.expect(t, ais1[1] == ecs.get_component(ais, eid_3))
 
         err = ecs.remove_component(ais, eid_1)
-        testing.expect(t, err == oc.Core_Error.Not_Found) 
+        testing.expect(t, err == oc.Core_Error.Not_Found)
         testing.expect(t, ecs.view_len(view1) == 2)
 
         ecs.remove_component(ais, eid_3)
         testing.expect(t, ecs.view_len(view1) == 1)
 
-        r = ecs.view__get_row(view1, 0)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
-
-        testing.expect(t, ecs.view__get_row(view1, 1) == nil)
+        eids1 = ecs.entities_slice(view1)
+        ais1 = ecs.slice(view1, AI)
+        pos1 = ecs.slice(view1, Position)
+        testing.expect(t, eids1[0] == eid_2)
+        testing.expect(t, ais1[0] == ecs.get_component(ais, eid_2))
+        testing.expect(t, pos1[0] == ecs.get_component(positions, eid_2))
 
         ecs.remove_component(ais, eid_2)
         testing.expect(t, ecs.view_len(view1) == 0)
 
         #no_bounds_check {
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).eid.ix == ecs.DELETED_INDEX)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).eid.gen == 0)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).rids[0] == 0)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0])).rids[1] == 0)
+            testing.expect(t, view1.rid_to_eid[0].ix == ecs.DELETED_INDEX)
+            testing.expect(t, view1.rid_to_eid[0].gen == 0)
+            testing.expect(t, view1.columns[0].rows[0] == nil)
+            testing.expect(t, view1.columns[1].rows[0] == nil)
 
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).eid.ix == ecs.DELETED_INDEX)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).eid.gen == 0)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).rids[0] == 0)
-            testing.expect(t, ((^ecs.View_Row_Raw)(&view1.rows[0 + view1.one_record_size])).rids[1] == 0)
+            testing.expect(t, view1.rid_to_eid[1].ix == ecs.DELETED_INDEX)
+            testing.expect(t, view1.rid_to_eid[1].gen == 0)
+            testing.expect(t, view1.columns[0].rows[1] == nil)
+            testing.expect(t, view1.columns[1].rows[1] == nil)
         }
 
         err = ecs.remove_component(ais, eid_2)
@@ -450,30 +450,33 @@ package ode_ecs__tests
         testing.expect(t, err == nil) 
         testing.expect(t, ecs.view_len(view1) == 1)
 
-        r = ecs.view__get_row(view1, 0)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        eids1 = ecs.entities_slice(view1)
+        ais1 = ecs.slice(view1, AI)
+        pos1 = ecs.slice(view1, Position)
+        testing.expect(t, eids1[0] == eid_3)
+        testing.expect(t, ais1[0] == ecs.get_component(ais, eid_3))
+        testing.expect(t, pos1[0] == ecs.get_component(positions, eid_3))
 
         ai, err = ecs.add_component(ais, eid_2)
         ai.IQ = 22
-        testing.expect(t, err == nil) 
+        testing.expect(t, err == nil)
         testing.expect(t, ecs.view_len(view1) == 1)
 
         ai, err = ecs.add_component(ais, eid_1)
         ai.IQ = 11
-        testing.expect(t, err == nil) 
+        testing.expect(t, err == nil)
         testing.expect(t, ecs.view_len(view1) == 2)
 
-        r = ecs.view__get_row(view1, 0)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        eids1 = ecs.entities_slice(view1)
+        ais1 = ecs.slice(view1, AI)
+        pos1 = ecs.slice(view1, Position)
+        testing.expect(t, eids1[0] == eid_3)
+        testing.expect(t, ais1[0] == ecs.get_component(ais, eid_3))
+        testing.expect(t, pos1[0] == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_row(view1, 1)
-        testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, eids1[1] == eid_1)
+        testing.expect(t, ais1[1] == ecs.get_component(ais, eid_1))
+        testing.expect(t, pos1[1] == ecs.get_component(positions, eid_1))
 
         old_cap := view1.cap
         view1.cap = 2
@@ -481,48 +484,47 @@ package ode_ecs__tests
         pos, err = ecs.add_component(positions, eid_2)
         pos.x = 22
         testing.expect(t,  err == nil)
-        testing.expect(t, ecs.view_len(view1) == 2) // len didn't increase, capped
+        testing.expect(t, ecs.view_len(view1) == 2)
         testing.expect(t, ecs.view_len(view3) == 2)
 
-        r = ecs.view__get_row(view3, 0)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_3))
+        eids3 := ecs.entities_slice(view3)
+        pos3 := ecs.slice(view3, Position)
+        testing.expect(t, eids3[0] == eid_3)
+        testing.expect(t, pos3[0] == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_row(view3, 1)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, eids3[1] == eid_2)
+        testing.expect(t, pos3[1] == ecs.get_component(positions, eid_2))
 
         view1.cap = old_cap
 
         before_error_add_len := ecs.view_len(view1)
-        pos, err = ecs.add_component(positions, eid_2)     
-        pos.x = 222       
+        pos, err = ecs.add_component(positions, eid_2)
+        pos.x = 222
         testing.expect(t,  err == ecs.API_Error.Component_Already_Exist)
         testing.expect(t, ecs.view_len(view1) == before_error_add_len + 1)
 
-        r = ecs.view__get_row(view1, 0)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_3))
+        eids1 = ecs.entities_slice(view1)
+        ais1 = ecs.slice(view1, AI)
+        pos1 = ecs.slice(view1, Position)
+        testing.expect(t, eids1[0] == eid_3)
+        testing.expect(t, ais1[0] == ecs.get_component(ais, eid_3))
+        testing.expect(t, pos1[0] == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_row(view1, 1)
-        testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_1))
+        testing.expect(t, eids1[1] == eid_1)
+        testing.expect(t, ais1[1] == ecs.get_component(ais, eid_1))
+        testing.expect(t, pos1[1] == ecs.get_component(positions, eid_1))
 
-        r = ecs.view__get_row(view1, 2)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view1, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, eids1[2] == eid_2)
+        testing.expect(t, ais1[2] == ecs.get_component(ais, eid_2))
+        testing.expect(t, pos1[2] == ecs.get_component(positions, eid_2))
 
-        r = ecs.view__get_row(view3, 0)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_3))
+        eids3 = ecs.entities_slice(view3)
+        pos3 = ecs.slice(view3, Position)
+        testing.expect(t, eids3[0] == eid_3)
+        testing.expect(t, pos3[0] == ecs.get_component(positions, eid_3))
 
-        r = ecs.view__get_row(view3, 1)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view3, r, positions) == ecs.get_component(positions, eid_2))
+        testing.expect(t, eids3[1] == eid_2)
+        testing.expect(t, pos3[1] == ecs.get_component(positions, eid_2))
 
         it: ecs.Iterator
         ecs.iterator_init(&it, view1)
@@ -556,7 +558,6 @@ package ode_ecs__tests
 
         testing.expect(t, index == 3)
 
-        // Init again and see if everything still works
         ecs.iterator_init(&it, view1)
 
         for index=0; ecs.iterator_next(&it); index+=1 {
@@ -587,18 +588,18 @@ package ode_ecs__tests
         testing.expect(t, index == 3)
         testing.expect(t, ecs.view_len(view2) == 3)
 
-        r = ecs.view__get_row(view2, 0)
-        testing.expect(t, r.eid == eid_3)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, ais) == ecs.get_component(ais, eid_3))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, positions) == ecs.get_component(positions, eid_3))
-        r = ecs.view__get_row(view2, 1)
-        testing.expect(t, r.eid == eid_1)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, ais) == ecs.get_component(ais, eid_1))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, positions) == ecs.get_component(positions, eid_1))
-        r = ecs.view__get_row(view2, 2)
-        testing.expect(t, r.eid == eid_2)
-        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, ais) == ecs.get_component(ais, eid_2))
-        testing.expect(t, ecs.view__get_component_for_compact_table(view2, r, positions) == ecs.get_component(positions, eid_2))
+        eids2 := ecs.entities_slice(view2)
+        ais2 := ecs.slice(view2, AI)
+        pos2 := ecs.slice(view2, Position)
+        testing.expect(t, eids2[0] == eid_3)
+        testing.expect(t, ais2[0] == ecs.get_component(ais, eid_3))
+        testing.expect(t, pos2[0] == ecs.get_component(positions, eid_3))
+        testing.expect(t, eids2[1] == eid_1)
+        testing.expect(t, ais2[1] == ecs.get_component(ais, eid_1))
+        testing.expect(t, pos2[1] == ecs.get_component(positions, eid_1))
+        testing.expect(t, eids2[2] == eid_2)
+        testing.expect(t, ais2[2] == ecs.get_component(ais, eid_2))
+        testing.expect(t, pos2[2] == ecs.get_component(positions, eid_2))
 
         testing.expect(t, ecs.iterator_init(&it, view2) == nil)
 
@@ -715,7 +716,7 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
             ecs_1: ecs.Database
             ais: ecs.Compact_Table(AI)
@@ -760,8 +761,8 @@ package ode_ecs__tests
         testing.expect(t, ecs.clear(&ecs_1) == nil)
 
         //
-        // Repeat after clear to make sure everything still works
-        // 
+        // Repeat after clear
+        //
 
         ecs.suspend(&view1)
         ecs.suspend(&view2)
@@ -774,7 +775,7 @@ package ode_ecs__tests
         ecs.resume(&view3)
 
         //
-        // Retest: nothing changed while suspended
+        // Retest
         //
         testing.expect(t, ecs.view_len(&view1) == 0)
         testing.expect(t, view1.cap == 8)
@@ -792,7 +793,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.clear(&ecs_1) == ecs.API_Error.Object_Invalid)
         view1.state = ecs.Object_State.Normal
 
-        // this removes view1 from db and ecs.clear()
         ecs.view_terminate(&view1)
 
         it: ecs.Iterator
@@ -801,8 +801,7 @@ package ode_ecs__tests
 
         testing.expect(t, ecs.view__clear(&view1) == ecs.API_Error.Object_Invalid)
 
-        // because view1 is terminated, it is removed from db and dont cause clear() to fail
-        testing.expect(t, ecs.clear(&ecs_1) == nil) 
+        testing.expect(t, ecs.clear(&ecs_1) == nil)
     }
 
     @(test)
@@ -813,10 +812,10 @@ package ode_ecs__tests
             defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
-            context.allocator = mem.panic_allocator() // no allocations outside provided allocator
+            context.allocator = mem.panic_allocator()
 
         //
-        // Test rerunning filters for entities
+        // Test
             db:     ecs.Database
             view:   ecs.View
             err:    ecs.Error
@@ -859,7 +858,6 @@ package ode_ecs__tests
 
             movement: ^Movement // component
 
-            // Add Movement component for human and bird            
             movement, err = ecs.compact_table__add_component(&movement_table, human)
             testing.expect(t, err == nil) 
 
@@ -893,7 +891,6 @@ package ode_ecs__tests
                 eid := ecs.get_entity(row)
                 movement_table := (^Movement_User_Data)(user_data).movement_table
 
-                // get Movement component
                 movement := ecs.get_component(movement_table, row)
 
                 if movement == nil do return false
@@ -919,7 +916,6 @@ package ode_ecs__tests
             bird_present := false
             chair_present := false
 
-            // Print list of moving entities (not idle)
             for ecs.iterator_next(&it) {
                 eid = ecs.get_entity(&it)
 
@@ -932,16 +928,15 @@ package ode_ecs__tests
                 }
             }
 
-            testing.expect(t, human_present == true) // human is walking
-            testing.expect(t, bird_present == true)  // bird is flying  
-            testing.expect(t, chair_present == false) // chair is idle
+            testing.expect(t, human_present == true)
+            testing.expect(t, bird_present == true)
+            testing.expect(t, chair_present == false)
 
-            // Now let's change state of some entities and rerun filter for them
             movement = ecs.get_component(&movement_table, human)
-            movement.state = Character_State.Idle // human stopped moving
+            movement.state = Character_State.Idle
 
             movement = ecs.get_component(&movement_table, chair)
-            movement.state = Character_State.Sliding // chair started sliding for some reason
+            movement.state = Character_State.Sliding
 
             // Reset
             human_present = false
@@ -961,14 +956,12 @@ package ode_ecs__tests
                 }
             }
 
-            testing.expect(t, human_present == true) // human is walking
-            testing.expect(t, bird_present == true)  // bird is flying  
-            testing.expect(t, chair_present == false) // chair is idle
-            
-            // If we re-iterate again, view is not updated, we need to rerun filter for entities that changed
+            testing.expect(t, human_present == true)
+            testing.expect(t, bird_present == true)
+            testing.expect(t, chair_present == false)
+
             ecs.view__rerun_filter(&view, human)
 
-            // Rerun filter for all views that has this component and entity
             ecs.compact_table__rerun_views_filters(&movement_table, chair)
 
             // Reset
@@ -989,15 +982,14 @@ package ode_ecs__tests
                 }
             }
 
-            testing.expect(t, human_present == false) // human is walking
-            testing.expect(t, bird_present == true)  // bird is flying  
-            testing.expect(t, chair_present == true) // chair is idle
+            testing.expect(t, human_present == false)
+            testing.expect(t, bird_present == true)
+            testing.expect(t, chair_present == true)
     }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Deferred tail swap (pause_packing / resume_packing / pack)
 
-    // While paused, removals leave holes and move nothing; pack compacts them.
     @(test)
     compact_table__pause_packing__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -1033,39 +1025,34 @@ package ode_ecs__tests
         p1 := ecs.get_component(&positions, eids[1])
         p4 := ecs.get_component(&positions, eids[4])
 
-        // removing a middle entity leaves a hole, nothing moves
         testing.expect(t, ecs.remove_component(&positions, eids[2]) == nil)
-        testing.expect(t, ecs.table_len(&positions) == 5) // len is the row span, holes included
+        testing.expect(t, ecs.table_len(&positions) == 5)
         testing.expect(t, positions.holes_count == 1)
         testing.expect(t, ecs.has_component(&positions, eids[2]) == false)
-        testing.expect(t, ecs.get_entity(&positions, 2).ix == ecs.DELETED_INDEX) // hole marker
-        testing.expect(t, ecs.get_component(&positions, eids[1]) == p1) // stable
-        testing.expect(t, ecs.get_component(&positions, eids[4]) == p4) // stable (tail swap would have moved it)
+        testing.expect(t, ecs.get_entity(&positions, 2).ix == ecs.DELETED_INDEX)
+        testing.expect(t, ecs.get_component(&positions, eids[1]) == p1)
+        testing.expect(t, ecs.get_component(&positions, eids[4]) == p4)
         testing.expect(t, p4.x == 5)
-        testing.expect(t, ecs.view_len(&view) == 4) // views are still notified
+        testing.expect(t, ecs.view_len(&view) == 4)
 
-        // removing the tail row shrinks len without leaving a hole
         testing.expect(t, ecs.remove_component(&positions, eids[4]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 4)
         testing.expect(t, positions.holes_count == 1)
 
-        // removing the new tail absorbs the trailing hole at row 2 as well
         testing.expect(t, ecs.remove_component(&positions, eids[3]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 2)
         testing.expect(t, positions.holes_count == 0)
 
-        // punch a hole and pack explicitly (pack is usable mid-pause)
         testing.expect(t, ecs.remove_component(&positions, eids[0]) == nil)
         testing.expect(t, positions.holes_count == 1)
 
         testing.expect(t, ecs.pack(&positions) == nil)
         testing.expect(t, positions.holes_count == 0)
         testing.expect(t, ecs.table_len(&positions) == 1)
-        testing.expect(t, ecs.get_entity(&positions, 0) == eids[1]) // survivor moved into the hole
-        testing.expect(t, ecs.get_component(&positions, eids[1]).x == 2) // data moved with it
+        testing.expect(t, ecs.get_entity(&positions, 0) == eids[1])
+        testing.expect(t, ecs.get_component(&positions, eids[1]).x == 2)
         testing.expect(t, ecs.view_len(&view) == 1)
 
-        // pack propagated the new address to the view
         it: ecs.Iterator
         testing.expect(t, ecs.iterator_init(&it, &view) == nil)
         for ecs.iterator_next(&it) {
@@ -1073,14 +1060,11 @@ package ode_ecs__tests
             testing.expect(t, ecs.get_component(&positions, &it) == ecs.get_component(&positions, eids[1]))
         }
 
-        // normal tail-swap removal works after resume
         testing.expect(t, ecs.resume_packing(&db) == nil)
         testing.expect(t, ecs.remove_component(&positions, eids[1]) == nil)
         testing.expect(t, ecs.table_len(&positions) == 0)
     }
 
-    // Table-level pause: pausing the table directly defers only its own
-    // removals, independent of the database-wide flag.
     @(test)
     compact_table__pause_packing_standalone__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -1122,11 +1106,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_len(&positions) == 1)
     }
 
-    // Re-adding an existing component while the table is at capacity must
-    // report Component_Already_Exist, not Container_Is_Full — mirrors
-    // ecs_test.odin's add_component_at_cap_already_exists__test for Table,
-    // but Compact_Table's map-based insert path (rh_map32__get_or_insert) is
-    // structurally different code and was untested for this interaction.
     @(test)
     compact_table__add_at_cap_already_exists__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -1152,7 +1131,7 @@ package ode_ecs__tests
         _, err := ecs.add_component(&positions, e1)
         testing.expect(t, err == nil)
         _, err = ecs.add_component(&positions, e2)
-        testing.expect(t, err == nil) // table is now full
+        testing.expect(t, err == nil)
 
         p: ^Position
         p, err = ecs.add_component(&positions, e1)
@@ -1164,9 +1143,6 @@ package ode_ecs__tests
         testing.expect(t, p == nil)
     }
 
-    // A saved entity_id whose entity was later destroyed (stale generation,
-    // in-range index) must report Entity_Id_Expired directly from every
-    // Compact_Table op, not just through destroy_entity.
     @(test)
     compact_table__expired_entity_id__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -1196,9 +1172,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.has_component(&positions, eid) == false)
     }
 
-    // pause_packing -> resume_packing with zero holes accumulated, and
-    // pause_packing/resume_packing/pack on a terminated table reporting
-    // Object_Invalid rather than touching dead state.
     @(test)
     compact_table__pause_resume_edge_cases__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()

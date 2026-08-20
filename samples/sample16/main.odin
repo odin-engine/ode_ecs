@@ -37,12 +37,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -66,8 +65,7 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Setup: three guards, three VIPs. alpha protects both king and queen —
-    // many-to-many, unlike Relations_Table's one-parent tree.
+    // Setup
     //
         alpha, beta, gamma, king, queen, diplomat: ecs.entity_id
 
@@ -86,9 +84,7 @@ main :: proc() {
         if err != nil { report_error(err); return }
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Idempotent add: re-adding an existing (holder, target) pair is a no-op —
-    // the payload is NOT overwritten. beta has only one pair, so first_data
-    // below is guaranteed to be the (beta, king) row.
+    // Idempotent add
     //
         _, err = ecs.pair_add(&assignments, beta, king, Protection{priority=99})
         if err != nil { report_error(err); return }
@@ -99,9 +95,7 @@ main :: proc() {
         fmt.println("  beta's priority for king is still 1, not 99:", beta_data.priority)
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Queries: first_target/first_data are O(1) (head of the holder's linked
-    // list, most-recently-added — not a stable choice among several); targets_of
-    // is O(#pairs for that holder), returning every target at once.
+    // Queries
     //
         fmt.println()
         fmt.println("Queries:")
@@ -116,9 +110,7 @@ main :: proc() {
         fmt.println("  targets_of(alpha):", alpha_targets, "(king and queen)")
 
     ///////////////////////////////////////////////////////////////////////////////
-    // View integration: `presence` is a real Tag_Table with one row per holder
-    // that has >= 1 pair — {&assignments.presence} works directly in
-    // view_init's includes/excludes/any_of, zero extra View code.
+    // View integration
     //
         off_duty: ecs.Tag_Table
         err = ecs.tag_table__init(&off_duty, &db, 10)
@@ -131,19 +123,11 @@ main :: proc() {
         err = ecs.view_init(&on_duty, &db, {&assignments.presence}, excludes = {&off_duty})
         if err != nil { report_error(err); return }
 
-        // Pairs/tags already existed before on_duty was created, so populate it
-        // once (a view created up front would instead stay live automatically,
-        // as it does for the rest of this sample after this point).
         err = ecs.rebuild(&on_duty)
         if err != nil { report_error(err); return }
 
-        it: ecs.Iterator
-        err = ecs.iterator_init(&it, &on_duty)
-        if err != nil { report_error(err); return }
-
         alpha_on, beta_on, gamma_on := false, false, false
-        for ecs.next(&it) {
-            eid := ecs.get_entity(&it)
+        for eid in ecs.entities_slice(&on_duty) {
             if eid == alpha do alpha_on = true
             if eid == beta do beta_on = true
             if eid == gamma do gamma_on = true
@@ -155,11 +139,8 @@ main :: proc() {
         err = ecs.untag(&off_duty, gamma)
         if err != nil { report_error(err); return }
 
-        err = ecs.iterator_reset(&it)
-        if err != nil { report_error(err); return }
         alpha_on, beta_on, gamma_on = false, false, false
-        for ecs.next(&it) {
-            eid := ecs.get_entity(&it)
+        for eid in ecs.entities_slice(&on_duty) {
             if eid == alpha do alpha_on = true
             if eid == beta do beta_on = true
             if eid == gamma do gamma_on = true
@@ -168,12 +149,9 @@ main :: proc() {
         fmt.println("  alpha:", alpha_on, " beta:", beta_on, " gamma:", gamma_on)
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Automatic cleanup when a pair's target is destroyed — no explicit
-    // pair_remove call needed either way. destroy_entity walks only the
-    // destroyed entity's OWN pair rows (via the target-side linked list), so
-    // this costs nothing for entities that never appear in any Pair_Table.
+    // Automatic cleanup
     //
-        err = ecs.destroy_entity(&db, queen) // one of alpha's TWO targets
+        err = ecs.destroy_entity(&db, queen)
         if err != nil { report_error(err); return }
 
         fmt.println()
@@ -183,27 +161,21 @@ main :: proc() {
         if terr2 != nil { report_error(terr2); return }
         fmt.println("  targets_of(alpha):", alpha_targets2, "(king only now)")
 
-        err = ecs.iterator_reset(&it)
-        if err != nil { report_error(err); return }
         alpha_on = false
-        for ecs.next(&it) {
-            eid := ecs.get_entity(&it)
+        for eid in ecs.entities_slice(&on_duty) {
             if eid == alpha do alpha_on = true
         }
         fmt.println("  alpha still on_duty (still has a pair):", alpha_on)
 
-        err = ecs.destroy_entity(&db, diplomat) // gamma's ONLY target
+        err = ecs.destroy_entity(&db, diplomat)
         if err != nil { report_error(err); return }
 
         fmt.println()
         fmt.println("Destroyed diplomat (gamma's only target):")
         fmt.println("  has_any(gamma):", ecs.pair_has_any(&assignments, gamma))
 
-        err = ecs.iterator_reset(&it)
-        if err != nil { report_error(err); return }
         gamma_on = false
-        for ecs.next(&it) {
-            eid := ecs.get_entity(&it)
+        for eid in ecs.entities_slice(&on_duty) {
             if eid == gamma do gamma_on = true
         }
         fmt.println("  gamma auto-evicted from on_duty (no explicit pair_remove call):", !gamma_on)
@@ -211,12 +183,12 @@ main :: proc() {
     ///////////////////////////////////////////////////////////////////////////////
     // Explicit remove / remove_all.
     //
-        err = ecs.pair_remove(&assignments, alpha, king) // alpha's last remaining pair
+        err = ecs.pair_remove(&assignments, alpha, king)
         if err != nil { report_error(err); return }
         fmt.println()
         fmt.println("Removed alpha's last pair (king) -> has_any(alpha):", ecs.pair_has_any(&assignments, alpha))
 
-        err = ecs.pair_remove_all(&assignments, beta) // beta's only pair, via the bulk API
+        err = ecs.pair_remove_all(&assignments, beta)
         if err != nil { report_error(err); return }
         fmt.println("remove_all(beta) -> has_any(beta):", ecs.pair_has_any(&assignments, beta))
 

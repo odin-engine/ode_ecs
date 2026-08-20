@@ -1,49 +1,38 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
+    
+    | DEPRECATED | Prefer slice(&view, T) + entities_slice(&view) instead.
+
+    slice(&view, T) approach is about ~2x faster.
 */
 package ode_ecs
 
-// Base
-    import "base:runtime"
-// Core
-    import "core:mem"
-
 ///////////////////////////////////////////////////////////////////////////////
-// Iterator
+// Iterator (deprecated, prefer slice(&view, T) + entities_slice(&view) instead)
+
     Iterator :: struct {
         view: ^View,
-        
+
         start_row: int,
-        end_row: int, 
-        orig_end_row: int, 
+        end_row: int,
+        orig_end_row: int,
 
-        one_record_size: int, 
-        records_size: int,
-
-        // cache
         index: int,
-        raw_index: int,
-        view_row: View_Row,
 
-        // true when the whole view is dense-aligned: components of every Table(T) table
-        // read directly as table.rows[index], skipping per-row rid records. Per-column dense
-        // state was tried and measured ~60% slower (defeats the optimizer) — use slice() instead.
         dense: bool,
     }
 
-    // Use start_row and end_row if you want to process View in batches
     iterator__init :: proc(self: ^Iterator, view: ^View, start_row: int = 0, end_row: int = 0) -> (err: Error)  {
         when VALIDATIONS {
             assert(view != nil)
             assert(self != nil)
             assert(start_row >= 0)
-            assert(end_row <= len(view.rows))
+            assert(end_row <= view.len)
             assert(start_row <= end_row)
-            // Stale rows may reference destroyed entities / foreign table rows.
             assert(!view.stale, "view is stale (missed updates while suspended) — rebuild() it before iterating")
         }
-       
-        self.view = view 
+
+        self.view = view
         self.start_row = start_row
         self.orig_end_row = end_row
 
@@ -53,16 +42,12 @@ package ode_ecs
             self.end_row = end_row
         }
 
-        self.view_row.view = view
-
         return iterator__reset(self)
     }
 
     iterator__reset :: proc(self: ^Iterator) -> Error {
         if self.view == nil || self.view.state != Object_State.Normal {
             self.view = nil
-            self.raw_index = 0
-            self.records_size = 0
             self.dense = false
             return API_Error.Object_Invalid
         }
@@ -73,63 +58,41 @@ package ode_ecs
 
         self.dense = view__dense_resolve(self.view)
 
-        // orig_end_row == 0 means "track view_len()"
         if self.orig_end_row == 0 {
             self.end_row = view_len(self.view)
         } else {
-            // Explicit end_row: the view may have shrunk since init — clamp so
-            // the iterator never walks cleared rows past the current length.
             self.end_row = min(self.orig_end_row, view_len(self.view))
-            // A batch that now starts past the end is simply empty.
             if self.end_row < self.start_row do self.end_row = self.start_row
         }
 
         assert(self.start_row <= self.end_row)
 
-        self.one_record_size = self.view.one_record_size
-
         self.index = self.start_row - 1
-        self.raw_index = self.one_record_size * self.index
-        self.records_size = self.one_record_size * self.end_row
 
         return nil
     }
 
-    // NOTE: the iterator caches the view's length/dense-alignment at init/reset;
-    // structural changes while iterating are not reflected — call iterator_reset after them.
-    // On the dense fast path this fails SILENTLY: get_component reads table.rows[it.index]
-    // directly, so a mid-iteration swap/pack can return the wrong entity's component with no crash.
     iterator__next :: #force_inline proc "contextless" (self: ^Iterator) -> bool {
 
-        self.raw_index += self.one_record_size
         self.index += 1
 
-        if self.raw_index < self.records_size {
-            #no_bounds_check {
-                self.view_row.raw = (^View_Row_Raw)(&self.view.rows[self.raw_index])
-            }
-
+        if self.index < self.end_row {
             return true
-
         } else {
-            self.view_row.raw = nil 
             return false
         }
     }
 
     iterator__get_component_for_table :: #force_inline proc "contextless" (table: ^Table($T), it: ^Iterator) -> ^T #no_bounds_check {
         if it.dense {
-            // dense-aligned view: view row index == table row index
             #no_bounds_check {
                 return &table.rows[it.index]
             }
         }
-        return view_row__get_component_for_table(table, &it.view_row)
+        row := View_Row{view = it.view, row_ix = it.index}
+        return view__get_component_for_table(it.view, &row, table)
     }
 
-    // for-in sugar over Table($T) columns: for v1 in ecs.iterate(&it, &t1) { ... }.
-    // Same dense-fast-path getter as manual iterator_next+get_component, nothing new.
-    // Table-only — Compact_Table/Tiny_Table keep using the manual form.
     iterator__iterate1 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1)) -> (v1: ^T1, cond: bool) {
         cond = iterator__next(it)
         if cond {
@@ -138,7 +101,6 @@ package ode_ecs
         return
     }
 
-    // for-in sugar over two Table($T) columns: for v1, v2 in ecs.iterate(&it, &t1, &t2) { ... }.
     iterator__iterate2 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2)) -> (v1: ^T1, v2: ^T2, cond: bool) {
         cond = iterator__next(it)
         if cond {
@@ -148,7 +110,6 @@ package ode_ecs
         return
     }
 
-    // for-in sugar over three Table($T) columns: for v1, v2, v3 in ecs.iterate(&it, &t1, &t2, &t3) { ... }.
     iterator__iterate3 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3)) -> (v1: ^T1, v2: ^T2, v3: ^T3, cond: bool) {
         cond = iterator__next(it)
         if cond {
@@ -159,7 +120,6 @@ package ode_ecs
         return
     }
 
-    // for-in sugar over four Table($T) columns: for v1, v2, v3, v4 in ecs.iterate(&it, &t1, &t2, &t3, &t4) { ... }.
     iterator__iterate4 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1), t2: ^Table($T2), t3: ^Table($T3), t4: ^Table($T4)) -> (v1: ^T1, v2: ^T2, v3: ^T3, v4: ^T4, cond: bool) {
         cond = iterator__next(it)
         if cond {
@@ -171,10 +131,6 @@ package ode_ecs
         return
     }
 
-    // for-in sugar family over Table($T) columns: like iterate1..4 but also returns
-    // the entity id, extended to arity 7 (matching Arch_Iterator's next1..next7);
-    // preferred over iterate1..4 going forward. for eid, v1 in ecs.next(&it, &t1) { ... }
-    // 0-arg form (no table) is plain iterator__next: for ecs.next(&it) { eid := ecs.get_entity(&it) }.
     iterator__next1 :: #force_inline proc "contextless" (it: ^Iterator, t1: ^Table($T1)) -> (eid: entity_id, v1: ^T1, cond: bool) {
         cond = iterator__next(it)
         if cond {
@@ -260,20 +216,20 @@ package ode_ecs
     }
 
     iterator__get_component_for_compact_table :: #force_inline proc "contextless" (table: ^Compact_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
-        return view_row__get_component_for_compact_table(table, &it.view_row)
+        row := View_Row{view = it.view, row_ix = it.index}
+        return view__get_component_for_compact_table(it.view, &row, table)
     }
 
     iterator__get_component_for_tiny_table :: #force_inline proc "contextless" (table: ^Tiny_Table($T), it: ^Iterator) -> ^T #no_bounds_check {
-        return view_row__get_component_for_tiny_table(table, &it.view_row)
+        row := View_Row{view = it.view, row_ix = it.index}
+        return view__get_component_for_tiny_table(it.view, &row, table)
     }
 
-    // Arch_Table columns don't participate in it.dense (only Table_Type.Table can be
-    // Aligned) — always rid-indirection, like Compact_Table/Tiny_Table. Not part of
-    // iterator__next1..7 (Table($T)-only) — read manually: iterator_next(&it) + get_component(&arch, &it, T).
     iterator__get_component_for_arch_table :: #force_inline proc "contextless" (table: ^Arch_Table, it: ^Iterator, $T: typeid) -> ^T #no_bounds_check {
-        return view_row__get_component_for_arch_table(table, &it.view_row, T)
+        row := View_Row{view = it.view, row_ix = it.index}
+        return view__get_component_for_arch_table(it.view, &row, table, T)
     }
 
     iterator__get_entity :: #force_inline proc "contextless" (self: ^Iterator) -> entity_id {
-        return self.view_row.raw.eid
+        return self.view.rid_to_eid[self.index]
     }

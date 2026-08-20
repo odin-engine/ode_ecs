@@ -30,12 +30,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -90,20 +89,13 @@ main :: proc() {
             fmt.println("Entity tagged in `is_alive_table`:", eid)
         }
 
-        it: ecs.Iterator
-        err = ecs.iterator_init(&it, &view)
-        if err != nil { report_error(err); return }
-
-        eid : ecs.entity_id
         is_human_alive := false
         is_bird_alive := false
         is_chair_alive := false
 
-        for ecs.next(&it) {
-            eid = ecs.get_entity(&it)
-
+        for eid in ecs.entities_slice(&view) {
             if eid == human do is_human_alive = true
-            if eid == bird do is_bird_alive = true 
+            if eid == bird do is_bird_alive = true
             if eid == chair do is_chair_alive = true
         }
 
@@ -116,17 +108,13 @@ main :: proc() {
         ecs.untag(&is_alive_table, human)
         ecs.untag(&is_alive_table, chair)
 
-        ecs.iterator_reset(&it)
-
         is_human_alive = false
-        is_bird_alive = false  
+        is_bird_alive = false
         is_chair_alive = false
 
-        for ecs.next(&it) {
-            eid = ecs.get_entity(&it)
-
+        for eid in ecs.entities_slice(&view) {
             if eid == human do is_human_alive = true
-            if eid == bird do is_bird_alive = true 
+            if eid == bird do is_bird_alive = true
             if eid == chair do is_chair_alive = true
         }
 
@@ -144,8 +132,7 @@ main :: proc() {
         my_filter :: proc(row: ^ecs.View_Row, user_data: rawptr = nil)->bool {
             eid := ecs.get_entity(row)
 
-            // 0 is human, 1 is bird, 2 is chair
-            if eid.ix == 0 || eid.ix == 2 do return true 
+            if eid.ix == 0 || eid.ix == 2 do return true
 
             return false
         }
@@ -158,18 +145,13 @@ main :: proc() {
         ecs.add_tag(&is_alive_table, human)
         ecs.add_tag(&is_alive_table, chair)
 
-        err = ecs.iterator_init(&it, &view2)
-        if err != nil { report_error(err); return }
-
         is_human_alive = false
-        is_bird_alive = false  
+        is_bird_alive = false
         is_chair_alive = false
 
-        for ecs.next(&it) {
-            eid = ecs.get_entity(&it)
-
+        for eid in ecs.entities_slice(&view2) {
             if eid == human do is_human_alive = true
-            if eid == bird do is_bird_alive = true 
+            if eid == bird do is_bird_alive = true
             if eid == chair do is_chair_alive = true
         }
 
@@ -213,20 +195,13 @@ main :: proc() {
 
         ecs.rebuild(&view3)
 
-        it3: ecs.Iterator
-
-        err = ecs.iterator_init(&it3, &view3)
-        if err != nil { report_error(err); return }
-
         is_human_alive = false
-        is_bird_alive = false  
+        is_bird_alive = false
         is_chair_alive = false
 
-        for ecs.next(&it3) {
-            eid = ecs.get_entity(&it3)
-
+        for eid in ecs.entities_slice(&view3) {
             if eid == human do is_human_alive = true
-            if eid == bird do is_bird_alive = true 
+            if eid == bird do is_bird_alive = true
             if eid == chair do is_chair_alive = true
         }
 
@@ -255,7 +230,7 @@ main :: proc() {
             state: Character_State,
         }
 
-        movement_table : ecs.Tiny_Table(Movement) // you can use Table or Compact_Table as well
+        movement_table : ecs.Tiny_Table(Movement)
 
         err = ecs.tiny_table__init(&movement_table, &db)
         if err != nil { report_error(err); return } 
@@ -313,18 +288,14 @@ main :: proc() {
 
         err = ecs.rebuild(&view4)
         if err != nil { report_error(err); return }
-    
-        it4: ecs.Iterator
-
-        err = ecs.iterator_init(&it4, &view4)
-        if err != nil { report_error(err); return }
 
         fmt.println()
         fmt.println(ecs.view_len(&view4), "entities are moving (not idle):")
-        for ecs.next(&it4) {
-            eid = ecs.get_entity(&it4)
-
-            movement := ecs.get_component(&movement_table, &it4)
+        view4_eids := ecs.entities_slice(&view4)
+        view4_movement := ecs.slice(&view4, Movement)
+        for i in 0..<len(view4_eids) {
+            eid := view4_eids[i]
+            movement := view4_movement[i]
 
             switch eid {
                 case human: fmt.println("Human is", movement.state)
@@ -333,20 +304,19 @@ main :: proc() {
             }
         }
 
-        // Now let's change state of some entities and rerun filter for them
         movement = ecs.tiny_table__get_component_by_entity(&movement_table, human)
-        movement.state = Character_State.Idle // human stopped moving
+        movement.state = Character_State.Idle
 
         movement = ecs.tiny_table__get_component_by_entity(&movement_table, chair)
-        movement.state = Character_State.Sliding // chair started sliding for some reason
+        movement.state = Character_State.Sliding
 
         fmt.println()
         fmt.println("View is not updated:")
-        ecs.iterator_reset(&it4)
-        for ecs.next(&it4) {
-            eid = ecs.get_entity(&it4)
-
-            movement := ecs.get_component(&movement_table, &it4)
+        view4_eids = ecs.entities_slice(&view4)
+        view4_movement = ecs.slice(&view4, Movement)
+        for i in 0..<len(view4_eids) {
+            eid := view4_eids[i]
+            movement := view4_movement[i]
 
             switch eid {
                 case human: fmt.println("Human is", movement.state)
@@ -356,19 +326,17 @@ main :: proc() {
         }
 
 
-        // Re-iterating won't reflect the change; filters must be rerun explicitly.
         ecs.view__rerun_filter(&view4, human)
 
-        // Or rerun for every view watching this table, for a given entity
         ecs.tiny_table__rerun_views_filters(&movement_table, chair)
 
         fmt.println()
         fmt.println("Now view is updated after we rerun filters:")
-        ecs.iterator_reset(&it4)
-        for ecs.next(&it4) {
-            eid = ecs.get_entity(&it4)
-
-            movement := ecs.get_component(&movement_table, &it4)
+        view4_eids = ecs.entities_slice(&view4)
+        view4_movement = ecs.slice(&view4, Movement)
+        for i in 0..<len(view4_eids) {
+            eid := view4_eids[i]
+            movement := view4_movement[i]
 
             switch eid {
                 case human: fmt.println("Human is", movement.state)
@@ -379,7 +347,6 @@ main :: proc() {
 
     ///////////////////////////////////////////////////////////////////////////////
     // View excludes example: "has Movement but is NOT tagged in is_alive_table".
-    // Unlike a filter proc, excludes are auto-maintained — no rerun needed.
     //
         view5: ecs.View
 
@@ -389,15 +356,9 @@ main :: proc() {
         err = ecs.rebuild(&view5)
         if err != nil { report_error(err); return }
 
-        it5: ecs.Iterator
-
         fmt.println()
         fmt.println("Entities with Movement that are NOT tagged alive (all three are tagged, so none):")
-        err = ecs.iterator_init(&it5, &view5)
-        if err != nil { report_error(err); return }
-        for ecs.next(&it5) {
-            eid = ecs.get_entity(&it5)
-
+        for eid in ecs.entities_slice(&view5) {
             switch eid {
                 case human: fmt.println("Human")
                 case bird:  fmt.println("Bird")
@@ -405,17 +366,12 @@ main :: proc() {
             }
         }
 
-        // Untag chair — it loses the excluded tag, so it enters the view automatically
         err = ecs.untag(&is_alive_table, chair)
         if err != nil { report_error(err); return }
 
         fmt.println()
         fmt.println("After untagging chair (auto-updated, no rebuild):")
-        err = ecs.iterator_reset(&it5)
-        if err != nil { report_error(err); return }
-        for ecs.next(&it5) {
-            eid = ecs.get_entity(&it5)
-
+        for eid in ecs.entities_slice(&view5) {
             switch eid {
                 case human: fmt.println("Human")
                 case bird:  fmt.println("Bird")
@@ -425,8 +381,6 @@ main :: proc() {
 
     ///////////////////////////////////////////////////////////////////////////////
     // View any_of example (OR): "has Movement AND (is flying OR is heavy)".
-    // Like excludes, any_of is auto-maintained — losing only ONE matching tag
-    // does not evict a member that still matches through another.
     //
         is_flying_table: ecs.Tag_Table
         is_heavy_table:  ecs.Tag_Table
@@ -445,20 +399,12 @@ main :: proc() {
         err = ecs.view_init(&view6, &db, {&movement_table}, any_of = {&is_flying_table, &is_heavy_table})
         if err != nil { report_error(err); return }
 
-        // Entities/tags already existed before view6 was created, so populate it once
-        // (a view created up front would instead stay live automatically).
         err = ecs.rebuild(&view6)
         if err != nil { report_error(err); return }
 
-        it6: ecs.Iterator
-
         fmt.println()
         fmt.println("Entities with Movement that are flying or heavy (bird flies, chair is heavy):")
-        err = ecs.iterator_init(&it6, &view6)
-        if err != nil { report_error(err); return }
-        for ecs.next(&it6) {
-            eid = ecs.get_entity(&it6)
-
+        for eid in ecs.entities_slice(&view6) {
             switch eid {
                 case human: fmt.println("Human")
                 case bird:  fmt.println("Bird")
@@ -466,21 +412,15 @@ main :: proc() {
             }
         }
 
-        // Tag human heavy too — now human and chair share the "heavy" reason to match
         err = ecs.tag(&is_heavy_table, human)
         if err != nil { report_error(err); return }
 
-        // Untag chair's ONLY matching any_of tag — it leaves the view; human and bird still match
         err = ecs.untag(&is_heavy_table, chair)
         if err != nil { report_error(err); return }
 
         fmt.println()
         fmt.println("After tagging human heavy and untagging chair (auto-updated, no rebuild):")
-        err = ecs.iterator_reset(&it6)
-        if err != nil { report_error(err); return }
-        for ecs.next(&it6) {
-            eid = ecs.get_entity(&it6)
-
+        for eid in ecs.entities_slice(&view6) {
             switch eid {
                 case human: fmt.println("Human")
                 case bird:  fmt.println("Bird")

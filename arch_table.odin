@@ -1,5 +1,9 @@
 /*
     2025 (c) Oleh, https://github.com/zm69
+
+    Arch_Table — true-SoA archetype table: N type-erased columns sharing one
+    eid_to_rid/rid_to_eid index; a row (every column) moves as a single unit
+    in one swap, unlike Group's N separate table_raw__swap_rows calls.
 */
 package ode_ecs
 
@@ -14,57 +18,45 @@ package ode_ecs
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Arch_Table — true-SoA archetype table: N type-erased columns sharing one
-// eid_to_rid/rid_to_eid index; a row (every column) moves as a single unit
-// in one swap, unlike Group's N separate table_raw__swap_rows calls.
-// Membership is whole-row, all-or-nothing (like Tag_Table, not per-component like Table).
+// Arch_Table
 //
 
-    // eid_to_rid value for "entity has no row in this archetype"
     @(private)
     ARCH_TABLE_NO_RID :: max(u32)
 
     Arch_Column :: struct {
         type_info: ^runtime.Type_Info,
-        rows: []byte, // cap * type_info.size bytes; row r at &rows[r*type_info.size], never length-hijacked
+        rows: []byte,
     }
 
     Arch_Table :: struct {
         using shared: Shared_Table,
 
-        columns: []Arch_Column,        // order == order of component_types passed to init
-        col_payload_offsets: []int,    // byte offset of each column inside one packed row payload (Command_Buffer)
+        columns: []Arch_Column,
+        col_payload_offsets: []int,
         payload_size: int,
 
-        rid_to_eid: []entity_id,       // shared across ALL columns, len == cap, always full length
-        eid_to_rid: []u32,             // shared across ALL columns, len == entities_cap; ARCH_TABLE_NO_RID when absent
+        rid_to_eid: []entity_id,
+        eid_to_rid: []u32,
 
-        len: int,                      // live row count [0, cap] — plain field, not a slice-length hijack: unlike
-                                        // Table (rows hijacked, rid_to_eid full-length), Arch_Table has only one shared index slice.
+        len: int,
 
-        owner: ^Group,                 // Group that owns this Arch_Table (at most one), nil when not owned
+        owner: ^Group,
 
         cap: int,
 
-        // Deferred tail swap (db.tail_swap_paused / self.pause_packing) hole bookkeeping.
-        // A hole is a row with rid_to_eid[rid].ix == DELETED_INDEX inside [0, len).
         holes_count: int,
-        first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
+        first_hole_rid: int,
 
-        // 1-entry memo for arch_table__column_index: repeated queries for the same
-        // component type (the common case — a View column or a system reading one
-        // type every row) skip the linear scan. last_col_type == nil means empty.
         last_col_type: typeid,
         last_col_idx: int,
 
-        // Sizes subscribers/subscribers_with_filter/subscribers_excluding/subscribers_any_of
-        // when they're lazily allocated on first attach.
         subscribers_cap: int,
 
         subscribers: oc.Dense_Arr(^View),
         subscribers_with_filter: oc.Dense_Arr(^View),
-        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table 
-        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table
+        subscribers_excluding: oc.Dense_Arr(^View),
+        subscribers_any_of: oc.Dense_Arr(^View),
     }
 
     arch_table__is_valid :: proc(self: ^Arch_Table) -> bool {
@@ -88,8 +80,8 @@ package ode_ecs
             assert(database__is_valid(db), loc = loc)
             assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
-            assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
-            assert(cap < int(max(u32)), loc = loc) // row ids must fit the u32 eid_to_rid index
+            assert(cap <= db.overbase.id_factory.cap, loc = loc)
+            assert(cap < int(max(u32)), loc = loc)
         }
 
         if len(component_types) == 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
@@ -158,15 +150,11 @@ package ode_ecs
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
 
-        // A group missing one of its owned tables is meaningless — invalidate it
-        // (it still owns its allocations; terminate it to release them).
         if self.owner != nil {
             self.owner.state = Object_State.Invalid
             self.owner = nil
         }
 
-        // Clear this table's bit from all entities: the id may be reused by a
-        // future table, and a stale bit would make destroy_entity fail on it.
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
 
         database__detach_table(self.db, self)
@@ -227,7 +215,6 @@ package ode_ecs
         return database__is_component_disabled(self.db, eid, self.id)
     }
 
-    // Memory usage in bytes
     arch_table__memory_usage :: proc(self: ^Arch_Table) -> int {
         total := size_of(self^)
 
@@ -251,19 +238,12 @@ package ode_ecs
     }
 
     @(private)
-    // Deferred packing check: a Group-owned table defers to the group's pause state
-    // (rows move in lock-step across owned tables); standalone checks db-wide/self flag.
     arch_table__is_packing_paused :: #force_inline proc "contextless" (self: ^Arch_Table) -> bool {
         if self.owner != nil do return group__is_packing_paused(self.owner)
         return shared_table__is_packing_paused(cast(^Shared_Table) self)
     }
 
     @(private)
-    // Column index for type T, -1 if absent. 1-entry memo hit skips the scan
-    // entirely (the common case: repeated queries for the same T — a View column
-    // read every row, or back-to-back get_component/dense_slice calls). Linear
-    // scan on miss — cheap for realistic archetype column counts, avoids the
-    // hidden allocation a map[typeid]int would need.
     arch_table__column_index :: proc "contextless" (self: ^Arch_Table, id: typeid) -> int {
         if id == self.last_col_type do return self.last_col_idx
 
@@ -278,13 +258,15 @@ package ode_ecs
     }
 
     @(private)
-    // Fast path for Arch_Iterator's nextN (col_idx resolved once, cached) — no
-    // per-row scan, no VALIDATIONS assert, so it can stay contextless.
     arch_table__component_ptr_by_col :: #force_inline proc "contextless" (self: ^Arch_Table, #any_int row: int, #any_int col_idx: int, $T: typeid) -> ^T #no_bounds_check {
         col := &self.columns[col_idx]
-        // size_of(T) is compile-time (unlike col.type_info.size), so the multiply
-        // folds into a constant shift — same trick as table_raw__rid_to_ptr_sized.
         return cast(^T) rawptr(uintptr(raw_data(col.rows)) + uintptr(row) * uintptr(size_of(T)))
+    }
+
+    @(private)
+    arch_table__component_rawptr_by_col :: #force_inline proc "contextless" (self: ^Arch_Table, #any_int row: int, #any_int col_idx: int) -> rawptr #no_bounds_check {
+        col := &self.columns[col_idx]
+        return rawptr(uintptr(raw_data(col.rows)) + uintptr(row) * uintptr(col.type_info.size))
     }
 
     @(require_results)
@@ -318,10 +300,8 @@ package ode_ecs
         }
     }
 
-    // One column's components as a contiguous slice, row order — archetype rows
-    // are already packed, so (unlike View's slice) no alignment check needed.
     @(require_results)
-    arch_table__dense_slice :: proc(self: ^Arch_Table, $T: typeid) -> []T {
+    arch_table__column_slice :: proc(self: ^Arch_Table, $T: typeid) -> []T {
         idx := arch_table__column_index(self, typeid_of(T))
         if idx < 0 do return nil
 
@@ -329,8 +309,10 @@ package ode_ecs
         return slice.from_ptr(cast(^T) raw_data(col.rows), self.len)
     }
 
-    // Adds a row for `eid` across every column (zero-initialized). All-or-
-    // nothing: there is no per-component add for a fixed archetype column set.
+    arch_table__entities_slice :: #force_inline proc "contextless" (self: ^Arch_Table) -> []entity_id {
+        return self.rid_to_eid[:self.len]
+    }
+
     arch_table__add_entity :: proc(self: ^Arch_Table, eid: entity_id, loc := #caller_location) -> (err: Error) {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -342,8 +324,6 @@ package ode_ecs
         rid := self.eid_to_rid[eid.ix]
 
         if rid != ARCH_TABLE_NO_RID {
-            // Notify subscribed views anyway — recovers view membership a previous add
-            // failed to register (e.g. view was at cap); same as table_raw__add_component_sized.
             for view in self.subscribers.items {
                 if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
             }
@@ -374,8 +354,6 @@ package ode_ecs
 
         self.len += 1
 
-        // Group maintenance: swap into the group prefix if the entity now has every
-        // owned component (deferred while tail swap paused). No pointer to re-derive here.
         if self.owner != nil do group__on_add(self.owner, eid)
 
         for view in self.subscribers.items {
@@ -391,8 +369,6 @@ package ode_ecs
         return nil
     }
 
-    // Allocates an entity id and its archetype row in one call. Rolls back the
-    // freshly allocated id if the row allocation fails (e.g. container full).
     @(require_results)
     arch_table__create_entity :: proc(self: ^Arch_Table, loc := #caller_location) -> (eid: entity_id, err: Error) {
         when VALIDATIONS {
@@ -411,8 +387,6 @@ package ode_ecs
         return eid, nil
     }
 
-    // Removes target_eid's row (every column) via one tail-swap across all
-    // columns — vs. N separate swaps for N Group-owned tables.
     arch_table__remove_entity :: proc(self: ^Arch_Table, target_eid: entity_id, loc := #caller_location) -> (err: Error) {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -426,17 +400,10 @@ package ode_ecs
         target_rid := self.eid_to_rid[target_eid.ix]
         if target_rid == ARCH_TABLE_NO_RID do return oc.Core_Error.Not_Found
 
-        // Fires before any mutation below (a whole row spans several columns, so
-        // there's no single pointer to hand back — `data` stays nil).
         database__notify_observers(self.db, .Arch_Entity_Removed, target_eid, table_id = self.id)
 
-        // Cached once: nothing between here and the deferred-tail-swap check
-        // below changes the pause state.
         paused := arch_table__is_packing_paused(self)
 
-        // Group maintenance: losing an owned component evicts the member — swap its
-        // row out of the prefix before this table's tail swap runs (members sit at
-        // rid < owner.len). Paused: mark dirty and rebuild on resume instead of moving rows.
         if self.owner != nil && int(target_rid) < self.owner.len {
             if paused {
                 self.owner.dirty = true
@@ -446,8 +413,6 @@ package ode_ecs
             }
         }
 
-        // Deferred tail swap: clear every column's row in place, leaving a
-        // hole. Nothing moves, so component pointers stay stable while iterating.
         if paused {
             self.eid_to_rid[target_eid.ix] = ARCH_TABLE_NO_RID
             self.rid_to_eid[target_rid].ix = DELETED_INDEX
@@ -460,7 +425,6 @@ package ode_ecs
 
             if int(target_rid) == self.len - 1 {
                 self.len -= 1
-                // absorb trailing holes so they never need packing
                 for self.len > 0 && is_not_set(self.rid_to_eid[self.len - 1]) {
                     self.len -= 1
                     self.holes_count -= 1
@@ -501,8 +465,6 @@ package ode_ecs
             tail_eid := self.rid_to_eid[tail_rid]
             when VALIDATIONS do assert(!is_not_set(tail_eid))
 
-            // Move every column's tail row into the hole in ONE pass — a single
-            // swap for the whole archetype row instead of one swap per column.
             for &col in self.columns {
                 elem_size := col.type_info.size
                 dst := rawptr(uintptr(raw_data(col.rows)) + uintptr(target_rid) * uintptr(elem_size))
@@ -537,7 +499,6 @@ package ode_ecs
         return nil
     }
 
-    // Compact holes left by removals made while tail swap was paused. Callable mid-pause too.
     arch_table__pack :: proc(self: ^Arch_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -553,17 +514,14 @@ package ode_ecs
         back := self.len - 1
 
         for self.holes_count > 0 {
-            // shrink span past trailing holes
             for back >= 0 && is_not_set(self.rid_to_eid[back]) {
                 back -= 1
                 self.holes_count -= 1
             }
             if self.holes_count <= 0 do break
 
-            // next hole from the front; guaranteed to exist below back
             for !is_not_set(self.rid_to_eid[front]) do front += 1
 
-            // move the last live row's every column into the hole, one pass
             for &col in self.columns {
                 elem_size := col.type_info.size
                 dst := rawptr(uintptr(raw_data(col.rows)) + uintptr(front) * uintptr(elem_size))
@@ -593,8 +551,6 @@ package ode_ecs
         return nil
     }
 
-    // Pause tail swapping for this table only, independent of the
-    // database-wide pause_packing.
     arch_table__pause_packing :: proc(self: ^Arch_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -606,7 +562,6 @@ package ode_ecs
         return nil
     }
 
-    // Resume tail swapping for this table and pack the holes it accumulated.
     arch_table__resume_packing :: proc(self: ^Arch_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -627,7 +582,6 @@ package ode_ecs
 
         slice.fill(self.eid_to_rid, ARCH_TABLE_NO_RID)
 
-        // an empty owned table means no entity can match the owner group
         if self.owner != nil {
             self.owner.len = 0
             self.owner.dirty = false
@@ -645,9 +599,6 @@ package ode_ecs
     }
 
     @(private)
-    // Swaps two live rows (all columns + both index directions) and notifies
-    // subscribed views. One call moves the whole archetype row — contrast with
-    // Group's one table_raw__swap_rows call per owned table.
     arch_table__swap_rows :: proc(self: ^Arch_Table, #any_int rid_a: int, #any_int rid_b: int) #no_bounds_check {
         if rid_a == rid_b do return
 
@@ -677,9 +628,6 @@ package ode_ecs
     }
 
     @(private)
-    // Type-erased add for Command_Buffer replay — `data`, if not nil, is a packed
-    // payload blob laid out per col_payload_offsets. "Last write wins": overwrites
-    // an existing row instead of dropping it; membership notify already ran in arch_table__add_entity.
     arch_table__add_entity_from_payload :: proc(self: ^Arch_Table, eid: entity_id, data: rawptr) -> (component: rawptr, err: Error) {
         aerr := arch_table__add_entity(self, eid)
         if aerr != nil && aerr != API_Error.Component_Already_Exist do return nil, aerr
@@ -726,7 +674,7 @@ package ode_ecs
         if err != nil do return err
 
         err = oc.dense_arr__remove_by_value(&self.subscribers_with_filter, view)
-        if err == oc.Core_Error.Not_Found do return nil // not found is ok, it means view has no filter
+        if err == oc.Core_Error.Not_Found do return nil
         return err
     }
 
@@ -757,8 +705,6 @@ package ode_ecs
     }
 
     @(private)
-    // A view excluding this table may newly match after a component removal here.
-    // Skipped mid-destroy (later removals would just evict it again).
     arch_table__notify_excluding_views :: #force_inline proc(self: ^Arch_Table, eid: entity_id) {
         if self.db.destroying_eid_ix == eid.ix do return
         for view in self.subscribers_excluding.items {

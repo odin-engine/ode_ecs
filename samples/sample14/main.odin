@@ -11,7 +11,8 @@
 
     This sample shows:
     1. Basic Arch_Table usage: init, whole-row create/add/remove, get_component,
-       and iterating with Arch_Iterator's ecs.next(&it, T1, T2, ...) sugar.
+       and iterating with slice(&units) + slice(&units, T) — the same
+       entities_slice + column_slice idiom used for View.
     2. Mixing an Arch_Table into a View alongside a regular Table.
     3. Mixing an Arch_Table into a Group alongside a regular Table.
 */
@@ -44,12 +45,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -71,9 +71,6 @@ main :: proc() {
     ///////////////////////////////////////////////////////////////////////////////
     // Part 1: Arch_Table basics
     //
-    // units holds Position AND Velocity in one struct — no per-component
-    // add/remove, an entity either has the whole row or none of it.
-    //
         fmt.println("=== Part 1: Arch_Table basics ===")
         fmt.println()
 
@@ -81,8 +78,6 @@ main :: proc() {
         err = ecs.arch_table__init(&units, &db, cap = 100, component_types = {Position, Velocity})
         if err != nil { report_error(err); return }
 
-        // ecs.create_entity(&units) allocates the entity id AND its archetype
-        // row in one call
         eids: [5]ecs.entity_id
         for i in 0..<5 {
             eids[i], err = ecs.create_entity(&units)
@@ -99,22 +94,18 @@ main :: proc() {
 
         fmt.println("units row count:", ecs.table_len(&units))
 
-        // Arch_Iterator + the ecs.next(&it, T1, T2, ...) sugar: types are bound
-        // once at arch_iterator_init, then supplied again per next() call (up
-        // to 7 columns). Column indices are resolved once and cached.
-        it: ecs.Arch_Iterator
-        err = ecs.arch_iterator_init(&it, &units)
-        if err != nil { report_error(err); return }
+        eids_col := ecs.slice(&units)
+        pos_col := ecs.slice(&units, Position)
+        vel_col := ecs.slice(&units, Velocity)
 
         fmt.println()
-        fmt.println("Iterating units with Arch_Iterator (one movement step):")
-        for eid, pos, vel in ecs.next(&it, Position, Velocity) {
-            pos.x += vel.dx
-            pos.y += vel.dy
-            fmt.println("  entity", eid, "pos =", pos^)
+        fmt.println("Iterating units with slice(&units) + slice(&units, T) (one movement step):")
+        for i in 0..<len(eids_col) {
+            pos_col[i].x += vel_col[i].dx
+            pos_col[i].y += vel_col[i].dy
+            fmt.println("  entity", eids_col[i], "pos =", pos_col[i])
         }
 
-        // whole-row remove: eids[2] leaves the archetype entirely
         err = ecs.arch_table__remove_entity(&units, eids[2])
         if err != nil { report_error(err); return }
         fmt.println()
@@ -124,11 +115,6 @@ main :: proc() {
     ///////////////////////////////////////////////////////////////////////////////
     // Part 2: Mixing an Arch_Table into a View, alongside a regular Table
     //
-    // View membership works the same regardless of table kind: an entity
-    // needs a row in every included table. Arch_Table columns are read
-    // manually (iterator_next + get_component(&arch, &it, $T)) since they are
-    // not part of the Table($T)-only ecs.iterate/ecs.next(&it, &t1, ...) sugar.
-    //
         fmt.println()
         fmt.println("=== Part 2: Arch_Table mixed into a View ===")
         fmt.println()
@@ -137,8 +123,6 @@ main :: proc() {
         err = ecs.table_init(&healths, &db, 100)
         if err != nil { report_error(err); return }
 
-        // give Health to a subset of the surviving units (0, 1, 3) so the view
-        // (Health AND units) only matches those
         idx_with_health := [3]int{0, 1, 3}
         for i in idx_with_health {
             h: ^Health
@@ -152,32 +136,21 @@ main :: proc() {
         err = ecs.view_init(&view, &db, {&healths, &units})
         if err != nil { report_error(err); return }
 
-        // Health and units rows already existed before the view was created,
-        // so it needs one explicit rebuild to pick them up — a view created
-        // BEFORE its data exists stays up to date automatically from then on.
         err = ecs.rebuild(&view)
         if err != nil { report_error(err); return }
 
         fmt.println("View size (Health AND units):", ecs.view_len(&view))
 
-        view_it: ecs.Iterator
-        err = ecs.iterator_init(&view_it, &view)
-        if err != nil { report_error(err); return }
+        view_health_slice := ecs.slice(&view, Health)
+        view_pos_slice := ecs.slice(&view, Position)
+        view_eids := ecs.entities_slice(&view)
 
-        for ecs.next(&view_it) {
-            eid := ecs.get_entity(&view_it)
-            h := ecs.get_component(&healths, &view_it)
-            pos := ecs.get_component(&units, &view_it, Position)
-            fmt.println("  entity", eid, "hp =", h.hp, "pos =", pos^)
+        for i in 0..<len(view_health_slice) {
+            fmt.println("  entity", view_eids[i], "hp =", view_health_slice[i].hp, "pos =", view_pos_slice[i]^)
         }
 
     ///////////////////////////////////////////////////////////////////////////////
     // Part 3: Mixing an Arch_Table into a Group, alongside a regular Table
-    //
-    // A Group can own a mix of Table and Arch_Table: an Arch_Table's whole row
-    // counts as membership in every one of its columns at once, and a single
-    // arch_table__swap_rows call moves every owned column together — compare
-    // with owning N separate Tables, which pays one swap per owned column.
     //
         fmt.println()
         fmt.println("=== Part 3: Arch_Table mixed into a Group ===")
@@ -195,11 +168,10 @@ main :: proc() {
 
         fmt.println("Group slices (aligned — index i is the same entity in all three):")
         for i in 0..<ecs.group_len(&group) {
-            eid := ecs.get_entity(&healths, i) // any owned table agrees on the entity at row i
+            eid := ecs.get_entity(&healths, i)
             fmt.println("  entity", eid, "hp =", health_slice[i].hp, "pos =", pos_slice[i], "vel =", vel_slice[i])
         }
 
-        // removing the entity's row from either owned table leaves the group
         err = ecs.arch_table__remove_entity(&units, eids[1])
         if err != nil { report_error(err); return }
         fmt.println()

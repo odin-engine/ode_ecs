@@ -18,8 +18,6 @@ package ode_ecs__tests
     Dense_Pos :: struct { x, y: f64 }
     Dense_Vel :: struct { x, y: f64 }
 
-    // Oracle: for every view row, the component returned through the iterator must be
-    // the exact same address as the table's own eid -> component lookup.
     dense__verify_view :: proc(t: ^testing.T, view: ^ecs.View, pos: ^ecs.Table(Dense_Pos), vel: ^ecs.Table(Dense_Vel)) {
         it: ecs.Iterator
         testing.expect(t, ecs.iterator_init(&it, view) == nil)
@@ -56,7 +54,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_init(&vel, &db, 100) == nil)
         testing.expect(t, ecs.view_init(&view, &db, {&pos, &vel}) == nil)
 
-        // Same add order for both tables => everything stays aligned
         for i in 0..<50 {
             eid, _ := ecs.create_entity(&db)
             p, _ := ecs.add_component(&pos, eid); p^ = { f64(i), 0 }
@@ -80,8 +77,6 @@ package ode_ecs__tests
         testing.expect(t, ecs.table_init(&vel, &db, 100) == nil)
         testing.expect(t, ecs.view_init(&view, &db, {&pos, &vel}) == nil)
 
-        // Add velocities in reverse order first, then positions in forward order:
-        // vel rows end up reversed relative to view rows => misaligned.
         eids: [20]ecs.entity_id
         for i in 0..<20 do eids[i], _ = ecs.create_entity(&db)
 
@@ -95,12 +90,9 @@ package ode_ecs__tests
         dense__verify_view(t, &view, &pos, &vel)
         testing.expect(t, view.dense_state == ecs.View_Dense_State.Misaligned, "reversed add order must be detected as misaligned")
 
-        // Alignment is per column: view rows follow the pos add order, so the pos column
-        // is still dense while the reversed vel column is not.
-        testing.expect(t, ecs.slice(&view, &pos) != nil, "pos column follows view row order and should stay sliceable")
-        testing.expect(t, ecs.slice(&view, &vel) == nil, "reversed vel column must not be sliceable")
+        testing.expect(t, view.dense_cols[view.tid_to_cid[pos.id]] == ecs.View_Dense_State.Aligned, "pos column follows view row order and should stay aligned")
+        testing.expect(t, view.dense_cols[view.tid_to_cid[vel.id]] == ecs.View_Dense_State.Misaligned, "reversed vel column must lose alignment")
 
-        // Values must come from the right entity
         it: ecs.Iterator
         testing.expect(t, ecs.iterator_init(&it, &view) == nil)
         for ecs.iterator_next(&it) {
@@ -130,14 +122,10 @@ package ode_ecs__tests
             v, _ := ecs.add_component(&vel, eids[i]); v^ = { f64(i), 0 }
         }
 
-        // Removing only Position (entity keeps Velocity) breaks alignment permanently:
-        // pos table tail-swaps but vel table does not.
         testing.expect(t, ecs.remove_component(&pos, eids[5]) == nil)
 
         dense__verify_view(t, &view, &pos, &vel)
 
-        // Full churn (both components removed via destroy) keeps tables aligned with each other
-        // after a rebuild.
         testing.expect(t, ecs.rebuild(&view) == nil)
         dense__verify_view(t, &view, &pos, &vel)
     }
@@ -164,7 +152,6 @@ package ode_ecs__tests
             v, _ := ecs.add_component(&vel, handles[i]); v^ = { f64(i), 0 }
         }
 
-        // Despawn+respawn churn with identical table membership preserves alignment
         cursor := 0
         for frame in 0..<50 {
             for k in 0..<20 {
@@ -203,42 +190,31 @@ package ode_ecs__tests
             v, _ := ecs.add_component(&vel, eids[i]); v^ = { f64(i), 0 }
         }
 
-        // Aligned: slices must line up with per-entity lookups
-        ps := ecs.slice(&view, &pos)
-        vs := ecs.slice(&view, &vel)
-        testing.expect(t, len(ps) == ecs.view_len(&view))
-        testing.expect(t, len(vs) == ecs.view_len(&view))
-        for i in 0..<len(ps) {
-            eid := ecs.get_entity(&pos, i)
-            testing.expect(t, &ps[i] == ecs.get_component(&pos, eid))
-            testing.expect(t, ps[i].x == vs[i].x, "slices of one view must be row-for-row the same entity")
-        }
+        dense__verify_view(t, &view, &pos, &vel)
+        testing.expect(t, view.dense_cols[view.tid_to_cid[pos.id]] == ecs.View_Dense_State.Aligned)
+        testing.expect(t, view.dense_cols[view.tid_to_cid[vel.id]] == ecs.View_Dense_State.Aligned)
 
-        // Table not in view => nil
-        testing.expect(t, ecs.slice(&view, &other) == nil)
+        other_has_column := int(other.id) < len(view.tid_to_cid) && view.tid_to_cid[other.id] != ecs.DELETED_INDEX
+        testing.expect(t, !other_has_column)
 
-        // Suspended => nil, resume recovers (rescan)
         ecs.suspend(&view)
-        testing.expect(t, ecs.slice(&view, &vel) == nil)
+        it: ecs.Iterator
+        testing.expect(t, ecs.iterator_init(&it, &view) == nil)
+        testing.expect(t, !it.dense, "suspended view must not use the dense fast path")
         ecs.resume(&view)
-        testing.expect(t, ecs.slice(&view, &vel) != nil)
+        testing.expect(t, ecs.iterator_init(&it, &view) == nil)
+        testing.expect(t, it.dense, "resumed, still-aligned view should recover the dense fast path")
 
-        // Misalign vel (single-component removal from pos): the pos table's tail swap
-        // mirrors the view's own tail swap, so the pos column stays aligned; the vel
-        // table did not move rows while the view did, so the vel column loses alignment.
         testing.expect(t, ecs.remove_component(&pos, eids[3]) == nil)
-        testing.expect(t, ecs.slice(&view, &pos) != nil, "pos column mirrors the view's tail swap and stays sliceable")
-        testing.expect(t, ecs.slice(&view, &vel) == nil, "vel column must lose alignment")
         dense__verify_view(t, &view, &pos, &vel)
+        testing.expect(t, view.dense_cols[view.tid_to_cid[pos.id]] == ecs.View_Dense_State.Aligned, "pos column mirrors the view's tail swap and stays aligned")
+        testing.expect(t, view.dense_cols[view.tid_to_cid[vel.id]] == ecs.View_Dense_State.Misaligned, "vel column must lose alignment")
 
-        // Rebuild follows one table's row order: that column realigns, the other cannot —
-        // the tables themselves are now misaligned with each other (pos tail-swapped,
-        // vel did not). Exactly one slice works; the record path stays correct either way.
         testing.expect(t, ecs.rebuild(&view) == nil)
-        ps_rebuilt := ecs.slice(&view, &pos)
-        vs_rebuilt := ecs.slice(&view, &vel)
-        testing.expect(t, (ps_rebuilt != nil) != (vs_rebuilt != nil), "exactly one column can realign after rebuild")
         dense__verify_view(t, &view, &pos, &vel)
+        pos_aligned := view.dense_cols[view.tid_to_cid[pos.id]] == ecs.View_Dense_State.Aligned
+        vel_aligned := view.dense_cols[view.tid_to_cid[vel.id]] == ecs.View_Dense_State.Aligned
+        testing.expect(t, pos_aligned != vel_aligned, "exactly one column can realign after rebuild")
     }
 
     @(test)
@@ -265,7 +241,7 @@ package ode_ecs__tests
         for step in 0..<2000 {
             op := rand.int_max(10)
 
-            if op < 5 || len(alive) == 0 { // create with random subset of components
+            if op < 5 || len(alive) == 0 {
                 if len(alive) < N - 1 {
                     eid, err := ecs.create_entity(&db)
                     if err == nil {
@@ -275,11 +251,11 @@ package ode_ecs__tests
                         append(&alive, eid)
                     }
                 }
-            } else if op < 8 { // destroy random entity
+            } else if op < 8 {
                 i := rand.int_max(len(alive))
                 ecs.destroy_entity(&db, alive[i])
                 unordered_remove(&alive, i)
-            } else { // remove a single component from a random entity
+            } else {
                 i := rand.int_max(len(alive))
                 eid := alive[i]
                 if op == 8 do ecs.remove_component(&pos, eid)

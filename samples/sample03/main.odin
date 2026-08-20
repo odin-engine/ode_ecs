@@ -74,13 +74,10 @@ package ode_ecs_sample3
 
     physical: ecs.View
 
-    // Owns the same 6 tables as `physical` — enforced alignment instead of detected. See docs/group.md.
     physical_group: ecs.Group
 
-    // All possible components combinations for generating random entities
     g_combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
 
-    // Real archetype table, for comparison against the View approach above
     arch: ecs.Arch_Table
 
 //
@@ -95,12 +92,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -143,30 +139,24 @@ main :: proc() {
         err = ecs.view_init(&physical, &db, {&positions, &comps_1, &comps_2, &comps_3, &comps_4, &physics})
         if err != nil { report_error(err); return }
 
-        // Same 6 tables as `physical` — a table can be owned by a Group and included in a View at once (see Sample14)
         err = ecs.group_init(&physical_group, &db, {&positions, &comps_1, &comps_2, &comps_3, &comps_4, &physics})
         if err != nil { report_error(err); return }
 
-        // Same 6 types as `physical`/`physical_group`; iteration below only reads Position/Physical,
-        // and since Arch_Table stores columns SoA, the other 4 columns cost nothing extra to skip.
         err = ecs.arch_table__init(&arch, &db, cap = 100_000, component_types = {Position, Component, Component_2, Component_3, Component_4, Physical})
         if err != nil { report_error(err); return }
 
     //
     // Systems
         iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
-            err: ecs.Error
-            it: ecs.Iterator
+            pos_slice := ecs.slice(view, Position)
+            ph_slice := ecs.slice(view, Physical)
 
-            err = ecs.iterator_init(&it, view)
-            if err != nil { report_error(err); return }
+            for i in 0..<len(pos_slice) {
+                pos_slice[i].x += i
+                pos_slice[i].y += i
 
-            for _, pos, ph in ecs.next(&it, positions, physics) {
-                pos.x += it.raw_index
-                pos.y += it.raw_index
-
-                ph.velocity += cast(f32) it.raw_index
-                ph.mass += cast(f32) it.raw_index
+                ph_slice[i].velocity += cast(f32) i
+                ph_slice[i].mass += cast(f32) i
             }
         }
 
@@ -177,23 +167,19 @@ main :: proc() {
         }
 
         iterate_over_archetype :: proc(arch: ^ecs.Arch_Table) {
-            err: ecs.Error
-            it: ecs.Arch_Iterator
+            pos_slice := ecs.slice(arch, Position)
+            ph_slice := ecs.slice(arch, Physical)
 
-            err = ecs.arch_iterator_init(&it, arch)
-            if err != nil { report_error(err); return }
+            for i in 0..<len(pos_slice) {
+                pos_slice[i].x += i
+                pos_slice[i].y += i
 
-            for _, pos, ph in ecs.next(&it, Position, Physical) {
-                pos.x += it.index
-                pos.y += it.index
-
-                ph.velocity += cast(f32) it.index
-                ph.mass += cast(f32) it.index
+                ph_slice[i].velocity += cast(f32) i
+                ph_slice[i].mass += cast(f32) i
             }
         }
 
         iterate_over_group :: proc(group: ^ecs.Group, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
-            // Alignment is enforced by the Group, not detected — no check, no unaligned fallback needed
             pos_slice := ecs.slice(group, positions)
             ph_slice := ecs.slice(group, physics)
 
@@ -331,8 +317,6 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
                 case 1:
                     pos, err = ecs.add_component(&positions, eid)
                     if err != nil { report_error(err); fmt.println(eid); return }
-                    // pos.x = int(rand.int63()) % 1920
-                    // pos.y = int(rand.int63()) % 1080
                     pos.x = i * j
                     pos.y = i
                 case 2:
@@ -392,7 +376,7 @@ destroy_entities_in_range :: proc(start_ix, end_ix: int) {
 
 //////////////////////////////////////////////////////////////////////////////////
 // Time tracking
-    EXECUTE_TIMES :: 10
+    EXECUTE_TIMES :: 200
 
     Time_Track :: struct {
         table: [EXECUTE_TIMES] int,

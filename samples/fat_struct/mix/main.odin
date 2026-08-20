@@ -124,8 +124,11 @@ package ode_ecs_fat_struct_mix
     // Cold loop — get_entity + world_entity replaces the manual owner_id
     // back-reference field.
     update_inventories :: proc(world: ^World, inventories: ^ecs.Compact_Table(Inventory)) {
-        for &inv, index in ecs.slice(inventories) {
-            owner := world_entity(world, ecs.get_entity(inventories, index))
+        dense := ecs.slice(inventories)
+        entities := ecs.entities_slice(inventories)
+        for i in 0..<len(dense) {
+            inv := &dense[i]
+            owner := world_entity(world, entities[i])
 
             if inv.gold > 0 {
                 // Process owner-specific inventory logic
@@ -136,8 +139,11 @@ package ode_ecs_fat_struct_mix
 
     // Cold loop — same pattern; ai.target is resolved via world_entity too.
     update_ai :: proc(world: ^World, ais: ^ecs.Compact_Table(AI_State)) {
-        for &ai, index in ecs.slice(ais) {
-            owner  := world_entity(world, ecs.get_entity(ais, index))
+        dense := ecs.slice(ais)
+        entities := ecs.entities_slice(ais)
+        for i in 0..<len(dense) {
+            ai := &dense[i]
+            owner  := world_entity(world, entities[i])
             target := world_entity(world, ai.target)
 
             // Example logic: simple aggro-range check

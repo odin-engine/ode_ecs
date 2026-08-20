@@ -35,18 +35,14 @@ package ode_ecs_sample1
 // 
 // Globals
 // 
-    // ECS Database
     db: ecs.Database
 
-    // Component tables
     positions : ecs.Table(Position)
     ais : ecs.Table(AI)
     physics: ecs.Table(Physical)
 
-    // Views
     physical: ecs.View
 
-    // All possible components combinations for generating random entities
     g_combo_choice: [7][3]int = {{ 1, 2, 3 }, {1, 0, 0}, {2, 0, 0}, {3, 0, 0}, {1, 2, 0}, {1, 3, 0}, {2, 3, 0}}
 
 //
@@ -61,12 +57,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -99,18 +94,15 @@ main :: proc() {
     //
     // Systems
         iterate_over_view :: proc(view: ^ecs.View, positions: ^ecs.Table(Position), physics: ^ecs.Table(Physical)) {
-            err: ecs.Error
-            it: ecs.Iterator
+            pos_slice := ecs.slice(view, Position)
+            ph_slice := ecs.slice(view, Physical)
 
-            err = ecs.iterator_init(&it, view)
-            if err != nil { report_error(err); return }
+            for i in 0..<len(pos_slice) {
+                pos_slice[i].x += 34
+                pos_slice[i].y += 7
 
-            for _, pos, ph in ecs.next(&it, positions, physics) {
-                pos.x += 34
-                pos.y += 7
-
-                ph.velocity += 0.4
-                ph.mass += 0.1
+                ph_slice[i].velocity += 0.4
+                ph_slice[i].mass += 0.1
             }
         }
 
@@ -229,16 +221,12 @@ create_entities_with_random_components_and_data :: proc(number_of_components_to_
                 case 1:
                     pos, err = ecs.add_component(&positions, eid)
                     if err != nil { report_error(err); fmt.println(eid); return }
-                    // pos.x = int(rand.int63()) % 1920
-                    // pos.y = int(rand.int63()) % 1080
                 case 2:
                     ai, err = ecs.add_component(&ais, eid)
                     if err != nil { report_error(err); fmt.println(eid); return }
-                    // ai.neurons_count = int(rand.uint32()) % 400
                 case 3:
                     ph, err = ecs.add_component(&physics, eid)
                     if err != nil { report_error(err); return }
-                    // ph.mass = rand.float32_range(30, 100)
             }
 
         }

@@ -11,8 +11,9 @@
        structural changes (create/destroy/add/remove) in a single-threaded
        sync point. The parallel phase touches no shared mutable bookkeeping.
 
-    2. DATA-PARALLEL ITERATION — iterator_init(it, view, start_row, end_row)
-       exists precisely for processing a View in disjoint batches.
+    2. DATA-PARALLEL ITERATION — slice(&view, T) plus a manual index range
+       (start_row..<end_row, derived from the view's actual length) partitions
+       a View into disjoint batches, one per worker.
 
     3. ONE DATABASE PER THREAD — for fully independent workloads; databases
        share nothing.
@@ -48,39 +49,29 @@ package ode_ecs_sample11
 
     ENTITIES_COUNT :: 1000
     N_WORKERS :: 4
-    WORLD_BOUND :: 50.0 // entities crossing this are destroyed at the sync point
+    WORLD_BOUND :: 50.0
 
     Worker :: struct {
-        // read-only during the parallel phase
         view: ^ecs.View,
-        positions: ^ecs.Table(Position),
-        velocities: ^ecs.Table(Velocity),
-        start_row, end_row: int, // this worker's disjoint batch of view rows
+        start_row, end_row: int,
 
-        // owned exclusively by this worker
-        cb: ecs.Command_Buffer, // structural changes are recorded, not applied
+        cb: ecs.Command_Buffer,
         processed: int,
         out_of_bounds: int,
         err: ecs.Error,
     }
 
-    // The parallel phase. Every view row belongs to exactly one worker, so
-    // writing to a row's components is race-free. Reading shared state (the
-    // view, the tables' layout) is safe because nothing mutates it — all
-    // structural changes are deferred into per-worker command buffers.
     worker_proc :: proc(w: ^Worker) {
-        it: ecs.Iterator
-        w.err = ecs.iterator_init(&it, w.view, w.start_row, w.end_row)
-        if w.err != nil do return
+        pos_slice := ecs.slice(w.view, Position)
+        vel_slice := ecs.slice(w.view, Velocity)
+        eids := ecs.entities_slice(w.view)
 
-        for eid, pos, vel in ecs.next(&it, w.positions, w.velocities) {
-            pos.x += vel.dx
-            pos.y += vel.dy
+        for i in w.start_row..<w.end_row {
+            pos_slice[i].x += vel_slice[i].dx
+            pos_slice[i].y += vel_slice[i].dy
 
-            if pos.x > WORLD_BOUND {
-                // NOT ecs.destroy_entity — a structural change would mutate
-                // shared bookkeeping mid-iteration; record it instead
-                w.err = ecs.cmd_destroy_entity(&w.cb, eid)
+            if pos_slice[i].x > WORLD_BOUND {
+                w.err = ecs.cmd_destroy_entity(&w.cb, eids[i])
                 if w.err != nil do return
                 w.out_of_bounds += 1
             }
@@ -103,8 +94,6 @@ package ode_ecs_sample11
     }
 
     region_proc :: proc(r: ^Region) {
-        // This thread has a fresh default context; the database below lives
-        // and dies entirely on this thread.
         db: ecs.Database
         monsters: ecs.Table(Position)
 
@@ -123,7 +112,6 @@ package ode_ecs_sample11
             r.entities_created += 1
         }
 
-        // structural changes are fine here — no other thread can see this db
         for i := 0; i < 20; i += 4 {
             if ecs.destroy_entity(&db, eids[i]) != nil do return
             r.entities_destroyed += 1
@@ -142,13 +130,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator.
-        // Worker threads are unaffected: each starts with its own fresh default context.
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -198,19 +184,13 @@ main :: proc() {
         fmt.println("  entities in view:", ecs.view_len(&view))
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Split the view into disjoint batches, one per worker. Each worker also
-    // gets its own Command_Buffer — sized for the worst case: every entity of
-    // its batch destroyed.
     //
         workers: [N_WORKERS]Worker
 
         batch := ecs.view_len(&view) / N_WORKERS
         for &w, i in workers {
             w.view = &view
-            w.positions = &positions
-            w.velocities = &velocities
             w.start_row = i * batch
-            // last worker takes the remainder rows
             w.end_row = i == N_WORKERS - 1 ? ecs.view_len(&view) : (i + 1) * batch
 
             err = ecs.command_buffer_init(&w.cb, &db, commands_cap=batch*2, payload_cap=64)
@@ -224,9 +204,6 @@ main :: proc() {
     ///////////////////////////////////////////////////////////////////////////////
     // Parallel phase: compute only, no structural changes anywhere.
     //
-        // core:thread allocates the Thread handles from context.allocator,
-        // so restore the real allocator for the threading part of the sample
-        // (mem_track still verifies they are all freed by thread.destroy)
         context.allocator = allocator
 
         threads: [N_WORKERS]^thread.Thread
@@ -252,8 +229,6 @@ main :: proc() {
         fmt.println("  view untouched by the parallel phase:", ecs.view_len(&view) == ENTITIES_COUNT)
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Sync point: back on the main thread, apply all recorded structural
-    // changes. Only now do entities actually get destroyed.
     //
         for &w in workers {
             _, err = ecs.replay(&w.cb)
@@ -268,8 +243,6 @@ main :: proc() {
             ecs.view_len(&view) == ENTITIES_COUNT - total_recorded)
 
     ///////////////////////////////////////////////////////////////////////////////
-    // Part 2: one Database per thread — fully independent workloads, nothing
-    // shared, so no phases and no coordination are needed at all.
     //
         regions := [2]Region{ { name = "north" }, { name = "south" } }
 

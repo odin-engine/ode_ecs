@@ -31,9 +31,6 @@ main :: proc() {
 
     //
     // Init component tables
-    // 
-    // Tables/views are attached to a Database and auto-terminated with it, though manual termination is also possible.
-
     //
     positions : ecs.Table(Position)
     ais : ecs.Table(AI)
@@ -67,22 +64,23 @@ main :: proc() {
 
     //
     // Iterate over table
-    eid: ecs.entity_id
-    for &pos, index in ecs.slice(&positions) {
-        eid = ecs.get_entity(&positions, index)
+    pos_dense := ecs.slice(&positions)
+    pos_eids := ecs.entities_slice(&positions)
+    for i in 0..<len(pos_dense) {
+        eid := pos_eids[i]
         ai = ecs.get_component(&ais, eid)
 
-        fmt.println("Iterating over table: ", eid, pos, ai)
+        fmt.println("Iterating over table: ", eid, pos_dense[i], ai)
     }
 
     //
     // Iterate over view
-    it: ecs.Iterator
+    pos_slice := ecs.slice(&view, Position)
+    ai_slice := ecs.slice(&view, AI)
+    view_eids := ecs.entities_slice(&view)
 
-    ecs.iterator_init(&it, &view)
-
-    for eid, pos1, ai in ecs.next(&it, &positions, &ais) {
-        fmt.println("Iterating over view: ", eid, pos1, ai)
+    for i in 0..<len(pos_slice) {
+        fmt.println("Iterating over view: ", view_eids[i], pos_slice[i], ai_slice[i])
     }
 
     fmt.println("Total memory usage:", ecs.memory_usage(&my_ecs), "bytes")

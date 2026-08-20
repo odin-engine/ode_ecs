@@ -36,12 +36,11 @@ main :: proc() {
 
         context.allocator = oc.mem_track__init(&mem_track, context.allocator)
         defer oc.mem_track__terminate(&mem_track)
-        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track) // Defers run in reverse declaration order
+        defer oc.mem_track__panic_if_bad_frees_or_leaks(&mem_track)
 
         context.logger = log.create_console_logger()
         defer log.destroy_console_logger(context.logger)
 
-        // Panic allocator ensures no allocations happen outside the provided allocator
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
 
@@ -57,7 +56,6 @@ main :: proc() {
             err = ecs.terminate(&db)
             if err != nil do report_error(err)
         }
-        // Command_Buffer is not owned by the Database — terminate it yourself
         defer {
             err = ecs.command_buffer_terminate(&cb)
             if err != nil do report_error(err)
@@ -77,7 +75,6 @@ main :: proc() {
         err = ecs.view_init(&view, &db, {&positions, &healths})
         if err != nil { report_error(err); return }
 
-        // Preallocate the buffer: up to 64 commands, 1 KB of component payload
         err = ecs.command_buffer_init(&cb, &db, commands_cap=64, payload_cap=1024)
         if err != nil { report_error(err); return }
 
@@ -97,7 +94,7 @@ main :: proc() {
             health: ^Health
             health, err = ecs.add_component(&healths, eid)
             if err != nil { report_error(err); return }
-            health.hp = i % 3 == 0 ? 0 : 100 // entities 0 and 3 are at 0 hp
+            health.hp = i % 3 == 0 ? 0 : 100
         }
 
         fmt.println("Before replay:", ecs.view_len(&view), "entities in the view")
@@ -105,24 +102,19 @@ main :: proc() {
     ///////////////////////////////////////////////////////////////////////////////
     // Iterate the view and RECORD changes instead of applying them.
     //
-    // The database is untouched while recording, so the iterator stays valid.
-    // (create_entity is iteration-safe and stays immediate; only its components
-    // go through the buffer.)
-    //
         spawned: ecs.entity_id
 
-        it: ecs.Iterator
-        err = ecs.iterator_init(&it, &view)
-        if err != nil { report_error(err); return }
+        health_slice := ecs.slice(&view, Health)
+        view_eids := ecs.entities_slice(&view)
 
-        for eid, health in ecs.next(&it, &healths) {
-            // "kill" entities that are at 0 hp — deferred until replay
+        for i in 0..<len(health_slice) {
+            eid := view_eids[i]
+            health := health_slice[i]
+
             if health.hp <= 0 {
                 err = ecs.cmd_destroy_entity(&cb, eid)
                 if err != nil { report_error(err); return }
 
-                // spawn a replacement: the component value is copied into the
-                // buffer NOW and written into the table at replay
                 spawned, err = ecs.create_entity(&db)
                 if err != nil { report_error(err); return }
                 err = ecs.cmd_add_component(&cb, &positions, spawned, Position{ x = -1, y = -1 })
@@ -136,9 +128,6 @@ main :: proc() {
 
     ///////////////////////////////////////////////////////////////////////////////
     // Sync point: apply all commands in recorded order, then clear the buffer.
-    //
-    // replay returns how many commands were skipped (e.g. a command that
-    // targeted an entity destroyed by an earlier command).
     //
         skipped: int
         skipped, err = ecs.replay(&cb)

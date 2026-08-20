@@ -131,34 +131,35 @@ To iterate over components in a table, you can do this:
 Or this:  
 
 ```odin
-    dense := ecs.slice(&positions)
-    for i := 0; i < len(dense); i += 1 {
-        pos := &dense[i]
+    pos_slice := ecs.slice(&positions)
+    for i := 0; i < len(pos_slice); i += 1 {
+        pos := &pos_slice[i]
         fmt.println(pos^)
     }
 ```  
 
->**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in a live `slice`. Prefer `ecs.slice(&positions)` over reading the `rows` field directly (`positions.rows`) — they're the same data, but a raw field read inside a hot loop compiles worse: the optimizer can't prove a write through the loop's element pointer doesn't alias `positions` itself, so it conservatively reloads the `rows` pointer after every store. Returning the slice by value from a call sidesteps that. See `table__slice`'s doc comment in `table.odin` for the full explanation.
+>**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in a live `slice`. 
 
-You can get the `entity_id` by index during iteration over components:  
+You can get the row-aligned `entity_id`s alongside components with `entities_slice`:  
 
 ```odin
-    eid: ecs.entity_id
-    for &pos, index in ecs.slice(&positions) {
-        eid = ecs.get_entity(&positions, index)
-        fmt.println(eid, pos)
+    pos_slice := ecs.slice(&positions)
+    entities := ecs.entities_slice(&positions)
+    for i in 0..<len(pos_slice) {
+        fmt.println(entities[i], pos_slice[i])
     }
 ```  
 
 Using an entity, you can access its other components:  
 
 ```odin
-    eid: ecs.entity_id
     ai: ^AI // AI component
-    for &pos, index in ecs.slice(&positions) {
-        eid = ecs.get_entity(&positions, index)
+    pos_slice := ecs.slice(&positions)
+    entities := ecs.entities_slice(&positions)
+    for i in 0..<len(pos_slice) {
+        eid := entities[i]
         ai = ecs.get_component(&ais, eid) // assuming we have variable `ais: ecs.Table(AI)`
-        fmt.println(eid, pos, ai)
+        fmt.println(eid, pos_slice[i], ai)
     }
 ```
 Tables documentation is [here](/docs/tables.md).
@@ -191,46 +192,26 @@ At this point, the view might be empty because it tracks entities as they are cr
     ecs.rebuild(&view1)  // This operation might be relatively costly as it iterates over components
 ```  
 
-To iterate over views, you need to use an `Iterator`:  
+To iterate over a view, use `slice(&view, T)` to get each column as `[]^T` (live pointers, in view row order) and `entities_slice(&view)` or `slice(&view)` for the matching entity ids:
 
 ```odin
-    it: ecs.Iterator
+    pos_slice := ecs.slice(&view1, Position) // -> []^Position (slice of pointers to Position components)
+    ai_slice := ecs.slice(&view1, AI)   // -> []^AI
+    eids := ecs.entities_slice(&view1)  // or slice(&view1) without second parameter is the 
+                                        // same as ecs.entities_slice(&view1)
 
-    ecs.iterator_init(&it, &view1)
-
-    for ecs.next(&it) {
-        // ...
-    }
-```  
-
-To get an entity or its components inside the iterator loop, you can do this:  
-
-```odin
-    eid: ecs.entity_id
-    pos: ^Position // Position component
-    ai: ^AI        // AI component
-
-    for ecs.next(&it) {
-        // To get the entity
-        eid = ecs.get_entity(&it)
-
-        // To get the Position component
-        pos = ecs.get_component(&positions, &it)
-
-        // To get the AI component
-        ai = ecs.get_component(&ais, &it)
+    for i in 0..<len(pos_slice) {   
+        eid := eids[i]
+        pos := pos_slice[i]
+        ai := ai_slice[i]
 
         // ...
     }
 ```
 
-Or, as a one-liner with `ecs.next` — same `it`, `get_entity`/`get_component` fused into the `for` (Table-only columns, component counts 0-7; see [docs/view.md](/docs/view.md) for details):
+Instead of `len(pos_slice)` in the code snippet above, it can be `len(eids)`, `len(ai_slice)`, or `ecs.view_len(&view1)` — they should all return the same value.
 
-```odin
-    for eid, pos, ai in ecs.next(&it, &positions, &ais) {
-        // do something with eid, pos and ai
-    }
-```
+`slice(&view, T)` covers `Table`/`Compact_Table`/`Tiny_Table`/`Arch_Table` columns; see [docs/view.md](/docs/view.md) for details, including the back-compatibility `Iterator`.
 
 ### 🔎 View filters
 Read about View filters [here](/docs/view.md#filters).
@@ -340,7 +321,7 @@ Table-level and group-level pauses compose with (OR into) the database-wide paus
 
 ### 📃 Command_Buffer: record now, apply at a sync point
 
-Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component`, and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, dense slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
+Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component`, and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
 
 ```odin
 cb: ecs.Command_Buffer

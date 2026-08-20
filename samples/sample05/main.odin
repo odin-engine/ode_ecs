@@ -159,8 +159,11 @@ main :: proc() {
         time.stopwatch_reset(&sw) // NOTE: Stopwatch accumulates; reset before every measurement
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.slice(&table) {
-                eid = ecs.get_entity(&table, index)
+            table_dense := ecs.slice(&table)
+            table_eids := ecs.entities_slice(&table)
+            for i in 0..<len(table_dense) {
+                comp := &table_dense[i]
+                eid = table_eids[i]
 
                 comp.hp += eid.ix
                 comp.max_hp += eid.ix
@@ -176,8 +179,11 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.slice(&compact_table) {
-                eid = ecs.get_entity(&compact_table, index)
+            compact_table_dense := ecs.slice(&compact_table)
+            compact_table_eids := ecs.entities_slice(&compact_table)
+            for i in 0..<len(compact_table_dense) {
+                comp := &compact_table_dense[i]
+                eid = compact_table_eids[i]
 
                 comp.hp += eid.ix
                 comp.max_hp += eid.ix
@@ -193,8 +199,11 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.slice(&large_table) {
-                eid = ecs.get_entity(&large_table, index)
+            large_table_dense := ecs.slice(&large_table)
+            large_table_eids := ecs.entities_slice(&large_table)
+            for i in 0..<len(large_table_dense) {
+                comp := &large_table_dense[i]
+                eid = large_table_eids[i]
 
                 comp.hp += eid.ix
                 comp.max_hp += eid.ix
@@ -210,12 +219,15 @@ main :: proc() {
         time.stopwatch_reset(&sw)
         time.stopwatch_start(&sw)
 
-            for &comp, index in ecs.slice(&large_compact_table) {
-                eid = ecs.get_entity(&large_compact_table, index)
+            large_compact_table_dense := ecs.slice(&large_compact_table)
+            large_compact_table_eids := ecs.entities_slice(&large_compact_table)
+            for i in 0..<len(large_compact_table_dense) {
+                comp := &large_compact_table_dense[i]
+                eid = large_compact_table_eids[i]
 
                 comp.hp += eid.ix
                 comp.max_hp += eid.ix
-            }    
+            }
         
         time.stopwatch_stop(&sw)
         _, _, _, large_compact_table_time := time.precise_clock_from_stopwatch(sw)
