@@ -64,6 +64,30 @@ The slices are re-derived from the view's column storage each call — no alloca
 only valid until the next structural change (add/remove component, create/destroy entity); don't
 hold them across one.
 
+### Opt-in dense fast path: `slice(&view, &table)`
+
+`slice(&view, T)` always reads through the view's per-row pointer cache — one indirection per
+column per row, regardless of whether the underlying `Table`'s rows happen to be in the same
+order as the view's. When a `Table`'s member happens to be that lucky, `slice(&view, &table)`
+(note the `&`, a table *pointer* instead of a type) hands back the table's own `rows` directly —
+a real contiguous `[]T`, no indirection — or `nil` if that table isn't currently aligned to the
+view's row order:
+
+```odin
+if pos_dense := ecs.slice(&view, &positions); pos_dense != nil {
+    for &p in pos_dense { p.x += 1 }         // real dense array, fastest path
+} else {
+    pos_slice := ecs.slice(&view, Position)  // always works, one indirection/row
+    for p in pos_slice { p.x += 1 }
+}
+```
+
+Only ever applies to `Table` columns (not `Compact_Table`/`Tiny_Table`/`Arch_Table`, which have no
+single dense backing array the way `Table` does), can flip between calls as rows move, and returns
+`nil` unconditionally while the view is `suspend`ed. Check per table you care about — one column
+losing alignment doesn't affect another's. Reach for it in a hot loop where the branch-and-nil-check
+cost is worth paying for the fast case; `slice(&view, T)` alone is simpler and always valid.
+
 ### Batching (e.g. across threads)
 
 `slice(&view, T)` is a plain Odin slice, so splitting it into disjoint batches is plain index

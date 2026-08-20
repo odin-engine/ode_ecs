@@ -1,6 +1,11 @@
 # 🐑 Updates Timeline
 
 **August 2026**
+- **new** •  `slice(&view, &table)` — an opt-in dense fast path: hands back a `Table`'s real `[]T`
+  rows directly (no per-row pointer-cache indirection) when that table happens to be aligned to
+  the view's row order, `nil` otherwise. Restores, as a `slice()` overload, the fast path
+  `Iterator` used to reach internally via its own alignment check; see
+  [View: Opt-in dense fast path](/docs/view.md#opt-in-dense-fast-path-slice-view-table).
 - **new** •  `entities_slice(&table)` now works on `Table`/`Compact_Table`/`Tiny_Table`/`Tag_Table` too (already existed for `View` and `Arch_Table`) — row-aligned with `slice(&table)`, so a table can be iterated the same zipped way as a `View`, without a `get_entity(&table, index)` lookup per row.
 - **new** •  `Arch_Table` iteration now matches View's idiom: `arch_table__dense_slice` renamed to `arch_table__column_slice`, and a new `arch_table__entities_slice` was added — both wired into the `slice()` proc group, so `slice(&arch)` + `slice(&arch, T)` is the recommended way to iterate an archetype directly. `Arch_Iterator` demoted to back-compat status; see [Arch_Table: Iterating with slice](/docs/arch_table.md#iterating-with-sliceunits-t).
 - **new** •  Every component of an `Arch_Table` mixed into a `View` is now automatically available through `slice(&view, T)`/`entities_slice(&view)` — `view_init` caches a real pointer per row for each of the archetype's component types (its set never changes after `arch_table__init`, so there's nothing to opt into later, no separate call needed). Together with plain index-math batching (see [Sample11](/samples/sample11/main.odin)), this closes both remaining reasons to reach for `Iterator` — it's now needed only for `Tag_Table` columns, which carry no data. See [Arch_Table: mixing with sparse-dense tables in a View](/docs/arch_table.md#mixing-with-sparse-dense-tables-in-a-view).

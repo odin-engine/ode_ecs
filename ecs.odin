@@ -535,6 +535,7 @@ package ode_ecs
             group__slice_arch,
             arch_table__column_slice,   // slice(&arch, T) -> []T - returns structs not pointers
             arch_table__entities_slice, // slice(&arch) -> []entity_id
+            view__try_dense_slice,      // slice(&view, &table) -> []T or nil - see view.odin
         }
 
         //

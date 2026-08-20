@@ -515,6 +515,22 @@ package ode_ecs
         return self.rid_to_eid[:self.len]
     }
 
+    // Real contiguous []T straight off `table.rows`, no per-row pointer-cache indirection — nil
+    // if `table`'s rows aren't currently aligned to the view's row order (or the view is
+    // suspended). Cheaper than view__column_slice(view, T) when it succeeds, but callers must
+    // handle the nil case (fall back to view__column_slice, or skip this table this frame).
+    view__try_dense_slice :: proc(self: ^View, table: ^Table($T)) -> []T {
+        cid := self.tid_to_cid[table.id]
+        when VALIDATIONS {
+            assert(cid != DELETED_INDEX)
+        }
+
+        view__dense_resolve(self)
+        if self.suspended || self.dense_cols[cid] != View_Dense_State.Aligned do return nil
+
+        return table.rows[:self.len]
+    }
+
     @(private)
     view__auto_register_arch_columns :: proc(self: ^View, table: ^Arch_Table) -> Error {
         if self.arch_columns.items == nil {

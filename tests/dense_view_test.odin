@@ -218,6 +218,46 @@ package ode_ecs__tests
     }
 
     @(test)
+    dense_view__try_dense_slice__test :: proc(t: ^testing.T) {
+        db: ecs.Database
+        pos: ecs.Table(Dense_Pos)
+        vel: ecs.Table(Dense_Vel)
+        view: ecs.View
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, 100) == nil)
+        testing.expect(t, ecs.table_init(&pos, &db, 100) == nil)
+        testing.expect(t, ecs.table_init(&vel, &db, 100) == nil)
+        testing.expect(t, ecs.view_init(&view, &db, {&pos, &vel}) == nil)
+
+        eids: [20]ecs.entity_id
+        for i in 0..<20 {
+            eids[i], _ = ecs.create_entity(&db)
+            p, _ := ecs.add_component(&pos, eids[i]); p^ = { f64(i), 0 }
+            v, _ := ecs.add_component(&vel, eids[i]); v^ = { f64(i), 0 }
+        }
+
+        pos_dense := ecs.slice(&view, &pos)
+        vel_dense := ecs.slice(&view, &vel)
+        testing.expect(t, pos_dense != nil, "aligned column must return a real dense slice")
+        testing.expect(t, vel_dense != nil)
+        testing.expect(t, len(pos_dense) == ecs.view_len(&view))
+        testing.expect(t, raw_data(pos_dense) == raw_data(ecs.slice(&pos)), "must be the table's own rows, not a copy")
+        for i in 0..<len(pos_dense) {
+            testing.expect(t, pos_dense[i].x == f64(i))
+        }
+
+        ecs.suspend(&view)
+        testing.expect(t, ecs.slice(&view, &pos) == nil, "suspended view must not hand out a dense slice")
+        ecs.resume(&view)
+        testing.expect(t, ecs.slice(&view, &pos) != nil, "resumed, still-aligned view should recover the dense slice")
+
+        testing.expect(t, ecs.remove_component(&pos, eids[3]) == nil)
+        testing.expect(t, ecs.slice(&view, &vel) == nil, "vel's row 3 no longer matches the view after pos's tail-swap")
+        testing.expect(t, ecs.slice(&view, &pos) != nil, "pos mirrors its own table's swap and stays aligned")
+    }
+
+    @(test)
     dense_view__random_ops_fuzz__test :: proc(t: ^testing.T) {
         db: ecs.Database
         pos: ecs.Table(Dense_Pos)
