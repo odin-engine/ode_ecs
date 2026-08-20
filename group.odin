@@ -211,6 +211,23 @@ package ode_ecs
         return slice.from_ptr(cast(^T) raw_data(col.rows), self.len)
     }
 
+    // Entity ids for the group's aligned prefix, in the same row order as group__slice/
+    // group__slice_arch. Reads from tables[0] (or arch_tables[0] if the group owns no
+    // plain Table) — any owned table works, since rid_to_eid[:group.len] is identical
+    // across all of them by the alignment invariant. Nil if the group owns nothing yet,
+    // or under the same conditions group__slice returns nil.
+    group__entities_slice :: proc "contextless" (self: ^Group) -> []entity_id {
+        if self == nil do return nil
+        if self.state != Object_State.Normal do return nil
+        if self.dirty do return nil
+
+        #no_bounds_check {
+            if len(self.tables) > 0 do return self.tables[0].rid_to_eid[:self.len]
+            if len(self.arch_tables) > 0 do return self.arch_tables[0].rid_to_eid[:self.len]
+        }
+        return nil
+    }
+
     // Rebuild the group prefix from scratch — O(smallest owned table) matches, each paying
     // O(owned tables) swaps. Normally unneeded (membership is maintained incrementally);
     // resume_packing calls it for dirty groups. While paused, only marks the group dirty.

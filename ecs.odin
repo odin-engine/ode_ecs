@@ -521,6 +521,7 @@ package ode_ecs
             tiny_table__entities_slice,
             tag_table__entities_slice,
             arch_table__entities_slice,
+            group__entities_slice,
         }
 
         slice :: proc {

@@ -369,3 +369,54 @@ tiny_table__entities_slice__test :: proc(t: ^testing.T) {
         testing.expect(t, ecs.get_component(&positions, entities[i]) == &dense[i])
     }
 }
+
+@(test)
+group__entities_slice__test :: proc(t: ^testing.T) {
+    context.logger = log.create_console_logger()
+    defer log.destroy_console_logger(context.logger)
+
+    allocator := context.allocator
+    context.allocator = mem.panic_allocator()
+
+    db: ecs.Database
+    defer ecs.terminate(&db)
+    testing.expect(t, ecs.init(&db, entities_cap = 10, allocator = allocator) == nil)
+
+    pos: ecs.Table(Group_Pos)
+    vel: ecs.Table(Group_Vel)
+    group: ecs.Group
+    testing.expect(t, ecs.table_init(&pos, &db, 10) == nil)
+    testing.expect(t, ecs.table_init(&vel, &db, 10) == nil)
+    testing.expect(t, ecs.group_init(&group, &db, {&pos, &vel}) == nil)
+
+    testing.expect(t, len(ecs.entities_slice(&group)) == 0)
+
+    e0, _ := ecs.create_entity(&db)
+    e1, _ := ecs.create_entity(&db)
+    e2, _ := ecs.create_entity(&db)
+
+    _, _ = ecs.add_component(&pos, e0); _, _ = ecs.add_component(&vel, e0)
+    _, _ = ecs.add_component(&pos, e1); _, _ = ecs.add_component(&vel, e1)
+    _, _ = ecs.add_component(&pos, e2); _, _ = ecs.add_component(&vel, e2)
+
+    pos_dense := ecs.slice(&group, &pos)
+    group_entities := ecs.entities_slice(&group)
+    testing.expect(t, len(group_entities) == len(pos_dense))
+    testing.expect(t, group_entities[0] == e0)
+    testing.expect(t, group_entities[1] == e1)
+    testing.expect(t, group_entities[2] == e2)
+    for i in 0..<len(group_entities) {
+        testing.expect(t, ecs.get_entity(&pos, i) == group_entities[i])
+        testing.expect(t, ecs.get_entity(&vel, i) == group_entities[i])
+    }
+
+    testing.expect(t, ecs.remove_component(&vel, e0) == nil)
+    pos_dense = ecs.slice(&group, &pos)
+    group_entities = ecs.entities_slice(&group)
+    testing.expect(t, len(group_entities) == len(pos_dense))
+    testing.expect(t, len(group_entities) == 2)
+    for i in 0..<len(group_entities) {
+        testing.expect(t, ecs.get_entity(&pos, i) == group_entities[i])
+        testing.expect(t, ecs.get_entity(&vel, i) == group_entities[i])
+    }
+}
