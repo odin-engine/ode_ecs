@@ -124,7 +124,7 @@ package ode_ecs
         for view in slot.subscribers_excluding do if view != nil do view.state = Object_State.Invalid
         for view in slot.subscribers_any_of do if view != nil do view.state = Object_State.Invalid
         when SYNC_ENABLED {
-            for ch in slot.sync_channels do if ch != nil do sync_channel__on_table_terminated(ch, self.id)
+            for ch in slot.sync_channels do if ch != nil do sync_channel__on_table_terminated(ch, self.id, false)
         }
 
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
@@ -262,7 +262,7 @@ package ode_ecs
             slot := tiny_table_base__slot(self)
             for ch in slot.sync_channels {
                 if ch == nil do continue
-                sync_channel__notify_structural(ch, self.id, eid, true)
+                sync_channel__notify_structural(ch, self.id, eid, true, false)
                 sync_channel__mark_touched(ch, self.id, eid)
             }
         }
@@ -275,7 +275,7 @@ package ode_ecs
             slot := tiny_table_base__slot(self)
             for ch in slot.sync_channels {
                 if ch == nil do continue
-                sync_channel__notify_structural(ch, self.id, eid, false)
+                sync_channel__notify_structural(ch, self.id, eid, false, false)
             }
         }
     }

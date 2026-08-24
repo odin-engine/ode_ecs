@@ -24,8 +24,7 @@ package ode_ecs
 
         cap: int,
 
-        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping.
-        // A hole is a row with rows[rid].ix == DELETED_INDEX inside [0, len).
+        // Deferred tail swap (db.tail_swap_paused) hole bookkeeping — a hole is a row with rows[rid].ix == DELETED_INDEX inside [0, len).
         holes_count: int,
         first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
@@ -34,7 +33,6 @@ package ode_ecs
         subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
 
         // sync_channels_cap sizes sync_watchers, lazily allocated on first sync_register.
-        // Structural-only (add_tag/remove_tag) — a Tag_Table carries no component data to diff.
         sync_channels_cap: int,
         sync_watchers: oc.Dense_Arr(^Sync_Channel),
     }
@@ -72,9 +70,8 @@ package ode_ecs
         // load factor 0.5 and make it power of two
         oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
 
-        // database__attach_table is capacity-limited and must not leak the allocations above
-        // on failure. Can't reuse tag_table__terminate here — it requires state == Normal.
-        id, aerr := database__attach_table(db, self)
+        // database__attach_tag is capacity-limited and must not leak the allocations above on failure.
+        id, aerr := database__attach_tag(db, self)
         if aerr != nil {
             delete(self.rows, db.allocator)
             oc_maps.rh_map32__terminate(&self.eid_to_rid, db.allocator)
@@ -103,10 +100,10 @@ package ode_ecs
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
-        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
+        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id, true)
 
-        // Clear this table's bit from all entities, see table_raw__terminate
-        for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
+        // Clear this table's tag bit from all entities, see table_raw__terminate
+        for &bits in self.db.eid_to_tag_bits do uni_bits__remove(&bits, self.id)
 
         if self.sync_watchers.items != nil do oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
         if self.subscribers_any_of.items != nil do oc.dense_arr__terminate(&self.subscribers_any_of, self.db.allocator) or_return
@@ -116,7 +113,7 @@ package ode_ecs
 
         delete(self.rows, self.db.allocator) or_return
 
-        database__detach_table(self.db, self)
+        database__detach_tag(self.db, self)
 
         shared_table__clear_state(&self.shared)
 
@@ -170,9 +167,7 @@ package ode_ecs
 
         raw := (^runtime.Raw_Slice)(&self.rows)
 
-        // One probe serves both the existence check and insert — get_or_insert reuses the
-        // located slot instead of get()+add() re-walking the chain. Capacity only gates the
-        // actual insert, so re-adding an existing tag on a full table stays a no-op.
+        // One probe serves both the existence check and insert — get_or_insert reuses the located slot instead of re-walking the chain, and capacity only gates the actual insert, so re-adding an existing tag on a full table stays a no-op.
         _, found, gerr := oc_maps.rh_map32__get_or_insert(&self.eid_to_rid, u32(eid.ix), u32(raw.len), raw.len < self.cap)
 
         if found do return nil // already added
@@ -184,8 +179,7 @@ package ode_ecs
             self.rows[raw.len] = eid
         }
 
-        // Update eid_to_bits in db
-        database__add_component(self.db, eid, self.id)
+        database__add_tag_bit(self.db, eid, self.id)
 
         tag_table__notify_sync_add(self, eid)
         database__notify_observers(self.db, .Tag_Added, eid, table_id = self.id)
@@ -233,8 +227,7 @@ package ode_ecs
         // Fires before any mutation below (tags carry no data, so `data` stays nil).
         database__notify_observers(self.db, .Tag_Removed, target_eid, table_id = self.id)
 
-        // Deferred tail swap: clear the tag in place, leaving a hole.
-        // Nothing moves, so nothing needs to stay stable while iterating.
+        // Deferred tail swap: clear the tag in place, leaving a hole — nothing moves, so nothing needs to stay stable while iterating.
         if shared_table__is_packing_paused(cast(^Shared_Table) self) {
             oc_maps.rh_map32__remove_at(&self.eid_to_rid, target_slot)
 
@@ -257,8 +250,7 @@ package ode_ecs
                 else do view__missed_update_for_member(view, target_eid)
             }
 
-            // Update eid_to_bits in db
-            database__remove_component(self.db, target_eid, self.id)
+            database__remove_tag_bit(self.db, target_eid, self.id)
             tag_table__notify_sync_remove(self, target_eid)
             tag_table__notify_excluding_views(self, target_eid)
             tag_table__notify_any_of_views(self, target_eid)
@@ -294,9 +286,6 @@ package ode_ecs
             for view in self.subscribers.items {
                 if !view.suspended {
                     view__remove_record(view, target_eid)
-                    // tag columns carry no component data — keep the view's cached
-                    // pointer nil rather than stashing the moved-to rid.
-                    view__update_component_ptr(view, self, tail_eid, nil)
                 } else {
                     view__missed_update_for_member(view, target_eid)
                     view__missed_update_for_member(view, tail_eid)
@@ -306,8 +295,7 @@ package ode_ecs
 
         raw.len -= 1
 
-        // Update eid_to_bits in db
-        database__remove_component(self.db, target_eid, self.id)
+        database__remove_tag_bit(self.db, target_eid, self.id)
 
         tag_table__notify_sync_remove(self, target_eid)
         tag_table__notify_excluding_views(self, target_eid)
@@ -334,20 +322,19 @@ package ode_ecs
     // Soft toggle: excludes the component from View matching without removing it — see
     // database.odin's "Component enable/disable" section.
     tag_table__disable_component :: proc(self: ^Tag_Table, eid: entity_id) -> Error {
-        return database__disable_component(self.db, eid, self.id)
+        return database__disable_tag(self.db, eid, self)
     }
 
     tag_table__enable_component :: proc(self: ^Tag_Table, eid: entity_id) -> Error {
-        return database__enable_component(self.db, eid, self.id)
+        return database__enable_tag(self.db, eid, self)
     }
 
     @(require_results)
     tag_table__is_component_disabled :: proc(self: ^Tag_Table, eid: entity_id) -> bool {
-        return database__is_component_disabled(self.db, eid, self.id)
+        return database__is_tag_disabled(self.db, eid, self.id)
     }
 
-    // Compact holes left by removals made while tail swap was paused
-    // (see database__pause_packing). Callable mid-pause too.
+    // Compact holes left by removals made while tail swap was paused (see database__pause_packing) — callable mid-pause too.
     tag_table__pack :: proc(self: ^Tag_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -382,11 +369,8 @@ package ode_ecs
 
             oc_maps.rh_map32__update(&self.eid_to_rid, u32(moved_eid.ix), u32(front))
 
-            // tag columns carry no component data — keep the view's cached pointer nil,
-            // same as remove_tag above
             for view in self.subscribers.items {
-                if !view.suspended do view__update_component_ptr(view, self, moved_eid, nil)
-                else do view__missed_update_for_member(view, moved_eid)
+                if view.suspended do view__missed_update_for_member(view, moved_eid)
             }
 
             back -= 1
@@ -500,7 +484,7 @@ package ode_ecs
     tag_table__notify_sync_add :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
         when SYNC_ENABLED {
             for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, true)
+                sync_channel__notify_structural(ch, self.id, eid, true, true)
             }
         }
     }
@@ -509,7 +493,7 @@ package ode_ecs
     tag_table__notify_sync_remove :: #force_inline proc(self: ^Tag_Table, eid: entity_id) {
         when SYNC_ENABLED {
             for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, false)
+                sync_channel__notify_structural(ch, self.id, eid, false, true)
             }
         }
     }

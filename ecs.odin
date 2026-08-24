@@ -21,8 +21,8 @@ package ode_ecs
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
 
     //
-    // Initial capacities for various ECS containers. Automatically grows if exceeded (outside of frame loop).
-    // 
+    // Initial capacities for various ECS containers (auto-grows if exceeded, outside the frame loop).
+    //
 
         TABLES_CAP ::  #config(ECS_TABLES_CAP, 16)
 
@@ -135,7 +135,7 @@ package ode_ecs
         table_terminate         :: table__terminate
 
     //
-    // View (column-major/SoA storage — see view.odin's header comment)
+    // View 
     //
 
         view_init               :: view__init

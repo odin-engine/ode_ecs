@@ -26,6 +26,8 @@ package ode_ecs
 
         tables: oc.Sparse_Arr(Shared_Table),
 
+        tag_tables: oc.Sparse_Arr(Tag_Table),
+
         views: oc.Sparse_Arr(View),
 
         groups: oc.Dense_Arr(^Group),
@@ -33,6 +35,10 @@ package ode_ecs
         eid_to_bits: []Uni_Bits,
 
         eid_to_disabled_bits: []Uni_Bits,
+
+        eid_to_tag_bits: []Uni_Bits,
+
+        eid_to_tag_disabled_bits: []Uni_Bits,
 
         has_disabled_components: bool,
 
@@ -56,6 +62,7 @@ package ode_ecs
         if self.overbase == nil do return false
         if !overbase__is_valid(self.overbase) do return false
         if !oc.sparse_arr__is_valid(&self.tables) do return false
+        if !oc.sparse_arr__is_valid(&self.tag_tables) do return false
         if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid(&self.groups) do return false
         if !oc.sparse_arr__is_valid(&self.pair_tables) do return false
@@ -63,6 +70,8 @@ package ode_ecs
         if !oc.sparse_arr__is_valid(&self.observers) do return false
         if self.eid_to_bits == nil do return false
         if self.eid_to_disabled_bits == nil do return false
+        if self.eid_to_tag_bits == nil do return false
+        if self.eid_to_tag_disabled_bits == nil do return false
         if self.tiny_table_subscriber_slots == nil do return false
 
         return true
@@ -92,6 +101,7 @@ package ode_ecs
         overbase__attach_database(self.overbase, self) or_return
 
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.tag_tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
         oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.pair_tables, pair_tables_cap, self.allocator) or_return
@@ -101,6 +111,8 @@ package ode_ecs
 
         self.eid_to_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
         self.eid_to_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
+        self.eid_to_tag_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
+        self.eid_to_tag_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -132,6 +144,7 @@ package ode_ecs
         overbase__attach_database(self.overbase, self) or_return
 
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
+        oc.sparse_arr__init(&self.tag_tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
         oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.pair_tables, pair_tables_cap, self.allocator) or_return
@@ -141,6 +154,8 @@ package ode_ecs
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
         self.eid_to_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
+        self.eid_to_tag_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
+        self.eid_to_tag_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -162,6 +177,16 @@ package ode_ecs
         if self.eid_to_disabled_bits != nil {
             delete(self.eid_to_disabled_bits, self.allocator) or_return
             self.eid_to_disabled_bits = nil
+        }
+
+        if self.eid_to_tag_bits != nil {
+            delete(self.eid_to_tag_bits, self.allocator) or_return
+            self.eid_to_tag_bits = nil
+        }
+
+        if self.eid_to_tag_disabled_bits != nil {
+            delete(self.eid_to_tag_disabled_bits, self.allocator) or_return
+            self.eid_to_tag_disabled_bits = nil
         }
 
         for view in self.views.items {
@@ -204,6 +229,16 @@ package ode_ecs
             if owns_memory do free(rawptr(table), self.allocator)
         }
         oc.sparse_arr__terminate(&self.tables, self.allocator) or_return
+
+        for tag in self.tag_tables.items {
+            if tag == nil do continue
+            owns_memory := tag.owns_memory
+            if tag.state == Object_State.Normal {
+                tag_table__terminate(tag)
+            }
+            if owns_memory do free(rawptr(tag), self.allocator)
+        }
+        oc.sparse_arr__terminate(&self.tag_tables, self.allocator) or_return
 
         if self.tiny_table_subscriber_slots != nil {
             delete(self.tiny_table_subscriber_slots, self.allocator) or_return
@@ -250,6 +285,12 @@ package ode_ecs
             if err == nil do err = terr
         }
 
+        for tag in self.tag_tables.items {
+            if tag == nil do continue
+            terr := tag_table__clear(tag)
+            if err == nil do err = terr
+        }
+
         if self.relations != nil {
             rerr := relations_table__clear(self.relations)
             if err == nil do err = rerr
@@ -257,6 +298,8 @@ package ode_ecs
 
         slice.zero(self.eid_to_bits)
         slice.zero(self.eid_to_disabled_bits)
+        slice.zero(self.eid_to_tag_bits)
+        slice.zero(self.eid_to_tag_disabled_bits)
         self.has_disabled_components = false
 
         if self.owns_overbase {
@@ -326,6 +369,7 @@ package ode_ecs
         }
 
         bits := self.eid_to_bits[eid.ix]
+        tag_bits := self.eid_to_tag_bits[eid.ix]
 
         self.destroying_eid_ix = eid.ix
         defer self.destroying_eid_ix = DELETED_INDEX
@@ -337,6 +381,13 @@ package ode_ecs
                 v &= v - 1
                 database__remove_component_by_table_id(self, id, eid) or_return
             }
+
+            tv := transmute(u128) tag_bits
+            for tv != 0 {
+                id := int(intrinsics.count_trailing_zeros(tv))
+                tv &= tv - 1
+                database__remove_tag_by_bit_id(self, id, eid) or_return
+            }
         } else {
             for word, wi in bits.value {
                 v := transmute(u128) word
@@ -344,6 +395,15 @@ package ode_ecs
                     b := int(intrinsics.count_trailing_zeros(v))
                     v &= v - 1
                     database__remove_component_by_table_id(self, wi * BIT_SET_VALUES_CAP + b, eid) or_return
+                }
+            }
+
+            for word, wi in tag_bits.value {
+                tv := transmute(u128) word
+                for tv != 0 {
+                    b := int(intrinsics.count_trailing_zeros(tv))
+                    tv &= tv - 1
+                    database__remove_tag_by_bit_id(self, wi * BIT_SET_VALUES_CAP + b, eid) or_return
                 }
             }
         }
@@ -354,7 +414,11 @@ package ode_ecs
         }
 
         uni_bits__clear(&self.eid_to_bits[eid.ix])
-        if self.has_disabled_components do uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
+        uni_bits__clear(&self.eid_to_tag_bits[eid.ix])
+        if self.has_disabled_components {
+            uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
+            uni_bits__clear(&self.eid_to_tag_disabled_bits[eid.ix])
+        }
 
         return nil
     }
@@ -399,6 +463,12 @@ package ode_ecs
             if err == nil do err = terr
         }
 
+        for tag in self.tag_tables.items {
+            if tag == nil || tag.state != Object_State.Normal do continue
+            terr := tag_table__pack(tag)
+            if err == nil do err = terr
+        }
+
         for group in self.groups.items {
             if group.state != Object_State.Normal || !group.dirty do continue
             gerr := group__rebuild(group)
@@ -414,6 +484,10 @@ package ode_ecs
         if self.owns_overbase do total += overbase__memory_usage(self.overbase)
         for table in self.tables.items {
             if table != nil do total += shared_table__memory_usage(table)
+        }
+
+        for tag in self.tag_tables.items {
+            if tag != nil do total += tag_table__memory_usage(tag)
         }
 
         for view in self.views.items {
@@ -438,9 +512,7 @@ package ode_ecs
     }
 
     //
-    // Relations (parent/child) — thin wrappers over the database's Relations_Table
-    // (relations_table.odin). All return API_Error.Relations_Table_Not_Created
-    // until relations_table__init has been called for this database.
+    // Relations (parent/child) — thin wrappers over the database's Relations_Table (relations_table.odin).
     //
 
     database__set_parent :: proc(self: ^Database, child: entity_id, parent: entity_id, loc := #caller_location) -> Error {
@@ -571,6 +643,26 @@ package ode_ecs
     }
 
     @(private)
+    database__attach_tag :: proc(self: ^Database, table: ^Tag_Table) -> (id: table_id, err: Error) {
+        raw_id: int
+        raw_id, err = oc.sparse_arr__add(&self.tag_tables, table)
+        tag_id_cap := BIT_SET_VALUES_CAP * TABLES_MULT
+        if err == oc.Core_Error.Container_Is_Full && self.tag_tables.cap < tag_id_cap {
+            new_cap := min(self.tag_tables.cap * 2, tag_id_cap)
+            oc.sparse_arr__resize(&self.tag_tables, new_cap, self.allocator) or_return
+            raw_id, err = oc.sparse_arr__add(&self.tag_tables, table)
+        }
+        if err != nil do return DELETED_INDEX, err
+
+        return cast(table_id) raw_id, nil
+    }
+
+    @(private)
+    database__detach_tag :: proc(self: ^Database, table: ^Tag_Table) {
+        oc.sparse_arr__remove_by_index(&self.tag_tables, cast(int) table.id)
+    }
+
+    @(private)
     database__attach_tiny_table_subscribers :: proc(self: ^Database) -> (slot_id: int, err: Error) {
         for &slot, i in self.tiny_table_subscriber_slots {
             if !slot.in_use {
@@ -650,6 +742,18 @@ package ode_ecs
     }
 
     @(private)
+    database__remove_tag_by_bit_id :: #force_inline proc(self: ^Database, #any_int id: int, eid: entity_id) -> Error {
+        if id >= len(self.tag_tables.items) do return nil
+        tt := self.tag_tables.items[id]
+        if tt == nil do return nil
+
+        terr := tag_table__remove_tag(tt, eid)
+        if terr != nil && terr != oc.Core_Error.Not_Found do return terr
+
+        return nil
+    }
+
+    @(private)
     database__add_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__add(&self.eid_to_bits[eid.ix], table_id)
     }
@@ -657,6 +761,16 @@ package ode_ecs
     @(private)
     database__remove_component :: #force_inline proc(self: ^Database, eid: entity_id, table_id: table_id) #no_bounds_check {
         uni_bits__remove(&self.eid_to_bits[eid.ix], table_id)
+    }
+
+    @(private)
+    database__add_tag_bit :: #force_inline proc(self: ^Database, eid: entity_id, id: table_id) #no_bounds_check {
+        uni_bits__add(&self.eid_to_tag_bits[eid.ix], id)
+    }
+
+    @(private)
+    database__remove_tag_bit :: #force_inline proc(self: ^Database, eid: entity_id, id: table_id) #no_bounds_check {
+        uni_bits__remove(&self.eid_to_tag_bits[eid.ix], id)
     }
 
     @(private)
@@ -708,6 +822,53 @@ package ode_ecs
     @(require_results)
     database__is_component_disabled :: #force_inline proc "contextless" (self: ^Database, eid: entity_id, id: table_id) -> bool #no_bounds_check {
         return uni_bits__exists(&self.eid_to_disabled_bits[eid.ix], id)
+    }
+
+    @(private)
+    database__disable_tag :: proc(self: ^Database, eid: entity_id, tag: ^Tag_Table, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(tag != nil, loc = loc)
+        }
+        database__is_entity_correct(self, eid) or_return
+
+        uni_bits__add(&self.eid_to_tag_disabled_bits[eid.ix], tag.id)
+        self.has_disabled_components = true
+
+        database__notify_observers(self, .Component_Disabled, eid, table_id = tag.id)
+
+        for view in tag.subscribers.items {
+            if view == nil do continue
+            if !view.suspended && !view__components_match(view, eid) do view__remove_record(view, eid)
+        }
+
+        return nil
+    }
+
+    @(private)
+    database__enable_tag :: proc(self: ^Database, eid: entity_id, tag: ^Tag_Table, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(tag != nil, loc = loc)
+        }
+        database__is_entity_correct(self, eid) or_return
+
+        uni_bits__remove(&self.eid_to_tag_disabled_bits[eid.ix], tag.id)
+
+        database__notify_observers(self, .Component_Enabled, eid, table_id = tag.id)
+
+        for view in tag.subscribers.items {
+            if view == nil do continue
+            if !view.suspended && view__components_match(view, eid) do view__add_record(view, eid)
+        }
+
+        return nil
+    }
+
+    @(private)
+    @(require_results)
+    database__is_tag_disabled :: #force_inline proc "contextless" (self: ^Database, eid: entity_id, id: table_id) -> bool #no_bounds_check {
+        return uni_bits__exists(&self.eid_to_tag_disabled_bits[eid.ix], id)
     }
 
     @(private)

@@ -44,6 +44,7 @@ package ode_ecs
         db: ^Database,
 
         tables: []^Shared_Table,
+        tags: []^Tag_Table,
         excludes: oc.Dense_Arr(^Shared_Table),
         any_of: oc.Dense_Arr(^Shared_Table),
 
@@ -57,6 +58,9 @@ package ode_ecs
         bits: Uni_Bits,
         exclude_bits: Uni_Bits,
         any_of_bits: Uni_Bits,
+        tag_bits: Uni_Bits,
+        exclude_tag_bits: Uni_Bits,
+        any_of_tag_bits: Uni_Bits,
         suspended: bool,
         stale: bool,
 
@@ -75,9 +79,9 @@ package ode_ecs
         if self.id < 0 do return false
         if self.state != Object_State.Normal do return false
         if self.db == nil do return false
-        if self.tables == nil do return false
-        if self.tid_to_cid == nil do return false
-        if self.columns == nil do return false
+        if self.tables == nil && self.tags == nil do return false
+        if self.tid_to_cid == nil && len(self.tables) > 0 do return false
+        if self.columns == nil && len(self.tables) > 0 do return false
         if self.eid_to_rid == nil do return false
         if self.rid_to_eid == nil do return false
         if self.cap <= 0 do return false
@@ -105,6 +109,9 @@ package ode_ecs
         uni_bits__clear(&self.bits)
         uni_bits__clear(&self.exclude_bits)
         uni_bits__clear(&self.any_of_bits)
+        uni_bits__clear(&self.tag_bits)
+        uni_bits__clear(&self.exclude_tag_bits)
+        uni_bits__clear(&self.any_of_tag_bits)
         self.excludes = {}
         self.any_of = {}
         self.arch_columns = {}
@@ -152,31 +159,44 @@ package ode_ecs
             }
         }
 
+        data_len := 0
         max_table_id: int = -1
         for table in uniq_tables {
             when VALIDATIONS {
                 assert(shared_table__is_valid(table), loc = loc)
             }
-            if int(table.id) > max_table_id do max_table_id = int(table.id)
+            if table.type != Table_Type.Tag_Table {
+                data_len += 1
+                if int(table.id) > max_table_id do max_table_id = int(table.id)
+            }
         }
+        tags_len := tables_len - data_len
 
-        self.tables = make([]^Shared_Table, tables_len, db.allocator) or_return
+        self.tables = make([]^Shared_Table, data_len, db.allocator) or_return
+        self.tags = make([]^Tag_Table, tags_len, db.allocator) or_return
 
         self.tid_to_cid = make([]view_column_id, max_table_id + 1, db.allocator) or_return
         for i := 0; i < len(self.tid_to_cid); i += 1 do self.tid_to_cid[i] = DELETED_INDEX
 
-        self.columns = make([]View_Column, tables_len, db.allocator) or_return
+        self.columns = make([]View_Column, data_len, db.allocator) or_return
 
         self.cap = max(int)
-        for table, index in uniq_tables {
-            self.tables[index] = table
-            self.tid_to_cid[table.id] = cast(view_column_id) index
-
+        di, ti := 0, 0
+        for table in uniq_tables {
             if shared_table__cap(table) < self.cap do self.cap = shared_table__cap(table)
 
-            self.columns[index].type_info = shared_table__type_info(table)
-
-            uni_bits__add(&self.bits, table.id)
+            if table.type == Table_Type.Tag_Table {
+                tag := cast(^Tag_Table) table
+                self.tags[ti] = tag
+                uni_bits__add(&self.tag_bits, tag.id)
+                ti += 1
+            } else {
+                self.tables[di] = table
+                self.tid_to_cid[table.id] = cast(view_column_id) di
+                self.columns[di].type_info = shared_table__type_info(table)
+                uni_bits__add(&self.bits, table.id)
+                di += 1
+            }
         }
 
         when VALIDATIONS {
@@ -187,7 +207,11 @@ package ode_ecs
             oc.dense_arr__init(&self.excludes, len(uniq_excludes), db.allocator) or_return
             for table in uniq_excludes {
                 oc.dense_arr__add(&self.excludes, cast(^Shared_Table) table)
-                uni_bits__add(&self.exclude_bits, table.id)
+                if table.type == Table_Type.Tag_Table {
+                    uni_bits__add(&self.exclude_tag_bits, (cast(^Tag_Table) table).id)
+                } else {
+                    uni_bits__add(&self.exclude_bits, table.id)
+                }
             }
         }
 
@@ -195,7 +219,11 @@ package ode_ecs
             oc.dense_arr__init(&self.any_of, len(uniq_any_of), db.allocator) or_return
             for table in uniq_any_of {
                 oc.dense_arr__add(&self.any_of, cast(^Shared_Table) table)
-                uni_bits__add(&self.any_of_bits, table.id)
+                if table.type == Table_Type.Tag_Table {
+                    uni_bits__add(&self.any_of_tag_bits, (cast(^Tag_Table) table).id)
+                } else {
+                    uni_bits__add(&self.any_of_bits, table.id)
+                }
             }
         }
 
@@ -213,13 +241,14 @@ package ode_ecs
                     delete(self.tid_to_cid, db.allocator)
                     if self.excludes.items != nil do oc.dense_arr__terminate(&self.excludes, db.allocator)
                     if self.any_of.items != nil do oc.dense_arr__terminate(&self.any_of, db.allocator)
+                    delete(self.tags, db.allocator)
                     delete(self.tables, db.allocator)
                     return aerr
                 }
             }
         }
 
-        self.dense_cols = make([]View_Dense_State, tables_len, db.allocator) or_return
+        self.dense_cols = make([]View_Dense_State, data_len, db.allocator) or_return
 
         self.eid_to_rid = make([]view_record_id, db.overbase.id_factory.cap, db.allocator) or_return
         self.rid_to_eid = make([]entity_id, self.cap + 1, db.allocator) or_return
@@ -245,6 +274,7 @@ package ode_ecs
                 delete(self.tid_to_cid, db.allocator)
                 if self.excludes.items != nil do oc.dense_arr__terminate(&self.excludes, db.allocator)
                 if self.any_of.items != nil do oc.dense_arr__terminate(&self.any_of, db.allocator)
+                delete(self.tags, db.allocator)
                 delete(self.tables, db.allocator)
                 return aerr
             }
@@ -290,6 +320,11 @@ package ode_ecs
             derr := shared_table__detach_subscriber(table, self)
             if derr != nil && derr != oc.Core_Error.Not_Found do return derr
         }
+        for tag in self.tags {
+            if tag == nil do continue
+            derr := tag_table__detach_subscriber(tag, self)
+            if derr != nil && derr != oc.Core_Error.Not_Found do return derr
+        }
         for table in self.excludes.items {
             if table == nil || table.type == Table_Type.Auto do continue
             derr := shared_table__detach_exclude_subscriber(table, self)
@@ -314,6 +349,7 @@ package ode_ecs
         if self.eid_to_rid != nil do delete(self.eid_to_rid, self.db.allocator) or_return
         if self.rid_to_eid != nil do delete(self.rid_to_eid, self.db.allocator) or_return
         if self.tables != nil do delete(self.tables, self.db.allocator) or_return
+        if self.tags != nil do delete(self.tags, self.db.allocator) or_return
 
         if self.excludes.items != nil do oc.dense_arr__terminate(&self.excludes, self.db.allocator) or_return
         if self.any_of.items != nil do oc.dense_arr__terminate(&self.any_of, self.db.allocator) or_return
@@ -321,6 +357,7 @@ package ode_ecs
         database__detach_view(self.db, self)
 
         self.tables = nil
+        self.tags = nil
         self.tid_to_cid = nil
         self.columns = nil
         self.dense_cols = nil
@@ -329,6 +366,9 @@ package ode_ecs
         self.bits = {}
         self.exclude_bits = {}
         self.any_of_bits = {}
+        self.tag_bits = {}
+        self.exclude_tag_bits = {}
+        self.any_of_tag_bits = {}
         self.filter = nil
         self.len = 0
         self.cap = 0
@@ -358,7 +398,7 @@ package ode_ecs
     view__rebuild :: proc(self: ^View) -> Error {
         when VALIDATIONS {
             assert(self != nil)
-            assert(self.tables != nil)
+            assert(self.tables != nil || self.tags != nil)
         }
 
         view__clear(self) or_return
@@ -370,6 +410,13 @@ package ode_ecs
             if table_len < min_records_count {
                 min_table = table
                 min_records_count = table_len
+            }
+        }
+        for tag in self.tags {
+            tag_len := shared_table__len(cast(^Shared_Table) tag)
+            if tag_len < min_records_count {
+                min_table = cast(^Shared_Table) tag
+                min_records_count = tag_len
             }
         }
 
@@ -404,6 +451,7 @@ package ode_ecs
         if self.rid_to_eid != nil do total += size_of(self.rid_to_eid[0]) * len(self.rid_to_eid)
         if self.dense_cols != nil do total += size_of(self.dense_cols[0]) * len(self.dense_cols)
         if self.tables != nil do total += size_of(self.tables[0]) * len(self.tables)
+        if self.tags != nil do total += size_of(self.tags[0]) * len(self.tags)
 
         for col in self.columns {
             total += size_of(View_Column) + size_of(rawptr) * len(col.rows)
@@ -419,11 +467,16 @@ package ode_ecs
 
     view__components_match :: #force_inline proc(self: ^View, eid: entity_id) -> bool {
         bits := &self.db.eid_to_bits[eid.ix]
+        tag_bits := &self.db.eid_to_tag_bits[eid.ix]
 
         return uni_bits__is_subset(&self.bits, bits) &&
+               uni_bits__is_subset(&self.tag_bits, tag_bits) &&
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
-               (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits)) &&
-               (!self.db.has_disabled_components || uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix]))
+               uni_bits__no_intersection(&self.exclude_tag_bits, tag_bits) &&
+               (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits) || uni_bits__intersects(&self.any_of_tag_bits, tag_bits)) &&
+               (!self.db.has_disabled_components ||
+                   (uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix]) &&
+                    uni_bits__no_intersection(&self.tag_bits, &self.db.eid_to_tag_disabled_bits[eid.ix])))
     }
 
     view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
@@ -461,6 +514,13 @@ package ode_ecs
             if table_len < min_records_count {
                 min_table = table
                 min_records_count = table_len
+            }
+        }
+        for tag in self.tags {
+            tag_len := shared_table__len(cast(^Shared_Table) tag)
+            if tag_len < min_records_count {
+                min_table = cast(^Shared_Table) tag
+                min_records_count = tag_len
             }
         }
 
@@ -515,10 +575,7 @@ package ode_ecs
         return self.rid_to_eid[:self.len]
     }
 
-    // Real contiguous []T straight off `table.rows`, no per-row pointer-cache indirection — nil
-    // if `table`'s rows aren't currently aligned to the view's row order (or the view is
-    // suspended). Cheaper than view__column_slice(view, T) when it succeeds, but callers must
-    // handle the nil case (fall back to view__column_slice, or skip this table this frame).
+    // Real contiguous []T straight off `table.rows`, no per-row pointer-cache indirection — nil if `table`'s rows aren't currently aligned to the view's row order (or the view is suspended), so callers must handle that case (fall back to view__column_slice, or skip this table this frame).
     view__try_dense_slice :: proc(self: ^View, table: ^Table($T)) -> []T {
         cid := self.tid_to_cid[table.id]
         when VALIDATIONS {
@@ -625,7 +682,6 @@ package ode_ecs
                 case Table_Type.Tiny_Table:
                     self.columns[cid].rows[row_ix] = tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) table, eid)
                 case Table_Type.Tag_Table:
-                    self.columns[cid].rows[row_ix] = nil
                 case Table_Type.Arch_Table:
                     self.columns[cid].rows[row_ix] = rawptr(uintptr((cast(^Arch_Table) table).eid_to_rid[eid.ix]))
             }

@@ -37,7 +37,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F)
 
     @(private)
-    SNAPSHOT_VERSION :: u32(6)
+    SNAPSHOT_VERSION :: u32(8)
 
     @(private)
     SNAPSHOT_ENDIAN_CHECK :: u32(0x0A0B0C0D)
@@ -281,6 +281,14 @@ package ode_ecs
             }
         }
 
+        for tag in self.tag_tables.items {
+            if tag == nil || tag.state != Object_State.Normal do continue
+            if tag.pause_packing do return API_Error.Cannot_Serialize_While_Packing_Paused
+            if check_holes && shared_table__snapshot_holes_count(cast(^Shared_Table) tag) > 0 {
+                return API_Error.Cannot_Serialize_While_Packing_Paused
+            }
+        }
+
         for group in self.groups.items {
             if group == nil || group.state != Object_State.Normal do continue
             if group.pause_packing do return API_Error.Cannot_Serialize_While_Packing_Paused
@@ -302,6 +310,9 @@ package ode_ecs
             size += self.overbase.id_factory.freed_count * size_of(int)
             size = snap__align8(size)
         }
+
+        size += self.overbase.id_factory.cap * size_of(Uni_Bits)
+        size = snap__align8(size)
 
         size += self.overbase.id_factory.cap * size_of(Uni_Bits)
         size = snap__align8(size)
@@ -334,6 +345,14 @@ package ode_ecs
                     size += n * size_of(entity_id)
                 }
             }
+        }
+
+        for tag in self.tag_tables.items {
+            if tag == nil do continue
+
+            size += size_of(Snap_Table_Header)
+            n := shared_table__snapshot_len(cast(^Shared_Table) tag)
+            size += n * size_of(entity_id)
         }
 
         if self.relations != nil && self.relations.state == Object_State.Normal {
@@ -376,6 +395,9 @@ package ode_ecs
         for table in self.tables.items {
             if table != nil do section_count += 1
         }
+        for tag in self.tag_tables.items {
+            if tag != nil do section_count += 1
+        }
 
         pair_table_section_count: i64 = 0
         for pt in self.pair_tables.items {
@@ -411,9 +433,17 @@ package ode_ecs
         snap_writer__write(&w, raw_data(self.eid_to_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
         snap_writer__pad8(&w)
 
+        snap_writer__write(&w, raw_data(self.eid_to_tag_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
+        snap_writer__pad8(&w)
+
         for table in self.tables.items {
             if table == nil do continue
             shared_table__snapshot_write(table, &w)
+        }
+
+        for tag in self.tag_tables.items {
+            if tag == nil do continue
+            shared_table__snapshot_write(cast(^Shared_Table) tag, &w)
         }
 
         if has_relations do relations_table__snapshot_write(self.relations, &w)
@@ -714,9 +744,15 @@ package ode_ecs
         _ = snap_reader__bytes(&r, saved_cap * size_of(Uni_Bits)) or_return
         snap_reader__pad8(&r) or_return
 
+        _ = snap_reader__bytes(&r, saved_cap * size_of(Uni_Bits)) or_return
+        snap_reader__pad8(&r) or_return
+
         nonnil_tables := 0
         for table in self.tables.items {
             if table != nil do nonnil_tables += 1
+        }
+        for tag in self.tag_tables.items {
+            if tag != nil do nonnil_tables += 1
         }
         if int(hdr.section_count) != nonnil_tables do return API_Error.Snapshot_Schema_Mismatch
 
@@ -738,16 +774,26 @@ package ode_ecs
         defer if stamps != nil do delete(stamps, self.allocator)
 
         prev_id := -1
+        prev_tag_id := -1
         for section_ix in 0..<int(hdr.section_count) {
             th: Snap_Table_Header
             snap_reader__read(&r, &th, size_of(th)) or_return
 
             tid := int(th.table_id)
-            if tid <= prev_id do return API_Error.Snapshot_Invalid
-            prev_id = tid
+            is_tag_section := int(th.table_type) == int(Table_Type.Tag_Table)
 
-            if tid < 0 || tid >= len(self.tables.items) do return API_Error.Snapshot_Schema_Mismatch
-            table := self.tables.items[tid]
+            table: ^Shared_Table
+            if is_tag_section {
+                if tid <= prev_tag_id do return API_Error.Snapshot_Invalid
+                prev_tag_id = tid
+                if tid < 0 || tid >= len(self.tag_tables.items) do return API_Error.Snapshot_Schema_Mismatch
+                table = cast(^Shared_Table) self.tag_tables.items[tid]
+            } else {
+                if tid <= prev_id do return API_Error.Snapshot_Invalid
+                prev_id = tid
+                if tid < 0 || tid >= len(self.tables.items) do return API_Error.Snapshot_Schema_Mismatch
+                table = self.tables.items[tid]
+            }
             if table == nil || table.state != Object_State.Normal do return API_Error.Snapshot_Schema_Mismatch
             if int(th.table_type) != int(table.type) do return API_Error.Snapshot_Schema_Mismatch
 
@@ -890,10 +936,16 @@ package ode_ecs
         }
         slice.zero(self.eid_to_bits)
         slice.zero(self.eid_to_disabled_bits)
+        slice.zero(self.eid_to_tag_bits)
+        slice.zero(self.eid_to_tag_disabled_bits)
 
         for table in self.tables.items {
             if table == nil do continue
             shared_table__clear(table) or_return
+        }
+        for tag in self.tag_tables.items {
+            if tag == nil do continue
+            tag_table__clear(tag) or_return
         }
         if db_has_relations do relations_table__clear(self.relations) or_return
         for pt in self.pair_tables.items {
@@ -923,12 +975,21 @@ package ode_ecs
         snap_reader__read(&r, raw_data(self.eid_to_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
         snap_reader__pad8(&r) or_return
 
+        snap_reader__read(&r, raw_data(self.eid_to_tag_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
+        snap_reader__pad8(&r) or_return
+
         self.has_disabled_components = true
 
         for _ in 0..<int(hdr.section_count) {
             th: Snap_Table_Header
             snap_reader__read(&r, &th, size_of(th)) or_return
-            shared_table__snapshot_apply(self.tables.items[int(th.table_id)], &th, &r) or_return
+            table: ^Shared_Table
+            if int(th.table_type) == int(Table_Type.Tag_Table) {
+                table = cast(^Shared_Table) self.tag_tables.items[int(th.table_id)]
+            } else {
+                table = self.tables.items[int(th.table_id)]
+            }
+            shared_table__snapshot_apply(table, &th, &r) or_return
         }
 
         if has_relations {
@@ -1050,7 +1111,7 @@ package ode_ecs
                 #no_bounds_check for rid in 0..<n {
                     eid := tt.rows[rid]
                     oc_maps.rh_map32__add(&tt.eid_to_rid, u32(eid.ix), u32(rid)) or_return
-                    uni_bits__add(&db.eid_to_bits[eid.ix], tt.id)
+                    uni_bits__add(&db.eid_to_tag_bits[eid.ix], tt.id)
                 }
             case Table_Type.Arch_Table:
                 at := cast(^Arch_Table) table

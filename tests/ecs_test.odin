@@ -258,7 +258,7 @@ package ode_ecs__tests
         for i in 0..<table_id_cap {
             testing.expect(t, ecs.tag_table__init(&tags[i], &db, 10) == nil)
         }
-        testing.expect(t, db.tables.cap == table_id_cap, "tables must have grown exactly up to, and no further than, the true table-id ceiling")
+        testing.expect(t, db.tag_tables.cap == table_id_cap, "tag_tables must have grown exactly up to, and no further than, the true tag-id ceiling")
 
         one_too_many: ecs.Tag_Table
         testing.expect(t, ecs.tag_table__init(&one_too_many, &db, 10) == oc.Core_Error.Container_Is_Full)
@@ -1579,6 +1579,9 @@ package ode_ecs__tests
         testing.expect(t, ecs.is_expired(&db, eid))
     }
 
+    // Component tables and tag tables draw ids from separate, independently-bounded
+    // counters (db.tables vs db.tag_tables), so a high id in one space must be
+    // exercised alongside a high id in the other to stress both destroy-entity bit-walks.
     @(test)
     destroy_entity_high_table_id__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -1588,28 +1591,33 @@ package ode_ecs__tests
         context.allocator = mem.panic_allocator()
 
         db: ecs.Database
-        tags: [68]ecs.Tag_Table
+        filler_tables: [67]ecs.Table(AI)
+        filler_tags: [67]ecs.Tag_Table
         positions: ecs.Table(Position)
+        high_tag: ecs.Tag_Table
 
         defer ecs.terminate(&db)
         testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
 
-        for i in 0..<68 {
-            testing.expect(t, ecs.tag_table__init(&tags[i], &db, 10) == nil)
+        for i in 0..<67 {
+            testing.expect(t, ecs.table_init(&filler_tables[i], &db, 10) == nil)
+            testing.expect(t, ecs.tag_table__init(&filler_tags[i], &db, 10) == nil)
         }
         testing.expect(t, ecs.table_init(&positions, &db, 10) == nil)
-        testing.expect(t, int(positions.id) == 68)
+        testing.expect(t, int(positions.id) == 67)
+        testing.expect(t, ecs.tag_table__init(&high_tag, &db, 10) == nil)
+        testing.expect(t, int(high_tag.id) == 67)
 
         eid, cerr := ecs.create_entity(&db)
         testing.expect(t, cerr == nil)
         _, aerr := ecs.add_component(&positions, eid)
         testing.expect(t, aerr == nil)
-        testing.expect(t, ecs.add_tag(&tags[0], eid) == nil)
+        testing.expect(t, ecs.add_tag(&high_tag, eid) == nil)
 
         testing.expect(t, ecs.destroy_entity(&db, eid) == nil)
         testing.expect(t, ecs.entities_len(&db) == 0)
         testing.expect(t, ecs.table_len(&positions) == 0)
-        testing.expect(t, ecs.table_len(&tags[0]) == 0)
+        testing.expect(t, ecs.table_len(&high_tag) == 0)
         testing.expect(t, ecs.has_component(&positions, eid) == false)
     }
 

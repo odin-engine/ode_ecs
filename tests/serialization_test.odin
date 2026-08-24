@@ -881,21 +881,11 @@ package ode_ecs__tests
             verify_intact(t, &db, &positions, p)
 
         //
-        // Case 8: duplicate row eid within the positions section. The section
-        // starts after the Snapshot_Header (64 bytes — grew by one i64,
-        // pair_table_section_count, added for Pair_Table, see SNAPSHOT_VERSION 6),
-        // the entity-id blob (saved_cap * 8, no freed entries here), and the
-        // eid_to_disabled_bits blob (saved_cap * 16 * TABLES_MULT bytes — Uni_Bits
-        // is a 128-bit bit_set per TABLES_MULT word, added in SNAPSHOT_VERSION 5;
-        // Uni_Bits itself is package-private, so this re-derives its size the same
-        // way bits.odin does: BIT_SET_VALUES_CAP bits per word, 8 bits per byte);
-        // its eids array starts after the 64-byte Snap_Table_Header (grew by
-        // one i64 — column_count, added for Arch_Table, see SNAPSHOT_VERSION 3)
-        // and the padded type-name string.
+        // Case 8: duplicate row eid within the positions section — the section starts after the Snapshot_Header (64 bytes), the entity-id blob (saved_cap * 8), and the eid_to_disabled_bits + eid_to_tag_disabled_bits blobs (each saved_cap * size_of(Uni_Bits), re-derived here since Uni_Bits is package-private: BIT_SET_VALUES_CAP bits per word, 8 bits per byte, times TABLES_MULT words), and its eids array starts after the 64-byte Snap_Table_Header and the padded type-name string.
         //
             copy(corrupt, buf)
             uni_bits_size := ecs.BIT_SET_VALUES_CAP / 8 * ecs.TABLES_MULT
-            section_off := 64 + ENTITIES_CAP * 8 + ENTITIES_CAP * uni_bits_size
+            section_off := 64 + ENTITIES_CAP * 8 + 2 * ENTITIES_CAP * uni_bits_size
             name_len := (slice.reinterpret([]i64, corrupt[section_off:][:56]))[6] // name_len field
             eids_off := section_off + 64 + int((name_len + 7) &~ 7)
             section_eids := slice.reinterpret([]ecs.entity_id, corrupt[eids_off:][:2 * size_of(ecs.entity_id)])

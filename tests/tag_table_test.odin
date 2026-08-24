@@ -525,23 +525,23 @@ package ode_ecs__tests
             ecs.tag_table__terminate(&is_enemy)
 
             testing.expect(t, is_enemy.id == ecs.DELETED_INDEX)
-            testing.expect(t, ecs_1.tables.items[1] == nil)
-            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
-            testing.expect(t, ecs_1.tables.has_nil_item == true)
+            testing.expect(t, ecs_1.tag_tables.items[1] == nil)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tag_tables) == 3)
+            testing.expect(t, ecs_1.tag_tables.has_nil_item == true)
 
             // a new table reuses the freed slot
             defer ecs.tag_table__terminate(&is_enemy2)
             testing.expect(t, ecs.tag_table__init(&is_enemy2, &ecs_1, 10) == nil)
             testing.expect(t, is_enemy2.id == 1)
-            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
-            testing.expect(t, ecs_1.tables.has_nil_item == false)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tag_tables) == 3)
+            testing.expect(t, ecs_1.tag_tables.has_nil_item == false)
 
             ecs.tag_table__terminate(&is_alive)
 
             testing.expect(t, is_alive.id == ecs.DELETED_INDEX)
-            testing.expect(t, ecs_1.tables.items[0] == nil)
-            testing.expect(t, oc.sparse_arr__len(&ecs_1.tables) == 3)
-            testing.expect(t, ecs_1.tables.has_nil_item == true)
+            testing.expect(t, ecs_1.tag_tables.items[0] == nil)
+            testing.expect(t, oc.sparse_arr__len(&ecs_1.tag_tables) == 3)
+            testing.expect(t, ecs_1.tag_tables.has_nil_item == true)
     }
 
     // Terminating a Tag_Table invalidates the views subscribed to it.

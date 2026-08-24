@@ -194,7 +194,7 @@ package ode_ecs
     table_base__notify_sync_add :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         when SYNC_ENABLED {
             for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, true)
+                sync_channel__notify_structural(ch, self.id, eid, true, false)
                 sync_channel__mark_touched(ch, self.id, eid)
             }
         }
@@ -204,7 +204,7 @@ package ode_ecs
     table_base__notify_sync_remove :: #force_inline proc(self: ^Table_Base, eid: entity_id) {
         when SYNC_ENABLED {
             for ch in self.sync_watchers.items {
-                sync_channel__notify_structural(ch, self.id, eid, false)
+                sync_channel__notify_structural(ch, self.id, eid, false, false)
             }
         }
     }
@@ -303,7 +303,7 @@ package ode_ecs
         for view in self.subscribers.items do view.state = Object_State.Invalid
         for view in self.subscribers_excluding.items do view.state = Object_State.Invalid
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
-        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id)
+        for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id, false)
 
         if self.owner != nil {
             self.owner.state = Object_State.Invalid

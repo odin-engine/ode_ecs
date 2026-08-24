@@ -85,7 +85,7 @@ package ode_ecs
     SYNC_MAGIC :: u32(0x5345_444F) // "ODES" as little-endian bytes
 
     @(private)
-    SYNC_VERSION :: u8(1)
+    SYNC_VERSION :: u8(2)
 
     @(private)
     Sync_Header :: struct #packed {
@@ -96,6 +96,10 @@ package ode_ecs
         table_section_count:  u16,
         _pad2:                u16,
     }
+
+    // table and tag ids are separate, independently-zero-based counters — the high bit of table_id marks a tag id, so the two spaces don't collide on the wire.
+    @(private)
+    SYNC_STRUCTURAL_TAG_FLAG :: u16(0x8000)
 
     @(private)
     Sync_Structural_Wire :: struct #packed {
@@ -121,9 +125,7 @@ package ode_ecs
     }
 
     @(private)
-    // Top-level fields only — a nested struct/array field is one opaque blob
-    // (offset+size), not recursed into. Falls back to one field for a non-struct
-    // component. Returns ok=false if field count exceeds SYNC_MAX_FIELDS (the field-changed mask is one bit per field).
+    // Top-level fields only — a nested struct/array field is one opaque blob (offset+size), falling back to one field for a non-struct component, with ok=false if the count exceeds SYNC_MAX_FIELDS (the field-changed mask is one bit per field).
     sync__compute_fields :: proc(ti: ^runtime.Type_Info, out: ^[SYNC_MAX_FIELDS]Sync_Field) -> (count: int, ok: bool) {
         base := ti
         if named, is_named := base.variant.(runtime.Type_Info_Named); is_named {
@@ -144,9 +146,7 @@ package ode_ecs
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Sync_Channel — sender side. Tracks touched entities + a per-entity shadow
-// of the last-collected bytes per registered table, and turns that into a
-// tight delta buffer on demand.
+// Sync_Channel — sender side, tracking touched entities plus a per-entity shadow of the last-collected bytes per registered table, and turning that into a tight delta buffer on demand.
 
     @(private)
     Sync_Table_Entry :: struct {
@@ -167,6 +167,7 @@ package ode_ecs
         eid:      entity_id,
         table_id: table_id,
         added:    bool,
+        is_tag:   bool,
     }
 
     Sync_Channel :: struct {
@@ -174,6 +175,7 @@ package ode_ecs
         db:    ^Database,
 
         table_id_to_entry: []int, // len == TABLES_CAP, DELETED_INDEX when that table_id isn't registered
+        tag_id_to_entry:   []int, // separate id space from table_id_to_entry, same DELETED_INDEX convention
         entries:            []Sync_Table_Entry, // preallocated, len == tables_cap passed to init
         entries_count:      int,
 
@@ -185,15 +187,14 @@ package ode_ecs
         if self.state != Object_State.Normal do return false
         if self.db == nil do return false
         if self.table_id_to_entry == nil do return false
+        if self.tag_id_to_entry == nil do return false
         if self.entries == nil do return false
         if !oc.dense_arr__is_valid(&self.structural_events) do return false
 
         return true
     }
 
-    // tables_cap: max registered tables. structural_events_cap: max pending
-    // structural (add/remove) events between collects — fixed, small (not
-    // entities_cap-sized); overflow silently drops events, same loss-tolerance a dropped UDP packet already implies.
+    // tables_cap: max registered tables; structural_events_cap: max pending structural (add/remove) events between collects — fixed, small, not entities_cap-sized, overflow silently drops events with the same loss-tolerance a dropped UDP packet already implies.
     sync_channel__init :: proc(self: ^Sync_Channel, db: ^Database, tables_cap: int, structural_events_cap: int = 256, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -208,6 +209,9 @@ package ode_ecs
 
         self.table_id_to_entry = make([]int, TABLES_CAP, db.allocator) or_return
         for i in 0..<len(self.table_id_to_entry) do self.table_id_to_entry[i] = DELETED_INDEX
+
+        self.tag_id_to_entry = make([]int, TABLES_CAP, db.allocator) or_return
+        for i in 0..<len(self.tag_id_to_entry) do self.tag_id_to_entry[i] = DELETED_INDEX
 
         self.entries = make([]Sync_Table_Entry, tables_cap, db.allocator) or_return
 
@@ -235,10 +239,12 @@ package ode_ecs
 
         delete(self.entries, self.db.allocator) or_return
         delete(self.table_id_to_entry, self.db.allocator) or_return
+        delete(self.tag_id_to_entry, self.db.allocator) or_return
         oc.dense_arr__terminate(&self.structural_events, self.db.allocator) or_return
 
         self.entries = nil
         self.table_id_to_entry = nil
+        self.tag_id_to_entry = nil
         self.entries_count = 0
         self.db = nil
 
@@ -263,6 +269,7 @@ package ode_ecs
     sync_channel__memory_usage :: proc(self: ^Sync_Channel) -> int {
         total := size_of(self^)
         total += size_of(int) * len(self.table_id_to_entry)
+        total += size_of(int) * len(self.tag_id_to_entry)
         total += size_of(Sync_Table_Entry) * len(self.entries)
         for i in 0..<self.entries_count {
             e := &self.entries[i]
@@ -288,7 +295,8 @@ package ode_ecs
         }
 
         if table.type == Table_Type.Arch_Table do return API_Error.Sync_Table_Type_Not_Supported
-        if self.table_id_to_entry[table.id] != DELETED_INDEX do return API_Error.Sync_Table_Already_Registered
+        id_map := is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+        if id_map[table.id] != DELETED_INDEX do return API_Error.Sync_Table_Already_Registered
         if self.entries_count >= len(self.entries) do return oc.Core_Error.Container_Is_Full
 
         fields: [SYNC_MAX_FIELDS]Sync_Field
@@ -348,7 +356,7 @@ package ode_ecs
             return aerr
         }
 
-        self.table_id_to_entry[table.id] = idx
+        id_map[table.id] = idx
         self.entries_count += 1
 
         return nil
@@ -374,8 +382,7 @@ package ode_ecs
         return sync_channel__register_common(self, cast(^Shared_Table) table, nil, true, false, loc)
     }
 
-    // Arch_Table isn't supported yet (see file header). This stub exists so
-    // sync_register(&channel, &an_arch_table) compiles and returns a clear Error instead of failing to match any overload.
+    // Arch_Table isn't supported yet (see file header) — this stub exists so sync_register(&channel, &an_arch_table) compiles and returns a clear Error instead of failing to match any overload.
     sync_channel__register_arch_table :: proc(self: ^Sync_Channel, table: ^Arch_Table, allow_non_pod := false) -> Error {
         return API_Error.Sync_Table_Type_Not_Supported
     }
@@ -386,8 +393,10 @@ package ode_ecs
             assert(sync_channel__is_valid(self), loc = loc)
         }
 
-        if int(table.id) >= len(self.table_id_to_entry) do return oc.Core_Error.Not_Found
-        idx := self.table_id_to_entry[table.id]
+        is_tag := table.type == Table_Type.Tag_Table
+        id_map := is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+        if int(table.id) >= len(id_map) do return oc.Core_Error.Not_Found
+        idx := id_map[table.id]
         if idx == DELETED_INDEX do return oc.Core_Error.Not_Found
 
         e := &self.entries[idx]
@@ -399,10 +408,11 @@ package ode_ecs
 
         // swap-remove the entry; entries[0, entries_count) must stay dense
         last := self.entries_count - 1
-        self.table_id_to_entry[table.id] = DELETED_INDEX
+        id_map[table.id] = DELETED_INDEX
         if idx != last {
             self.entries[idx] = self.entries[last]
-            self.table_id_to_entry[self.entries[idx].table_id] = idx
+            moved_map := self.entries[idx].is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+            moved_map[self.entries[idx].table_id] = idx
         }
         self.entries_count -= 1
 
@@ -410,9 +420,7 @@ package ode_ecs
         return nil
     }
 
-    // Resets every registered table's shadow to current live values and drops
-    // pending touched/structural queues. Call right after sending a full
-    // database__serialize snapshot — otherwise the next collect_delta re-sends everything as if newly changed.
+    // Resets every registered table's shadow to current live values and drops pending touched/structural queues — call right after sending a full database__serialize snapshot, otherwise the next collect_delta re-sends everything as if newly changed.
     sync_channel__resync :: proc(self: ^Sync_Channel, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -444,8 +452,7 @@ package ode_ecs
         return nil
     }
 
-    // Cheap O(tables) worst-case upper bound (assumes every touched entity
-    // changed every field), not an exact dry-run. A buffer sized to this guarantees one sync_collect_delta call flushes everything pending.
+    // Cheap O(tables) worst-case upper bound (assumes every touched entity changed every field, not an exact dry-run) — a buffer sized to this guarantees one sync_collect_delta call flushes everything pending.
     sync_delta_max_size :: proc(self: ^Sync_Channel) -> int {
         size := size_of(Sync_Header)
         size += len(self.structural_events.items) * size_of(Sync_Structural_Wire)
@@ -469,9 +476,7 @@ package ode_ecs
         e.touched_bitset[word] &~= bit
     }
 
-    // Writes as much of the pending delta (structural events, then touched
-    // fields table-by-table) as fits in buf, consuming exactly what was written —
-    // nothing already flushed is re-sent, nothing unflushed is lost. Stops at the first record that doesn't fit (no smaller-record packing); only errors if buf can't hold the fixed header.
+    // Writes as much of the pending delta (structural events, then touched fields table-by-table) as fits in buf, consuming exactly what was written, so nothing already flushed is re-sent and nothing unflushed is lost — stops at the first record that doesn't fit, only erroring if buf can't hold the fixed header.
     sync_collect_delta :: proc(self: ^Sync_Channel, buf: []byte, loc := #caller_location) -> (written: int, err: Error) {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -483,8 +488,7 @@ package ode_ecs
         offset := size_of(Sync_Header)
         stop := false
 
-        // Structural events: small fixed-size records, popped tail-backward.
-        // remove_by_index at the last index is a pure truncation (no swap-reorder), so a partial flush never loses/duplicates/reorders what's left queued.
+        // Structural events are small fixed-size records popped tail-backward — remove_by_index at the last index is a pure truncation (no swap-reorder), so a partial flush never loses/duplicates/reorders what's left queued.
         structural_written := 0
         {
             i := len(self.structural_events.items) - 1
@@ -494,7 +498,9 @@ package ode_ecs
                     break
                 }
                 ev := self.structural_events.items[i]
-                wire := Sync_Structural_Wire{ eid = ev.eid, table_id = u16(ev.table_id), added = ev.added ? u8(1) : u8(0) }
+                wire_id := u16(ev.table_id)
+                if ev.is_tag do wire_id |= SYNC_STRUCTURAL_TAG_FLAG
+                wire := Sync_Structural_Wire{ eid = ev.eid, table_id = wire_id, added = ev.added ? u8(1) : u8(0) }
                 mem.copy(&buf[offset], &wire, size_of(wire))
                 offset += size_of(wire)
                 structural_written += 1
@@ -525,8 +531,7 @@ package ode_ecs
                 for i >= 0 {
                     eid := e.touched.items[i]
 
-                    // Re-resolve fresh: the entity may have lost this component since
-                    // being touched. Nothing to diff — removal already produced its own structural event (and zeroed the shadow) via table_base__notify_sync_remove.
+                    // Re-resolve fresh since the entity may have lost this component since being touched — nothing to diff, removal already produced its own structural event (and zeroed the shadow) via table_base__notify_sync_remove.
                     c := shared_table__get_component(e.table, eid)
                     if c == nil {
                         sync__untouch(e, eid)
@@ -595,12 +600,12 @@ package ode_ecs
     }
 
     @(private)
-    // Called by every table type's terminate path (mirrors View's Invalid marking).
-    // Just forgets the table pointer so collect_delta/unregister_table treat this entry as dead — shadow/touched allocations are freed later by sync_channel__terminate.
-    sync_channel__on_table_terminated :: proc(self: ^Sync_Channel, tid: table_id) {
+    // Called by every table type's terminate path (mirrors View's Invalid marking) — just forgets the table pointer so collect_delta/unregister_table treat this entry as dead, shadow/touched allocations are freed later by sync_channel__terminate.
+    sync_channel__on_table_terminated :: proc(self: ^Sync_Channel, tid: table_id, is_tag: bool) {
         if self == nil || self.state != Object_State.Normal do return
-        if int(tid) >= len(self.table_id_to_entry) do return
-        idx := self.table_id_to_entry[tid]
+        id_map := is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+        if int(tid) >= len(id_map) do return
+        idx := id_map[tid]
         if idx == DELETED_INDEX do return
         self.entries[idx].table = nil
     }
@@ -626,30 +631,28 @@ package ode_ecs
     }
 
     @(private)
-    sync_channel__notify_structural :: proc(self: ^Sync_Channel, tid: table_id, eid: entity_id, added: bool) {
+    sync_channel__notify_structural :: proc(self: ^Sync_Channel, tid: table_id, eid: entity_id, added: bool, is_tag: bool) {
         if self == nil || self.state != Object_State.Normal do return
-        if int(tid) >= len(self.table_id_to_entry) do return
-        idx := self.table_id_to_entry[tid]
+        id_map := is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+        if int(tid) >= len(id_map) do return
+        idx := id_map[tid]
         if idx == DELETED_INDEX do return
         e := &self.entries[idx]
         if e.table == nil do return
 
         if !added && !e.is_tag {
-            // See this file's header note on why the shadow is entity-indexed
-            // and must not leak a departed entity's bytes to whoever reuses eid.ix.
+            // See this file's header note on why the shadow is entity-indexed and must not leak a departed entity's bytes to whoever reuses eid.ix.
             off := eid.ix * e.comp_size
             mem.zero(&e.shadow[off], e.comp_size)
         }
 
         // structural_events has a small fixed cap (not entities_cap-sized) — silently
         // drop on overflow rather than error; same loss-tolerance a dropped UDP packet already implies.
-        _, _ = oc.dense_arr__add(&self.structural_events, Sync_Structural_Event{ eid = eid, table_id = tid, added = added })
+        _, _ = oc.dense_arr__add(&self.structural_events, Sync_Structural_Event{ eid = eid, table_id = tid, added = added, is_tag = is_tag })
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Sync_Decoder — receiver side. Lighter than Sync_Channel: no shadow, no
-// touched tracking, no watcher registration — just enough per-table field
-// layout to decode collect_delta's wire format and apply it, using the same reflection as the sender.
+// Sync_Decoder — receiver side, lighter than Sync_Channel (no shadow, no touched tracking, no watcher registration), just enough per-table field layout to decode collect_delta's wire format and apply it, using the same reflection as the sender.
 
     @(private)
     Sync_Decoder_Entry :: struct {
@@ -666,6 +669,7 @@ package ode_ecs
         db:    ^Database,
 
         table_id_to_entry: []int,
+        tag_id_to_entry:   []int,
         entries:            []Sync_Decoder_Entry,
         entries_count:      int,
     }
@@ -675,6 +679,7 @@ package ode_ecs
         if self.state != Object_State.Normal do return false
         if self.db == nil do return false
         if self.table_id_to_entry == nil do return false
+        if self.tag_id_to_entry == nil do return false
         if self.entries == nil do return false
 
         return true
@@ -694,6 +699,9 @@ package ode_ecs
         self.table_id_to_entry = make([]int, TABLES_CAP, db.allocator) or_return
         for i in 0..<len(self.table_id_to_entry) do self.table_id_to_entry[i] = DELETED_INDEX
 
+        self.tag_id_to_entry = make([]int, TABLES_CAP, db.allocator) or_return
+        for i in 0..<len(self.tag_id_to_entry) do self.tag_id_to_entry[i] = DELETED_INDEX
+
         self.entries = make([]Sync_Decoder_Entry, tables_cap, db.allocator) or_return
 
         self.state = Object_State.Normal
@@ -707,9 +715,11 @@ package ode_ecs
 
         delete(self.entries, self.db.allocator) or_return
         delete(self.table_id_to_entry, self.db.allocator) or_return
+        delete(self.tag_id_to_entry, self.db.allocator) or_return
 
         self.entries = nil
         self.table_id_to_entry = nil
+        self.tag_id_to_entry = nil
         self.entries_count = 0
         self.db = nil
 
@@ -720,6 +730,7 @@ package ode_ecs
     sync_decoder__memory_usage :: proc(self: ^Sync_Decoder) -> int {
         total := size_of(self^)
         total += size_of(int) * len(self.table_id_to_entry)
+        total += size_of(int) * len(self.tag_id_to_entry)
         total += size_of(Sync_Decoder_Entry) * len(self.entries)
         return total
     }
@@ -738,7 +749,8 @@ package ode_ecs
         }
 
         if table.type == Table_Type.Arch_Table do return API_Error.Sync_Table_Type_Not_Supported
-        if self.table_id_to_entry[table.id] != DELETED_INDEX do return API_Error.Sync_Table_Already_Registered
+        id_map := is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+        if id_map[table.id] != DELETED_INDEX do return API_Error.Sync_Table_Already_Registered
         if self.entries_count >= len(self.entries) do return oc.Core_Error.Container_Is_Full
 
         fields: [SYNC_MAX_FIELDS]Sync_Field
@@ -758,7 +770,7 @@ package ode_ecs
             table = table, table_id = table.id, comp_size = comp_size,
             fields = fields, field_count = field_count, is_tag = is_tag,
         }
-        self.table_id_to_entry[table.id] = idx
+        id_map[table.id] = idx
         self.entries_count += 1
 
         return nil
@@ -789,10 +801,7 @@ package ode_ecs
         return API_Error.Sync_Table_Type_Not_Supported
     }
 
-    // Parses and applies one collect_delta buffer. Tolerates (silently skips) an
-    // unknown/expired entity_id — normal for a receiver briefly behind the sender.
-    // An unregistered table_id is a hard Snapshot_Schema_Mismatch instead — its field
-    // layout is unknown so the rest of the buffer can't be safely parsed, and earlier effects in this buffer are NOT rolled back (each delta is an incremental tick, not an atomic snapshot).
+    // Parses and applies one collect_delta buffer, tolerating (silently skipping) an unknown/expired entity_id (normal for a receiver briefly behind the sender), but treating an unregistered table_id as a hard Snapshot_Schema_Mismatch since its field layout is unknown and the rest of the buffer can't be safely parsed — earlier effects in this buffer are NOT rolled back, since each delta is an incremental tick, not an atomic snapshot.
     sync_apply_delta :: proc(self: ^Sync_Decoder, data: []byte, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -815,11 +824,13 @@ package ode_ecs
             offset += size_of(wire)
 
             eid := wire.eid
-            tid := table_id(wire.table_id)
+            is_tag := (wire.table_id & SYNC_STRUCTURAL_TAG_FLAG) != 0
+            tid := table_id(wire.table_id &~ SYNC_STRUCTURAL_TAG_FLAG)
 
             if database__is_entity_correct(self.db, eid) != nil do continue // tolerated: unknown/expired
-            if int(tid) >= len(self.table_id_to_entry) do continue
-            idx := self.table_id_to_entry[tid]
+            id_map := is_tag ? self.tag_id_to_entry : self.table_id_to_entry
+            if int(tid) >= len(id_map) do continue
+            idx := id_map[tid]
             if idx == DELETED_INDEX do continue // not registered on this decoder — tolerated skip
             e := &self.entries[idx]
             if e.table == nil do continue
@@ -875,8 +886,7 @@ package ode_ecs
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tests — only compiled in when SYNC_ENABLED (see file header): with it off,
-// sync_register always returns Sync_Feature_Disabled, so these tests' assumptions don't hold. Mirrors how maps package tests require -define:maps_testing=true to exist at all.
+// Tests — only compiled in when SYNC_ENABLED (see file header), since with it off sync_register always returns Sync_Feature_Disabled and these tests' assumptions don't hold (mirrors how maps package tests require -define:maps_testing=true to exist at all).
 
 when SYNC_ENABLED {
 
@@ -973,9 +983,7 @@ when SYNC_ENABLED {
         testing.expect(t, written3 == size_of(Sync_Header))
     }
 
-    // Regression test: shadow must be keyed by entity_id.ix, not row id, so a
-    // departed entity's bytes never leak to whoever reuses that ix. entities_cap=1
-    // forces ix reuse; the new entity writes identical bytes and must still be reported as "changed".
+    // Regression test: shadow must be keyed by entity_id.ix, not row id, so a departed entity's bytes never leak to whoever reuses that ix — entities_cap=1 forces ix reuse, and the new entity writes identical bytes and must still be reported as "changed".
     @(test)
     sync__shadow_not_leaked_across_reused_entity_id__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1088,9 +1096,7 @@ when SYNC_ENABLED {
         testing.expect(t, len(ch.entries[0].touched.items) == 0)
     }
 
-    // Structural add/remove round-trips through a Sync_Decoder onto a separate
-    // mirrored Database sharing the same Overbase (entity ids valid on both sides).
-    // Also covers the "unknown/expired entity_id on apply is a tolerated skip" contract via a hand-crafted buffer.
+    // Structural add/remove round-trips through a Sync_Decoder onto a separate mirrored Database sharing the same Overbase (entity ids valid on both sides), also covering the "unknown/expired entity_id on apply is a tolerated skip" contract via a hand-crafted buffer.
     @(test)
     sync__structural_roundtrip_and_tolerated_skip__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1141,7 +1147,7 @@ when SYNC_ENABLED {
 
         hdr := Sync_Header{ magic = SYNC_MAGIC, version = SYNC_VERSION, structural_count = 1 }
         mem.copy(&buf[0], &hdr, size_of(hdr))
-        wire := Sync_Structural_Wire{ eid = bogus, table_id = u16(tag_send.id), added = 1 }
+        wire := Sync_Structural_Wire{ eid = bogus, table_id = u16(tag_send.id) | SYNC_STRUCTURAL_TAG_FLAG, added = 1 }
         mem.copy(&buf[size_of(Sync_Header)], &wire, size_of(wire))
         testing.expect(t, sync_apply_delta(&dec, buf[:size_of(Sync_Header) + size_of(Sync_Structural_Wire)]) == nil)
 
