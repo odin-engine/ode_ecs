@@ -73,7 +73,7 @@ When initializing a `Database`, you can specify the maximum `entities_cap` as we
 
 Every other object (tables, views) linked to `my_ecs` will now use `my_allocator` to allocate memory.  
 
->**NOTE:** ODE_ECS never reallocates memory automatically. This follows the same reasoning as avoiding garbage collectors — to prevent performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
+>**NOTE:** ODE_ECS never reallocates memory automatically during the frame loop. This follows the same reasoning as avoiding garbage collectors — to prevent performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
 
 You can have as many ECS databases in your game as you want:  
 
