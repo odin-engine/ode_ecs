@@ -11,8 +11,7 @@ package maps
     import "core:mem"
     import "core:testing"
 
-    // Predictable hash values for map tests (key 0 -> hash 0, key 1 -> hash 1, etc.):
-    // odin test . -define:maps_testing=true
+    // Predictable hash values for map tests (key 0 -> hash 0, key 1 -> hash 1, etc.)
     MAPS_TESTING :: #config(maps_testing, false)
 
     // Same switch as ode_core/ecs: also compiles out hot-path sanity asserts here.

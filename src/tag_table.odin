@@ -20,7 +20,7 @@ package ode_ecs
         using shared: Shared_Table,
 
         rows: []entity_id,                          // rid_to_eid
-        eid_to_rid: oc_maps.Rh_Map32,               // eid.ix -> row id in rows (8-byte items, see Compact_Table)
+        eid_to_rid: oc_maps.Rh_Map32,               // eid.ix -> row id in rows (8-byte items)
 
         cap: int,
 
@@ -29,8 +29,8 @@ package ode_ecs
         first_hole_rid: int, // scan-start hint for pack; max(int) when no holes
 
         subscribers: oc.Dense_Arr(^View),
-        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table (see view__init excludes)
-        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table (see view__init any_of)
+        subscribers_excluding: oc.Dense_Arr(^View), // views that EXCLUDE this table
+        subscribers_any_of: oc.Dense_Arr(^View), // views that any_of this table
 
         // sync_channels_cap sizes sync_watchers, lazily allocated on first sync_register.
         sync_channels_cap: int,
@@ -102,7 +102,7 @@ package ode_ecs
         for view in self.subscribers_any_of.items do view.state = Object_State.Invalid
         for ch in self.sync_watchers.items do sync_channel__on_table_terminated(ch, self.id, true)
 
-        // Clear this table's tag bit from all entities, see table_raw__terminate
+        // Clear this table's tag bit from all entities
         for &bits in self.db.eid_to_tag_bits do uni_bits__remove(&bits, self.id)
 
         if self.sync_watchers.items != nil do oc.dense_arr__terminate(&self.sync_watchers, self.db.allocator) or_return
@@ -319,8 +319,7 @@ package ode_ecs
         return oc_maps.rh_map32__get(&self.eid_to_rid, u32(eid.ix)) != oc_maps.RH_MAP32_DELETED
     }
 
-    // Soft toggle: excludes the component from View matching without removing it — see
-    // database.odin's "Component enable/disable" section.
+    // Soft toggle: excludes the component from View matching without removing it.
     tag_table__disable_component :: proc(self: ^Tag_Table, eid: entity_id) -> Error {
         return database__disable_tag(self.db, eid, self)
     }
@@ -334,7 +333,7 @@ package ode_ecs
         return database__is_tag_disabled(self.db, eid, self.id)
     }
 
-    // Compact holes left by removals made while tail swap was paused (see database__pause_packing) — callable mid-pause too.
+    // Compact holes left by removals made while tail swap was paused — callable mid-pause too.
     tag_table__pack :: proc(self: ^Tag_Table) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -504,7 +503,6 @@ package ode_ecs
         for view in self.subscribers_excluding.items {
             if !view.suspended && view__components_match(view, eid) {
                 when VALIDATIONS {
-                    // see table_base__notify_excluding_views
                     aerr := view__add_record(view, eid)
                     assert(aerr != API_Error.Cannot_Add_Record_To_View_Container_Is_Full, "excluding view is full — entity silently dropped, raise the view's included tables' caps")
                 } else {

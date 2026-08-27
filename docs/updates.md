@@ -1,6 +1,7 @@
 # 🐑 Updates Timeline
 
 **August 2026**
+- ** BREAKABLE CHANGE ** - sorry moved source code to src/ folder to declutter root folder. Now you need to `import ecs "ode_ecs/src"` instead of `import ecs "ode_ecs"`.
 - Internally separate component types and tags.
 - **new** •  `slice(&view, &table)` — an opt-in dense fast path: hands back a `Table`'s real `[]T`
   rows directly (no per-row pointer-cache indirection) when that table happens to be aligned to

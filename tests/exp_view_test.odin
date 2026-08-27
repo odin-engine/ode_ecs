@@ -12,7 +12,7 @@ package ode_ecs__tests
     import "core:math/rand"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
     Exp_Pos :: struct { x, y: f64 }
     Exp_Vel :: struct { x, y: f64 }

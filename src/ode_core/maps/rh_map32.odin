@@ -15,9 +15,7 @@ package maps
 ///////////////////////////////////////////////////////////////////////////////
 // Rh_Map32 - Robin Hood map with 8-byte items (u32 key -> u32 value).
 //
-// 8-byte items keep many probes in one cache line and the footprint small.
-// Made for eid.ix -> row-id indexes (Compact_Table), so keys/values fit u32.
-// RH_MAP32_DELETED (max(u32)) doubles as the empty-slot marker and "not found".
+// Made for eid.ix -> row-id indexes (Compact_Table); RH_MAP32_DELETED (max(u32)) doubles as the empty-slot marker and "not found".
 
     RH_MAP32_DELETED :: max(u32)
 
@@ -99,8 +97,7 @@ package maps
         }
     }
 
-    // Insert; key must be < RH_MAP32_DELETED.
-    // #no_bounds_check: idx is always masked with capacity - 1, capacity == len(items)
+    // Insert; key must be < RH_MAP32_DELETED (#no_bounds_check: idx is always masked with capacity - 1).
     rh_map32__add :: proc(self: ^Rh_Map32, key: u32, value: u32) -> (err: oc.Core_Error) #no_bounds_check {
 
         if self.count >= self.half_capacity { // load factor >= 0.5
@@ -142,13 +139,7 @@ package maps
         }
     }
 
-    // Single-probe get-or-insert: one walk either finds an existing key
-    // (found=true, unmodified) or, if can_insert, inserts at the walk's
-    // natural point and reports found=false — avoids the redundant second
-    // probe a separate get()+add() would pay. can_insert lets a caller gate
-    // insertion on external capacity; err is Container_Is_Full only when an
-    // insert was attempted but this map's own load factor blocked it.
-    // Core_Error, not oc.Error — never allocates (see rh_map32__add).
+    // Single-probe get-or-insert: one walk either finds an existing key (found=true) or, if can_insert, inserts at the walk's natural point (found=false).
     rh_map32__get_or_insert :: #force_inline proc(self: ^Rh_Map32, key: u32, insert_value: u32, can_insert: bool) -> (value: u32, found: bool, err: oc.Core_Error) #no_bounds_check {
         insertable := can_insert && self.count < self.half_capacity
 
@@ -220,7 +211,6 @@ package maps
     }
 
     // Returns (value, slot index); index is oc.DELETED_INDEX when absent.
-    // Feeds rh_map32__remove_at so callers avoid a second hash+probe to remove.
     rh_map32__get_with_index :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32) -> (u32, int) {
         ix := rh_map32__hash(self, key)
 
@@ -236,7 +226,7 @@ package maps
         return val
     }
 
-    // Core_Error, not oc.Error — never allocates (see rh_map32__add).
+    // Core_Error, not oc.Error — never allocates.
     rh_map32__update :: proc(self: ^Rh_Map32, key: u32, new_value: u32) -> (err: oc.Core_Error) {
         _, ix := rh_map32__get_with_index(self, key)
 
@@ -249,10 +239,7 @@ package maps
         return oc.Core_Error.None
     }
 
-    // Remove the item at a slot index from rh_map32__get_with_index for a
-    // present key — backward shift without re-hashing. Index is only valid
-    // until the next add/remove; value-only updates don't move slots.
-    // #no_bounds_check: indexes are always masked with capacity - 1, capacity == len(items)
+    // Removes the item at a slot index from rh_map32__get_with_index via backward shift, without re-hashing (#no_bounds_check: indexes are always masked with capacity - 1).
     rh_map32__remove_at :: proc(self: ^Rh_Map32, #any_int idx: int) #no_bounds_check {
         idx := idx
 
@@ -272,7 +259,7 @@ package maps
         self.count -= 1
     }
 
-    // Core_Error, not oc.Error — never allocates (see rh_map32__add).
+    // Core_Error, not oc.Error — never allocates.
     rh_map32__remove :: proc(self: ^Rh_Map32, key: u32) -> oc.Core_Error {
         _, idx := rh_map32__get_with_index(self, key)
         if idx == oc.DELETED_INDEX do return oc.Core_Error.Not_Found

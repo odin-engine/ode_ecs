@@ -13,9 +13,8 @@ package ode_core
 
 ///////////////////////////////////////////////////////////////////////////////
 // Dense_Arr -- tail-swap unordered dense preallocated array.
-// 
-// Use when order doesn't matter but iteration speed does; removed items are
-// replaced by the tail item. No [dynamic] array so allocation stays controlled.
+//
+// Use when order doesn't matter but iteration speed does; removed items are replaced by the tail item.
 
     Dense_Arr :: struct($T: typeid) {
         cap: int, 
@@ -52,8 +51,7 @@ package ode_core
         return err
     }
 
-    // Resizes the backing allocation to new_cap, preserving existing items. Rejects
-    // shrinking below the current live length instead of dropping items.
+    // Resizes the backing allocation to new_cap, preserving existing items, rejecting shrinking below the current live length.
     dense_arr__resize :: proc(self: ^Dense_Arr($T), new_cap: int, allocator: runtime.Allocator) -> Error {
         live_len := dense_arr__len(self)
         if new_cap < live_len do return Core_Error.Cannot_Shrink_Below_Length
@@ -97,8 +95,7 @@ package ode_core
         return Core_Error.Not_Found
     }
 
-    // Core_Error, not the wider Error — see dense_arr__remove_by_value's doc
-    // comment (same reasoning, this proc never allocates either).
+    // Core_Error, not the wider Error — this proc never allocates.
     dense_arr__add :: proc(self: ^Dense_Arr($T), value: T) -> (int, Core_Error) #no_bounds_check {
         raw := (^runtime.Raw_Slice)(&self.items)
         if raw.len >= self.cap do return DELETED_INDEX, Core_Error.Container_Is_Full
@@ -110,8 +107,7 @@ package ode_core
         return index, Core_Error.None
     }
 
-    // Adds value, doubling the backing allocation first if full instead of
-    // returning Container_Is_Full. Requires self already allocated (cap > 0).
+    // Adds value, doubling the backing allocation first if full instead of returning Container_Is_Full.
     dense_arr__add_growing :: proc(self: ^Dense_Arr($T), value: T, allocator: runtime.Allocator) -> (ix: int, err: Error) {
         when VALIDATIONS do assert(self.cap > 0)
 

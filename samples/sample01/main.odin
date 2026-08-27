@@ -22,8 +22,8 @@ package ode_ecs_sample1
 
 
 // ODE_ECS
-    import ecs "../../"
-    import oc "../../ode_core"
+    import ecs "../../src"
+    import oc "../../src/ode_core"
 
 //
 // Components

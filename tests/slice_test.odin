@@ -4,7 +4,7 @@ import "core:testing"
 import "core:log"
 import "core:mem"
 
-import ecs ".."
+import ecs "../src"
 
 @(test)
 table__slice__test :: proc(t: ^testing.T) {

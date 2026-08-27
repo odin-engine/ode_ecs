@@ -19,7 +19,7 @@ package ode_ecs_fat_struct_mix
     import "core:fmt"
 
 // ODE_ECS
-    import ecs "../../../"
+    import ecs "../../../src"
 
 //
 // Hot-path data: monolithic Entity struct, same as ../fat/main.odin

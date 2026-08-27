@@ -13,9 +13,9 @@ package ode_ecs__tests
     import "core:time"
 
 // ODE
-    import ecs ".."
-    import oc "../ode_core"
-    import oc_maps "../ode_core/maps"
+    import ecs "../src"
+    import oc "../src/ode_core"
+    import oc_maps "../src/ode_core/maps"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Database

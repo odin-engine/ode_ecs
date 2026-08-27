@@ -12,7 +12,7 @@ package ode_ecs__tests
     import "core:mem"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Components

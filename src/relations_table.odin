@@ -25,7 +25,7 @@
     definition, i.e. >= 1 edge, and edges are disjoint across different roots'
     subtrees, so #roots <= count <= cap — a whole-forest walk's *combined*
     result (roots + all descendants) is therefore bounded by 2*cap, not cap;
-    its buffer is sized accordingly (see walk_buf below). All three return
+    its buffer is sized accordingly. All three return
     slices of internal buffers, valid only until the next call to any of them,
     or any structural change (set_parent/remove_parent/destroy_entity/clear)
     — same contract as children_of.
@@ -50,25 +50,17 @@ package ode_ecs
         cap: int,       // max number of concurrent parent links (relations)
         count: int,     // current number of parent links
 
-        // Sized to db.overbase.id_factory.cap, indexed by eid.ix.
-        // entity_id with ix == DELETED_INDEX means "none".
+        // Sized to db.overbase.id_factory.cap, indexed by eid.ix; ix == DELETED_INDEX means "none".
         parent:         []entity_id,
         first_child:    []entity_id,
         next_sibling:   []entity_id,    // doubly-linked sibling list => O(1) unlink
         prev_sibling:   []entity_id,
         children_count: []i32,
 
-        // Sized to cap: children_of() results and destroy-cascade queue. The
-        // slice returned by children_of is valid only until the next call or any structural change.
+        // Sized to cap: children_of() results and destroy-cascade queue, valid only until the next call or any structural change.
         scratch: []entity_id,
 
-        // roots()/walk_hierarchy()'s forest-wide BFS queue and level boundaries.
-        // Distinct from `scratch` (single-subtree/cascade-destroy scoped) — a
-        // whole-forest walk isn't bounded by one subtree's size the way a single
-        // subtree is. Sized 2*cap: #roots <= count <= cap (every root needs >= 1
-        // child/edge) and descendants <= count <= cap, so roots+descendants <= 2*cap.
-        // level_offsets sized cap+2: at most cap+1 levels (root level + a chain using
-        // all cap edges, one level each), plus one extra slot for the end-boundary.
+        // roots()/walk_hierarchy()'s forest-wide BFS queue and level boundaries, distinct from `scratch` (single-subtree/cascade-destroy scoped) and sized 2*cap for the combined roots+descendants bound.
         walk_buf:      []entity_id,
         level_offsets: []int,
     }
@@ -149,8 +141,7 @@ package ode_ecs
         self.db.relations = nil
         self.db = nil
 
-        // Leave the table in Not_Initialized state (not Terminated) so the same
-        // struct can be re-init'd without zeroing it first. See issue #8.
+        // Leave the table in Not_Initialized state (not Terminated) so the same struct can be re-init'd without zeroing it first.
         self.state = Object_State.Not_Initialized
 
         return nil
@@ -195,9 +186,7 @@ package ode_ecs
         return self.cap
     }
 
-    // Makes `parent` the parent of `child`, replacing any previous parent.
-    // Returns Relation_Cycle if child == parent or child is an ancestor of parent.
-    // Returns Container_Is_Full when creating a NEW link would exceed cap (re-parenting an existing link always succeeds).
+    // Makes `parent` the parent of `child`, replacing any previous parent; returns Relation_Cycle if child == parent or child is an ancestor of parent.
     relations_table__set_parent :: proc(self: ^Relations_Table, child: entity_id, parent: entity_id, loc := #caller_location) -> Error #no_bounds_check {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -212,8 +201,7 @@ package ode_ecs
         old_parent := self.parent[child.ix]
         if old_parent == parent do return nil // no-op, already the parent
 
-        // Cycle check: walk up parent's ancestor chain; if we reach child,
-        // parenting would close a cycle. O(depth), before any mutation.
+        // Cycle check: walk up parent's ancestor chain; if we reach child, parenting would close a cycle.
         p := self.parent[parent.ix]
         for !is_not_set(p) {
             if p == child do return API_Error.Relation_Cycle
@@ -233,7 +221,7 @@ package ode_ecs
         return nil
     }
 
-    // Removes child's parent link. Returns Not_Found if child has no parent.
+    // Removes child's parent link, returning Not_Found if child has no parent.
     relations_table__remove_parent :: proc(self: ^Relations_Table, child: entity_id, loc := #caller_location) -> Error #no_bounds_check {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -260,9 +248,7 @@ package ode_ecs
         return self.parent[eid.ix], nil
     }
 
-    // Returns parent's children as a slice of the internal scratch buffer, valid
-    // only until the next children_of call or any structural change
-    // (set_parent/remove_parent/destroy_entity/clear) — use immediately, do not store.
+    // Returns parent's children as a slice of the internal scratch buffer, valid only until the next children_of call or any structural change.
     relations_table__children_of :: proc(self: ^Relations_Table, parent: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
         database__is_entity_correct(self.db, parent) or_return
 
@@ -319,21 +305,15 @@ package ode_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // Hierarchy walk — read-only traversal helpers, parent-before-child order.
-// See the file header for the buffer-sizing/lifetime contract.
 
-    // True if eid has no parent AND at least one child — the entry point of a
-    // hierarchy. An entity that has never touched relations (no parent, no
-    // children) is NOT a root, it's just untouched.
+    // True if eid has no parent AND at least one child — the entry point of a hierarchy.
     relations_table__is_root :: proc(self: ^Relations_Table, eid: entity_id) -> (res: bool, err: Error) #no_bounds_check {
         database__is_entity_correct(self.db, eid) or_return
 
         return is_not_set(self.parent[eid.ix]) && self.children_count[eid.ix] > 0, nil
     }
 
-    // All roots in the table, in ix order. O(entities_cap) — no dense index of
-    // "entities with relations" exists, so every slot's parent/children_count
-    // must be checked. Returns a slice of walk_buf (see file header for bound
-    // and lifetime contract).
+    // All roots in the table, in ix order, O(entities_cap) since every slot's parent/children_count must be checked.
     relations_table__roots :: proc(self: ^Relations_Table) -> (res: []entity_id, err: Error) #no_bounds_check {
         n := 0
         for ix := 0; ix < len(self.parent); ix += 1 {
@@ -348,12 +328,7 @@ package ode_ecs
         return self.walk_buf[:n], nil
     }
 
-    // Descendants of root, breadth-first (children before grandchildren) — the
-    // same order destroy_children relies on internally, exposed for reading.
-    // root itself is NOT included (same convention as children_of returning
-    // only children, not the parent). Reuses `scratch` — same lifetime
-    // contract as children_of, cheaper than walk_hierarchy when you already
-    // have a specific root and don't need level boundaries.
+    // Descendants of root, breadth-first (children before grandchildren); root itself is NOT included, same convention as children_of.
     relations_table__walk_subtree :: proc(self: ^Relations_Table, root: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
         database__is_entity_correct(self.db, root) or_return
 
@@ -380,13 +355,7 @@ package ode_ecs
         return self.scratch[:n], nil
     }
 
-    // Whole forest, breadth-first, depth order (every root, then their
-    // children, then grandchildren, ...) — discovers all roots itself (see
-    // roots()), a materially different traversal from walk_subtree, not a
-    // thin wrapper around it. level_offsets[i]..<level_offsets[i+1] indexes
-    // into the returned entities slice for depth level i (roots are level 0);
-    // len(level_offsets)-1 is the number of levels. Uses walk_buf/
-    // level_offsets — same lifetime contract as children_of.
+    // Whole forest, breadth-first, depth order, discovering all roots itself — a materially different traversal from walk_subtree, not a thin wrapper around it.
     relations_table__walk_hierarchy :: proc(self: ^Relations_Table) -> (entities: []entity_id, level_offsets: []int, err: Error) #no_bounds_check {
         n := 0
 
@@ -475,8 +444,7 @@ package ode_ecs
         self.count -= 1
     }
 
-    // Removes all of eid's relations: unlinks from its parent and orphans its
-    // children. Called by database__destroy_entity; eid is already validated by the caller.
+    // Removes all of eid's relations: unlinks from its parent and orphans its children.
     @(private)
     relations_table__unlink_entity :: proc "contextless" (self: ^Relations_Table, eid: entity_id) #no_bounds_check {
         p := self.parent[eid.ix]

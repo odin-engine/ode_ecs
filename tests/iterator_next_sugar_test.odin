@@ -14,7 +14,7 @@ package ode_ecs__tests
     import "core:mem"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
 ///////////////////////////////////////////////////////////////////////////////
 // ecs.next — for-in sugar over Iterator + Table($T) columns

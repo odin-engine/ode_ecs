@@ -21,7 +21,7 @@ package ode_ecs
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
 
     //
-    // Initial capacities for various ECS containers (auto-grows if exceeded, outside the frame loop).
+    // Initial capacities for various ECS containers (auto-grows if exceeded, outside of the frame loop).
     //
 
         TABLES_CAP ::  #config(ECS_TABLES_CAP, 16)
@@ -273,7 +273,7 @@ package ode_ecs
         observer_terminate :: observer__terminate
 
     //
-    // Relations (parent/child); requires a Relations_Table on the database, see relations_table__init
+    // Relations (parent/child); requires a Relations_Table on the database
     //
         relations_init      :: relations_table__init
         relations_terminate :: relations_table__terminate
@@ -535,7 +535,7 @@ package ode_ecs
             group__slice_arch,
             arch_table__column_slice,   // slice(&arch, T) -> []T - returns structs not pointers
             arch_table__entities_slice, // slice(&arch) -> []entity_id
-            view__try_dense_slice,      // slice(&view, &table) -> []T or nil - see view.odin
+            view__try_dense_slice,      // slice(&view, &table) -> []T or nil
         }
 
         //

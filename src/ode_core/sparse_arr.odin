@@ -12,9 +12,7 @@ package ode_core
     import "core:testing"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Sparse_Arr -- unmovable ordered sparse array of pointers. Items never move
-// (order matters), so removal leaves nil holes that later adds scan to refill.
-// Best for small arrays or infrequent add/remove.
+// Sparse_Arr -- unmovable ordered sparse array of pointers; items never move (order matters), so removal leaves nil holes that later adds scan to refill.
 
     Sparse_Arr :: struct($T: typeid) {
         items: []^T,   
@@ -108,8 +106,7 @@ package ode_core
         return id, nil
     }
 
-    // Adds value, doubling the backing allocation first if full instead of
-    // returning Container_Is_Full. Requires self already allocated (cap > 0).
+    // Adds value, doubling the backing allocation first if full instead of returning Container_Is_Full.
     sparse_arr__add_growing :: proc(self: ^Sparse_Arr($T), value: ^T, allocator: runtime.Allocator) -> (ix: int, err: Error) {
         when VALIDATIONS do assert(self.cap > 0)
 
@@ -121,8 +118,7 @@ package ode_core
         return
     }
 
-    // Preserves items (and nil holes) in place; rejects shrinking below the live
-    // span since Sparse_Arr is unmovable and never compacts.
+    // Preserves items (and nil holes) in place; rejects shrinking below the live span since Sparse_Arr is unmovable and never compacts.
     sparse_arr__resize :: proc(self: ^Sparse_Arr($T), new_cap: int, allocator: runtime.Allocator) -> Error {
         live_len := sparse_arr__len(self)
         if new_cap < live_len do return Core_Error.Cannot_Shrink_Below_Length
@@ -295,9 +291,7 @@ package ode_core
         testing.expect(t, sparse_arr__is_valid(&sa) == false)
     }
 
-    // sparse_arr__add's "more than one nil hole" branch: create two
-    // non-adjacent holes, add once, and confirm has_nil_item stays true
-    // (there's still one more hole left) while only the first hole fills.
+    // sparse_arr__add's "more than one nil hole" branch: only the first hole fills, and has_nil_item stays true.
     @(test)
     sparse_arr__multiple_nil_holes__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -313,8 +307,7 @@ package ode_core
         alloc_err := sparse_arr__init(&sa, 4, allocator)
         testing.expect(t, alloc_err == runtime.Allocator_Error.None)
 
-        // Fill to capacity so removing index 0 or 2 leaves a real hole instead
-        // of just shrinking len (tail removal is a different, tested path).
+        // Fill to capacity so removing index 0 or 2 leaves a real hole instead of just shrinking len.
         _, err := sparse_arr__add(&sa, &a)
         testing.expect(t, err == Core_Error.None)
         _, err = sparse_arr__add(&sa, &b)
@@ -329,8 +322,7 @@ package ode_core
         sparse_arr__remove_by_index(&sa, 2)
         testing.expect(t, sa.has_nil_item == true)
 
-        // Adding once must fill the FIRST hole (index 0) and correctly
-        // remember that a second hole (index 2) is still there.
+        // Adding once must fill the FIRST hole (index 0) and remember that a second hole (index 2) is still there.
         ix, aerr := sparse_arr__add(&sa, &e)
         testing.expect(t, aerr == Core_Error.None)
         testing.expect(t, ix == 0)
@@ -422,8 +414,7 @@ package ode_core
         testing.expect(t, err == nil)
         testing.expect(t, sa.cap == 2)
 
-        // a hole must be filled first, without growing, even though the live
-        // span looks full
+        // a hole must be filled first, without growing, even though the live span looks full
         sparse_arr__remove_by_index(&sa, 0)
         testing.expect(t, sa.has_nil_item == true)
         ix, herr := sparse_arr__add_growing(&sa, &c, allocator)

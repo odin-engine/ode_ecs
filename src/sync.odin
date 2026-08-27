@@ -4,8 +4,8 @@
     WARNING: This feature is in experimental stage and is not yet considered stable. 
              The API may change in future releases.
 
-    Off by default — build with -define:ECS_SYNC_ENABLED=true to compile it in
-    (see SYNC_ENABLED's doc comment in ecs.odin). This file's own @(test) procs
+    Off by default — build with -define:ECS_SYNC_ENABLED=true to compile it in.
+    This file's own @(test) procs
     below require the flag to mean anything; run them with
     `odin test . -define:ECS_SYNC_ENABLED=true` (mirrors -define:maps_testing=true
     for the maps package).
@@ -20,14 +20,12 @@
     guarantees. For a full one-shot dump of the whole Database (e.g. a
     client's very first sync on join), use serialization.odin's
     database__serialize/deserialize instead — sync_channel__resync makes the
-    two compose correctly (see its doc comment).
+    two compose correctly.
 
     Scope (v1 alpha): Table, Compact_Table, Tiny_Table (field-level diff) and
     Tag_Table (structural presence only, no component data) are supported.
     Arch_Table is not yet — registering one returns
-    API_Error.Sync_Table_Type_Not_Supported (see arch_table.odin's own history
-    of landing features in later phases for the same reason: this is a
-    deliberately smaller first cut, not an oversight).
+    API_Error.Sync_Table_Type_Not_Supported (a deliberately smaller first cut, not an oversight).
 
     Design notes:
       - Touched-marking (table__get_component_mut and friends) and the
@@ -40,8 +38,7 @@
         sent) — a real, silent, data-dependent under-sync bug. Keying by
         eid.ix avoids it entirely, and as a bonus means table_raw__swap_rows/
         pack need no sync hooks at all — only add_component/remove_component do.
-      - A structural "added" event also marks the entity touched (see the
-        table-type add_component hooks) — otherwise a component populated via
+      - A structural "added" event also marks the entity touched — otherwise a component populated via
         add_component(eid, &data) and never subsequently written through
         get_component_mut would have a structural event but its initial
         field values would never actually be transmitted.
@@ -150,7 +147,7 @@ package ode_ecs
 
     @(private)
     Sync_Table_Entry :: struct {
-        table:      ^Shared_Table, // nil once the table has been terminated (see sync_channel__on_table_terminated)
+        table:      ^Shared_Table, // nil once the table has been terminated
         table_id:   table_id,
         comp_size:  int,
         fields:     [SYNC_MAX_FIELDS]Sync_Field,
@@ -158,7 +155,7 @@ package ode_ecs
         is_tag:     bool, // Tag_Table: structural-only, no shadow/fields
 
         shadow:         []byte,           // entities_cap * comp_size, keyed by eid.ix; nil for a tag
-        touched:        oc.Dense_Arr(entity_id), // cap == entities_cap (see doc comment on sizing below)
+        touched:        oc.Dense_Arr(entity_id), // cap == entities_cap
         touched_bitset: []u64,            // ceil(entities_cap/64), O(1) dedup for `touched`
     }
 
@@ -382,7 +379,7 @@ package ode_ecs
         return sync_channel__register_common(self, cast(^Shared_Table) table, nil, true, false, loc)
     }
 
-    // Arch_Table isn't supported yet (see file header) — this stub exists so sync_register(&channel, &an_arch_table) compiles and returns a clear Error instead of failing to match any overload.
+    // Arch_Table isn't supported yet — this stub exists so sync_register(&channel, &an_arch_table) compiles and returns a clear Error instead of failing to match any overload.
     sync_channel__register_arch_table :: proc(self: ^Sync_Channel, table: ^Arch_Table, allow_non_pod := false) -> Error {
         return API_Error.Sync_Table_Type_Not_Supported
     }
@@ -561,8 +558,7 @@ package ode_ecs
                         }
                     }
 
-                    // Resync the shadow regardless of whether anything differed — a
-                    // touch with no real edit (e.g. get_component_mut called but nothing written) is normal and free since c is already read.
+                    // Resync the shadow regardless of whether anything differed — a touch with no real edit is normal and free since c is already read.
                     mem.copy(shadow_ptr, c, e.comp_size)
 
                     if mask != 0 {
@@ -641,7 +637,7 @@ package ode_ecs
         if e.table == nil do return
 
         if !added && !e.is_tag {
-            // See this file's header note on why the shadow is entity-indexed and must not leak a departed entity's bytes to whoever reuses eid.ix.
+            // The shadow is entity-indexed and must not leak a departed entity's bytes to whoever reuses eid.ix.
             off := eid.ix * e.comp_size
             mem.zero(&e.shadow[off], e.comp_size)
         }
@@ -796,7 +792,7 @@ package ode_ecs
         return sync_decoder__register_common(self, cast(^Shared_Table) table, nil, true, false, loc)
     }
 
-    // See sync_channel__register_arch_table's doc comment.
+    // Arch_Table isn't supported yet — this stub compiles and returns a clear Error instead of failing to match any overload.
     sync_decoder__register_arch_table :: proc(self: ^Sync_Decoder, table: ^Arch_Table, allow_non_pod := false) -> Error {
         return API_Error.Sync_Table_Type_Not_Supported
     }
@@ -886,7 +882,7 @@ package ode_ecs
     }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Tests — only compiled in when SYNC_ENABLED (see file header), since with it off sync_register always returns Sync_Feature_Disabled and these tests' assumptions don't hold (mirrors how maps package tests require -define:maps_testing=true to exist at all).
+// Tests — only compiled in when SYNC_ENABLED, since with it off sync_register always returns Sync_Feature_Disabled and these tests' assumptions don't hold.
 
 when SYNC_ENABLED {
 
@@ -933,8 +929,7 @@ when SYNC_ENABLED {
         testing.expect(t, len(ch.entries[0].touched.items) == 2) // a genuinely different entity DOES add a second entry
     }
 
-    // Only changed fields' bytes go on the wire — verified by exact byte-count,
-    // doubling as a check that collect_delta matches the header's wire-format doc.
+    // Only changed fields' bytes go on the wire — verified by exact byte-count.
     @(test)
     sync__field_mask_single_field_change__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1032,8 +1027,7 @@ when SYNC_ENABLED {
         testing.expect(t, written == expected, "a reused entity id's matching-old-bytes value must still be reported as changed")
     }
 
-    // An undersized buffer must flush exactly as much as fits, in order, and
-    // leave the rest correctly queued for the next call.
+    // An undersized buffer must flush exactly as much as fits, in order, and leave the rest correctly queued for the next call.
     @(test)
     sync__partial_collect_undersized_buffer__test :: proc(t: ^testing.T) {
         allocator := context.allocator
@@ -1071,8 +1065,7 @@ when SYNC_ENABLED {
         testing.expect(t, len(ch.entries[0].touched.items) == 0)
         testing.expect(t, len(ch.structural_events.items) == 0)
 
-        // mutate BOTH fields: collect_delta's fit-check is a conservative worst-case
-        // (not actual changed-byte count), so small_buf sized to one record only lines up with reality when the record equals that worst case.
+        // mutate BOTH fields: collect_delta's fit-check is a conservative worst-case, so small_buf sized to one record only lines up with reality when the record equals that worst case.
         for i in 0..<3 {
             mc := table__get_component_mut(&tbl, eids[i])
             mc.x = 100 + i
@@ -1158,8 +1151,7 @@ when SYNC_ENABLED {
         testing.expect(t, !tag_table__has_tag(&tag_recv, eid))
     }
 
-    // Arch_Table is out of scope for v1 — registering one must return a clear,
-    // documented error on both sides, not silently do nothing (see the stub procs' own doc comments for why they exist).
+    // Arch_Table is out of scope for v1 — registering one must return a clear, documented error on both sides, not silently do nothing.
     @(test)
     sync__arch_table_registration_rejected__test :: proc(t: ^testing.T) {
         allocator := context.allocator

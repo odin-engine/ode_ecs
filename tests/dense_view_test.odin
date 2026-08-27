@@ -13,7 +13,7 @@ package ode_ecs__tests
     import "core:math/rand"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
     Dense_Pos :: struct { x, y: f64 }
     Dense_Vel :: struct { x, y: f64 }

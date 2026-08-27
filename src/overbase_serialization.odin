@@ -11,7 +11,6 @@
     (serialization.odin): a Database attached to a shared Overbase no longer
     snapshots (or restores) that Overbase's id-space as part of its own
     snapshot — use overbase_serialize/overbase_deserialize for that instead.
-    See docs/overbase.md.
 
     Shares the Snap_Writer/Snap_Reader cursor helpers and SNAPSHOT_ENDIAN_CHECK
     with serialization.odin, but uses its own magic/version so the two buffer
@@ -52,8 +51,7 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Size
 
-    // Exact number of bytes overbase__serialize will produce for the current
-    // state. Allocation-free; call it to size the buffer.
+    // Exact number of bytes overbase__serialize will produce for the current state; allocation-free.
     overbase__serialized_size :: proc(self: ^Overbase) -> (size: int, err: Error) {
         if !overbase__is_valid(self) do return 0, API_Error.Object_Invalid
 
@@ -68,10 +66,7 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Serialize
 
-    // Writes a snapshot of the Overbase's entity-id space into buf (sized via
-    // overbase__serialized_size). Zero allocations, works regardless of how
-    // many Databases are attached — they're not part of the format.
-    // Errors: Serialize_Buffer_Too_Small.
+    // Writes a snapshot of the Overbase's entity-id space into buf (sized via overbase__serialized_size); zero allocations.
     overbase__serialize :: proc(self: ^Overbase, buf: []byte) -> (written: int, err: Error) {
         if !overbase__is_valid(self) do return 0, API_Error.Object_Invalid
 
@@ -90,8 +85,7 @@ package ode_ecs
         }
         snap_writer__write(&w, &hdr, size_of(hdr))
 
-        // The WHOLE items array: generations drive expired-id detection and
-        // must round-trip. The freed list order matters too (LIFO reuse).
+        // The WHOLE items array: generations drive expired-id detection and must round-trip.
         snap_writer__write(&w, raw_data(self.id_factory.items), self.id_factory.cap * size_of(oc.ix_gen))
         snap_writer__write(&w, raw_data(self.id_factory.freed), self.id_factory.freed_count * size_of(int))
         snap_writer__pad8(&w)
@@ -103,10 +97,7 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Deserialize
 
-    // Loads a snapshot into an already-initialized Overbase with cap >= saved.
-    // All-or-nothing: fully validated before mutating. Safe regardless of how
-    // many Databases are attached — this is the deliberate, explicit way to
-    // roll back a shared entity-id space (unlike Database's own deserialize).
+    // Loads a snapshot into an already-initialized Overbase with cap >= saved; all-or-nothing, fully validated before mutating.
     overbase__deserialize :: proc(self: ^Overbase, data: []byte) -> Error {
         if !overbase__is_valid(self) do return API_Error.Object_Invalid
 
@@ -147,15 +138,13 @@ package ode_ecs
         // Pass 2 — apply (validated above, so nothing below is expected to fail)
         //
 
-        // No gen bump: the factory items are fully overwritten from the
-        // snapshot right after.
+        // No gen bump: the factory items are fully overwritten from the snapshot right after.
         oc.ix_gen_factory__clear(&self.id_factory, bump_gen = false)
 
         r = Snap_Reader{ data = data }
         snap_reader__read(&r, &hdr, size_of(hdr)) or_return
 
-        // Slots >= saved_cap stay cleared (ix == DELETED_INDEX), so both
-        // new_id paths remain correct on a larger target Overbase.
+        // Slots >= saved_cap stay cleared (ix == DELETED_INDEX), so both new_id paths remain correct on a larger target Overbase.
         snap_reader__read(&r, raw_data(self.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
         snap_reader__read(&r, raw_data(self.id_factory.freed), freed_count * size_of(int)) or_return
         snap_reader__pad8(&r) or_return
@@ -170,8 +159,7 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // File convenience
 
-    // Serialize into a temporary buffer (the only allocation) and write it to
-    // `path`, overwriting the file if it exists.
+    // Serialize into a temporary buffer (the only allocation) and write it to `path`, overwriting the file if it exists.
     overbase__save_to_file :: proc(self: ^Overbase, path: string, allocator := context.allocator) -> Error {
         size := overbase__serialized_size(self) or_return
 

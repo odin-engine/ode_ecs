@@ -9,8 +9,8 @@ temp/*.*
 !/README.md
 !docs/*.md
 
-out/*
-!out/.keep
+src/out/*
+!src/out/.keep
 
 tests/out/*
 !tests/out/.keep
@@ -21,8 +21,8 @@ samples/**/out/*
 ols.json
 *.code-workspace
 
-ode_core/out/*
-ode_core/!out/.keep
+src/ode_core/out/*
+!src/ode_core/out/.keep
 
 benchmarks/out/*
 !benchmarks/out/.keep

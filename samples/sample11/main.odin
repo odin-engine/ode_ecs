@@ -33,8 +33,8 @@ package ode_ecs_sample11
     import "core:thread"
 
 // ODE_ECS
-    import ecs "../../"
-    import oc "../../ode_core"
+    import ecs "../../src"
+    import oc "../../src/ode_core"
 
 //
 // Components

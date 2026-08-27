@@ -14,7 +14,7 @@ package ode_ecs_fat_struct_ecs
     import "core:fmt"
 
 // ODE_ECS
-    import ecs "../../../"
+    import ecs "../../../src"
 
 //
 // Components

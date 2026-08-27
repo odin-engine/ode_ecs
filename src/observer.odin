@@ -3,7 +3,7 @@
 
     Observer — structural-change callbacks (create/destroy entity, add/remove
     component, tag, enable/disable, parent, pair). Off by default; compile in
-    with -define:ECS_OBSERVERS_ENABLED=true (see OBSERVERS_ENABLED in ecs.odin).
+    with -define:ECS_OBSERVERS_ENABLED=true.
 
     Every notify call site (in database.odin, table.odin, compact_table.odin,
     tiny_table.odin, tag_table.odin, arch_table.odin, relations_table.odin,
@@ -34,7 +34,7 @@
     pair_table_base__add_raw/unlink_row, relations_table__set_parent/remove_parent,
     database__destroy_entity_local), which is exactly what command_buffer__replay
     itself calls — no separate replay-time hook needed. create_entity has no
-    Command_Buffer command at all (by design, see command_buffer.odin's header),
+    Command_Buffer command at all (by design),
     and neither does enable/disable_component — both fire only via their one
     immediate-API call path.
 */
@@ -126,8 +126,7 @@ package ode_ecs
         self.user_data = nil
         self.db = nil
 
-        // Leave in Not_Initialized state (not Terminated) so the same struct
-        // can be re-init'd without zeroing it first. See issue #8.
+        // Leave in Not_Initialized state (not Terminated) so the same struct can be re-init'd without zeroing it first.
         self.state = Object_State.Not_Initialized
 
         return nil
@@ -153,11 +152,7 @@ package ode_ecs
         oc.sparse_arr__remove_by_index(&self.observers, cast(int) o.id)
     }
 
-    // Fires `kind` to every attached Observer interested in it. Scalar args
-    // (not a pre-built Observer_Event) so that at -o:none (no optimizer pass
-    // to fold away dead construction) a disabled build still costs nothing —
-    // the `when OBSERVERS_ENABLED` block below simply does not exist in the
-    // binary, so nothing here executes or gets constructed either way.
+    // Fires `kind` to every attached Observer interested in it, via scalar args (not a pre-built Observer_Event) so a disabled build still costs nothing at -o:none.
     @(private)
     database__notify_observers :: #force_inline proc(
         self: ^Database, kind: Observer_Event_Kind, eid: entity_id,

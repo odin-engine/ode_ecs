@@ -8,7 +8,7 @@
     Unlike Relations_Table, a Pair_Table DOES affect Views. Every Pair_Table
     owns a real Tag_Table (`presence`) with one row per holder that currently
     has >= 1 pair — that Tag_Table gets full, correct View-subscriber
-    notification for free (see tag_table.odin), so `{&pairs.presence}` is
+    notification for free, so `{&pairs.presence}` is
     usable directly in view_init's includes/excludes/any_of to mean "has (or
     doesn't have) at least one pair of this relation." The actual
     (holder, target, data) rows live in a separate, non-View-visible, freelist-
@@ -17,7 +17,7 @@
     Relations_Table uses for first_child/next_sibling, generalized from
     "children of a parent" to "pair-rows of a holder"), one by target
     (first_pair_by_target/next_pair_by_target/prev_pair_by_target, for O(1)
-    per-row target-destroy cleanup — see database__destroy_entity_local).
+    per-row target-destroy cleanup).
     Rows are never tail-swapped/compacted — that would break Pair_Row_Id
     stability for both linked lists on every remove.
 
@@ -26,26 +26,25 @@
     This is what lets database.odin (target-destroy cleanup) and
     command_buffer.odin (cmd_pair_add/cmd_pair_remove replay) operate on a
     Pair_Table without knowing T — they only ever see a ^Pair_Table_Base,
-    obtained from Database.pair_tables (see database.odin). Pair_Table_Raw
+    obtained from Database.pair_tables. Pair_Table_Raw
     mirrors Table_Raw's technique (table.odin) for freeing the generic `data`
     slice without knowing T: same field name/position as Pair_Table($T)'s
     `data`, reinterpreted as []byte via a same-address cast.
 
     database__terminate automatically terminates any still-attached
-    Pair_Table (see database.odin) — same as Relations_Table, which is also
+    Pair_Table — same as Relations_Table, which is also
     not itself a Shared_Table. pair_table__terminate remains available for
     early/explicit termination; both paths funnel through the same
     pair_table_base__terminate, so there's no double-terminate risk.
 
     Destroying an entity that appears as a TARGET is handled the same as a
-    destroyed holder (see database__destroy_entity_local): every referencing
+    destroyed holder: every referencing
     row is removed, O(#pairs for that target) via first_pair_by_target, not a
     full-table scan — this must stay cheap since destroy_entity is a
     universal hot path, run for every entity regardless of whether it's ever
     touched a Pair_Table. Pair_Table is also a Command_Buffer target
-    (cmd_pair_add/cmd_pair_remove, see command_buffer.odin) and
-    serialization-aware (pair_table_base__snapshot_write/apply, see
-    serialization.odin) — both close over pair_table_base__add_raw, the same
+    (cmd_pair_add/cmd_pair_remove) and
+    serialization-aware (pair_table_base__snapshot_write/apply) — both close over pair_table_base__add_raw, the same
     type-erased entry point the generic pair_table__add wraps.
 */
 package ode_ecs
@@ -74,10 +73,7 @@ package ode_ecs
         pairs_cap:   int,
         pairs_count: int,
 
-        // Freelist-based, never compacted (unlike Table($T)'s tail-swap) — a dense/
-        // tail-swapped array would break Pair_Row_Id stability for the linked lists
-        // below on every remove. Mirrors Relations_Table's own choice of fixed-slot
-        // arrays over compaction.
+        // Freelist-based, never compacted (unlike Table($T)'s tail-swap) — a dense/tail-swapped array would break Pair_Row_Id stability for the linked lists below on every remove.
         targets:    []entity_id,   // pairs_cap
         row_holder: []entity_id,   // pairs_cap — owning holder, for freelist recycling
 
@@ -86,13 +82,7 @@ package ode_ecs
         prev_pair:  []Pair_Row_Id, // pairs_cap
         first_pair: []Pair_Row_Id, // entities_cap, indexed by holder.ix
 
-        // Doubly-linked list of a target's pair rows, head-insert — lets
-        // pair_table_base__remove_target run in O(#pairs for that target)
-        // instead of O(pairs_cap): destroy_entity is a universal hot path, so a
-        // full-table scan on every destroy (even for entities uninvolved in any
-        // pair) would be the kind of global-size-proportional cost this codebase
-        // avoids elsewhere (see destroy_entity_local's bit-scan, Relations_Table's
-        // doubly-linked siblings).
+        // Doubly-linked list of a target's pair rows, head-insert — lets pair_table_base__remove_target run in O(#pairs for that target) instead of O(pairs_cap).
         next_pair_by_target:  []Pair_Row_Id, // pairs_cap
         prev_pair_by_target:  []Pair_Row_Id, // pairs_cap
         first_pair_by_target: []Pair_Row_Id, // entities_cap, indexed by target.ix
@@ -100,14 +90,10 @@ package ode_ecs
         free_rows:  []Pair_Row_Id, // pairs_cap, freelist stack
         free_count: int,
 
-        // targets_of() result buffer — valid only until the next call or any
-        // structural change, same contract as relations_table__children_of.
+        // targets_of() result buffer — valid only until the next call or any structural change.
         scratch: []entity_id, // pairs_cap
 
-        // Set once at generic init (type_info_of(typeid_of(T))) — lets the
-        // non-generic procs below (add_raw, database__destroy_entity_local's
-        // cleanup, Command_Buffer replay, snapshot apply) copy/size the `data`
-        // payload without needing T. .size may be 0 for tag-only pairs.
+        // Set once at generic init — lets the non-generic procs below copy/size the `data` payload without needing T.
         data_type_info: ^runtime.Type_Info,
     }
 
@@ -116,10 +102,7 @@ package ode_ecs
         data: []T, // pairs_cap — the only field that needs T
     }
 
-    // Same-layout view of Pair_Table($T) with `data` reinterpreted as []byte —
-    // mirrors table.odin's Table_Raw exactly, and for the same reason: lets
-    // pair_table_base__terminate free `data`'s backing allocation without
-    // knowing T (Database.pair_tables only ever holds ^Pair_Table_Base).
+    // Same-layout view of Pair_Table($T) with `data` reinterpreted as []byte — mirrors table.odin's Table_Raw, letting pair_table_base__terminate free `data`'s backing allocation without knowing T.
     @(private)
     Pair_Table_Raw :: struct {
         using base: Pair_Table_Base,
@@ -175,11 +158,7 @@ package ode_ecs
         self.free_rows = make([]Pair_Row_Id, pairs_cap, db.allocator) or_return
         self.scratch   = make([]entity_id,   pairs_cap, db.allocator) or_return
 
-        // database__attach_pair_table grows the registry on demand (see
-        // database.odin) rather than hard-capping it, so — unlike
-        // tag_table__init's attach call — failure here is only a rare OOM case,
-        // the same class as the make() calls above; no special rollback needed
-        // (matches relations_table__init's simpler convention).
+        // database__attach_pair_table grows the registry on demand rather than hard-capping it, so failure here is only a rare OOM case; no special rollback needed.
         self.id = database__attach_pair_table(db, self) or_return
 
         self.state = Object_State.Normal
@@ -189,9 +168,7 @@ package ode_ecs
         return nil
     }
 
-    // holders_cap bounds distinct holders with >= 1 pair (sizes `presence`).
-    // pairs_cap bounds total concurrent (holder, target) rows (many-to-many, so
-    // usually pairs_cap >= holders_cap).
+    // holders_cap bounds distinct holders with >= 1 pair (sizes `presence`); pairs_cap bounds total concurrent (holder, target) rows.
     pair_table__init :: proc(self: ^Pair_Table($T), db: ^Database, holders_cap: int, pairs_cap: int, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -208,11 +185,7 @@ package ode_ecs
         return nil
     }
 
-    // Frees everything, including the generic `data` payload (via the
-    // Pair_Table_Raw same-address cast — see the file header), without needing
-    // T. Called automatically by database__terminate for any still-attached
-    // Pair_Table; also callable directly for early/explicit termination — both
-    // paths are the same code, so there's no double-terminate risk.
+    // Frees everything, including the generic `data` payload, via the Pair_Table_Raw same-address cast, without needing T.
     @(private)
     pair_table_base__terminate :: proc(self: ^Pair_Table_Base) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
@@ -252,8 +225,7 @@ package ode_ecs
         self.data_type_info = nil
 
         self.db = nil
-        // Not_Initialized (not Terminated), so the same struct can be re-init'd —
-        // same convention as relations_table__terminate (issue #8).
+        // Not_Initialized (not Terminated), so the same struct can be re-init'd.
         self.state = Object_State.Not_Initialized
 
         return nil
@@ -263,10 +235,7 @@ package ode_ecs
         return pair_table_base__terminate(&self.base)
     }
 
-    // Resets the row/link/freelist bookkeeping only — does NOT touch `presence`.
-    // Split out of pair_table_base__clear so snapshot deserialize (which restores
-    // `presence` separately, via the normal Tag_Table apply path, before this
-    // runs) can reset just the rows without wiping the presence tags it just loaded.
+    // Resets the row/link/freelist bookkeeping only — does NOT touch `presence`, so snapshot deserialize can reset just the rows without wiping the presence tags it just loaded.
     @(private)
     pair_table_base__reset_rows :: proc(self: ^Pair_Table_Base) {
         for i := 0; i < len(self.first_pair); i += 1 {
@@ -314,9 +283,7 @@ package ode_ecs
         return total
     }
 
-    // size_of(self^) captures Pair_Table($T)'s own fixed footprint (Pair_Table_Base's
-    // fields plus the `data` slice header — the same size for every T); everything
-    // heap-allocated, including `data`'s actual byte content, comes from the base call.
+    // size_of(self^) captures Pair_Table($T)'s own fixed footprint; everything heap-allocated comes from the base call.
     pair_table__memory_usage :: proc(self: ^Pair_Table($T)) -> int {
         return size_of(self^) + pair_table_base__memory_usage(&self.base)
     }
@@ -329,18 +296,13 @@ package ode_ecs
         return self.pairs_cap
     }
 
-    // Unlinks row from both the holder-side and target-side doubly-linked lists
-    // (O(1) each) and returns it to the freelist. Does NOT touch `presence` —
-    // callers check whether the holder's list is now empty and drop the tag
-    // themselves, since remove_all/remove_target process multiple rows per call.
+    // Unlinks row from both the holder-side and target-side doubly-linked lists (O(1) each) and returns it to the freelist; does NOT touch `presence`.
     @(private)
     pair_table_base__unlink_row :: #force_inline proc(self: ^Pair_Table_Base, row: Pair_Row_Id) #no_bounds_check {
         holder := self.row_holder[row]
         target := self.targets[row]
 
         // Fires before any unlink below — data_ptr (if any) is still readable.
-        // Single shared mutator behind remove/remove_all/remove_target, so this
-        // one hook covers all three callers, including the target-destroy cascade.
         data_ptr: rawptr
         if self.data_type_info.size > 0 {
             raw := cast(^Pair_Table_Raw) self
@@ -369,18 +331,9 @@ package ode_ecs
         self.pairs_count -= 1
     }
 
-    // Adds (holder -> target) with payload `data` (nil or size-0 for a tag-only
-    // Pair_Table). Adding an already-existing exact (holder, target) pair is a
-    // no-op that returns the existing row (matches Tag_Table/Relations_Table's
-    // idempotent-add idiom).
+    // Adds (holder -> target) with payload `data` (nil or size-0 for a tag-only Pair_Table); adding an already-existing exact (holder, target) pair is a no-op that returns the existing row.
     //
-    // Returns Container_Is_Full if holder needs a NEW presence slot and
-    // `presence` is full, or the pair-row array itself is full — validated
-    // before any mutation, so a failed add never partially mutates either side.
-    //
-    // Type-erased: this is what Command_Buffer replay and the generic
-    // pair_table__add both funnel through, mirroring how shared_table__add_component
-    // never needs T either.
+    // Type-erased: this is what Command_Buffer replay and the generic pair_table__add both funnel through.
     @(private)
     pair_table_base__add_raw :: proc(self: ^Pair_Table_Base, holder, target: entity_id, data: rawptr, loc := #caller_location) -> (row: Pair_Row_Id, err: Error) #no_bounds_check {
         row = Pair_Row_Id(DELETED_INDEX)
@@ -447,11 +400,7 @@ package ode_ecs
         return pair_table_base__add_raw(&self.base, holder, target, &value, loc)
     }
 
-    // Removes the first row matching (holder, target). O(#pairs for holder) —
-    // no secondary index by (holder,target) pair identity, same complexity
-    // class as relations_table__children_of. Returns Not_Found if no such pair
-    // exists. If this was holder's last pair, removes its presence tag too
-    // (evicting it from any subscribed View).
+    // Removes the first row matching (holder, target), O(#pairs for holder); if this was holder's last pair, removes its presence tag too.
     @(private)
     pair_table_base__remove :: proc(self: ^Pair_Table_Base, holder: entity_id, target: entity_id, loc := #caller_location) -> Error #no_bounds_check {
         when VALIDATIONS {
@@ -482,7 +431,7 @@ package ode_ecs
         return pair_table_base__remove(&self.base, holder, target, loc)
     }
 
-    // Removes ALL of holder's pairs. No-op (not an error) if holder has none.
+    // Removes ALL of holder's pairs, a no-op (not an error) if holder has none.
     @(private)
     pair_table_base__remove_all :: proc(self: ^Pair_Table_Base, holder: entity_id, loc := #caller_location) -> Error #no_bounds_check {
         when VALIDATIONS {
@@ -508,12 +457,7 @@ package ode_ecs
         return pair_table_base__remove_all(&self.base, holder, loc)
     }
 
-    // Removes every row where `target` is the target — called only from
-    // database__destroy_entity_local (see database.odin), once per attached
-    // Pair_Table, when `target` is destroyed. O(#pairs for that target), via
-    // first_pair_by_target/next_pair_by_target, not O(pairs_cap): destroy_entity
-    // is a universal hot path, so this must not cost anything for entities
-    // uninvolved in any pair (see the struct's own doc comment).
+    // Removes every row where `target` is the target, called once per attached Pair_Table when `target` is destroyed, O(#pairs for that target) via first_pair_by_target/next_pair_by_target, not O(pairs_cap).
     @(private)
     pair_table_base__remove_target :: proc(self: ^Pair_Table_Base, target: entity_id) -> Error #no_bounds_check {
         r := self.first_pair_by_target[target.ix]
@@ -562,10 +506,7 @@ package ode_ecs
         return r, true
     }
 
-    // O(1): the most-recently-added target among holder's pairs — arbitrary
-    // among several (pairs are head-inserted, same as Relations_Table's
-    // children), NOT a stable/deterministic choice. ok == false if holder has
-    // no pairs.
+    // O(1): the most-recently-added target among holder's pairs — arbitrary among several, NOT a stable/deterministic choice.
     pair_table__first_target :: proc(self: ^Pair_Table($T), holder: entity_id) -> (target: entity_id, ok: bool) #no_bounds_check {
         target.ix = DELETED_INDEX
         if database__is_entity_correct(self.db, holder) != nil do return target, false
@@ -586,9 +527,7 @@ package ode_ecs
         return &self.data[r], true
     }
 
-    // holder's targets as a slice of the internal scratch buffer, valid only
-    // until the next targets_of call or any structural change — same contract
-    // as relations_table__children_of. O(#pairs for holder).
+    // holder's targets as a slice of the internal scratch buffer, valid only until the next targets_of call or any structural change.
     @(private)
     pair_table_base__targets_of :: proc(self: ^Pair_Table_Base, holder: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
         database__is_entity_correct(self.db, holder) or_return

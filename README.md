@@ -30,7 +30,7 @@
 
 # How to install
 
-Use `git clone` to clone this repository into your project folder, and then `import ecs "ode_ecs"`: 
+Use `git clone` to clone this repository into your project folder, and then `import ecs "ode_ecs/src"`: 
 ```  
     git clone https://github.com/odin-engine/ode_ecs.git
 ```  
@@ -63,7 +63,7 @@ An ECS **_Database_** is a database similar to a relational database instance, b
 When initializing a `Database`, you can specify the maximum `entities_cap` as well as the allocator:  
 
 ```odin
-    import ecs "ode_ecs"
+    import ecs "ode_ecs/src"
 
     my_ecs: ecs.Database
 

@@ -95,9 +95,7 @@ package maps
         return nil
     }
 
-    // Remove an item already located by tt_map__find_item_with_index — skips
-    // re-hashing/re-probing. (p, f_ix) is only valid until the next remove;
-    // value-only updates of existing keys don't move slots.
+    // Removes an item already located by tt_map__find_item_with_index, skipping re-hashing/re-probing.
     tt_map__remove_found :: proc(self: ^Tt_Map($CAP, $V), p: ^Tt_Map_Item(V), f_ix: int) {
         p := p
 

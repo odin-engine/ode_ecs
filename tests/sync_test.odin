@@ -18,7 +18,7 @@ package ode_ecs__tests
     import "core:mem"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
 // The sync feature is off by default (see ecs.SYNC_ENABLED's doc comment) —
 // with it off, ecs.sync_register always returns Sync_Feature_Disabled, so

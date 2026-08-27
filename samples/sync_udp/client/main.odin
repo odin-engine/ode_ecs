@@ -20,7 +20,7 @@ package ode_ecs_sync_udp_client
     import "core:net"
 
 // ODE_ECS
-    import ecs "../../../"
+    import ecs "../../../src"
     import common "../common"
 
 main :: proc() {

@@ -86,7 +86,7 @@ package ode_ecs_benchmarks
     import "core:math/rand"
 
 // ODE_ECS
-    import ecs "../"
+    import ecs "../src"
 
 //
 // Components

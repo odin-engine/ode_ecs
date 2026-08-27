@@ -177,21 +177,21 @@
             "command": "odin",
             "args": [
                 "test",
-                "${workspaceFolder}",
+                "${workspaceFolder}\\src",
                 "-debug",
                 "-o:none",
                 "-define:ODIN_TEST_THREADS=1",
                 "-define:ODIN_TEST_RANDOM_SEED=1",
                 "-define:ODIN_TEST_LOG_LEVEL=warning",
-                "-define:ODIN_TEST_FANCY=false", 
+                "-define:ODIN_TEST_FANCY=false",
                 "-define:ODIN_TEST_CLIPBOARD=false",
                 "-define:ODIN_TEST_PROGRESS_WIDTH=0",
                 "-define:ODIN_TEST_SHORT_LOGS=true"
-                
+
                 //"-show-defineables"
             ],
             "options": {
-                "cwd": "${workspaceFolder}\\out\\"
+                "cwd": "${workspaceFolder}\\src\\out\\"
             },
             "presentation": {
                 "echo": true,
@@ -214,21 +214,21 @@
             "command": "odin",
             "args": [
                 "test",
-                "${workspaceFolder}\\ode_core\\",
+                "${workspaceFolder}\\src\\ode_core\\",
                 "-debug",
                 "-o:none",
                 "-define:ODIN_TEST_THREADS=1",
                 "-define:ODIN_TEST_RANDOM_SEED=1",
                 "-define:ODIN_TEST_LOG_LEVEL=warning",
-                "-define:ODIN_TEST_FANCY=false", 
+                "-define:ODIN_TEST_FANCY=false",
                 "-define:ODIN_TEST_CLIPBOARD=false",
                 "-define:ODIN_TEST_PROGRESS_WIDTH=0",
                 "-define:ODIN_TEST_SHORT_LOGS=true"
-                
+
                 //"-show-defineables"
             ],
             "options": {
-                "cwd": "${workspaceFolder}\\ode_core\\out\\"
+                "cwd": "${workspaceFolder}\\src\\ode_core\\out\\"
             },
             "presentation": {
                 "echo": true,
@@ -251,13 +251,13 @@
             "command": "odin",
             "args": [
                 "test",
-                "${workspaceFolder}\\ode_core\\maps",
+                "${workspaceFolder}\\src\\ode_core\\maps",
                 "-debug",
                 "-o:none",
                 "-define:ODIN_TEST_THREADS=1",
                 "-define:ODIN_TEST_RANDOM_SEED=1",
                 "-define:ODIN_TEST_LOG_LEVEL=warning",
-                "-define:ODIN_TEST_FANCY=false", 
+                "-define:ODIN_TEST_FANCY=false",
                 "-define:ODIN_TEST_CLIPBOARD=false",
                 "-define:ODIN_TEST_PROGRESS_WIDTH=0",
                 "-define:ODIN_TEST_SHORT_LOGS=true",
@@ -265,7 +265,7 @@
                 //"-show-defineables"
             ],
             "options": {
-                "cwd": "${workspaceFolder}\\ode_core\\out\\"
+                "cwd": "${workspaceFolder}\\src\\ode_core\\out\\"
             },
             "presentation": {
                 "echo": true,

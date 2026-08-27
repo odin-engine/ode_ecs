@@ -14,7 +14,7 @@ package ode_ecs__tests
     import "core:os"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Components (Position and AI are defined in ecs_test.odin)

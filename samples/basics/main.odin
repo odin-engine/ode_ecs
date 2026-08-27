@@ -8,7 +8,7 @@ package ode_ecs_basics
     import "core:fmt"
 
 // ODE_ECS
-    import ecs "../../"
+    import ecs "../../src"
 
 //
 // Components

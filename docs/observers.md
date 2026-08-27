@@ -3,7 +3,7 @@
 `Observer` lets you register a callback that fires when a structural change happens: an entity is
 created or destroyed, a component/tag/pair is added or removed, a component is enabled/disabled,
 or a parent link is set/removed. Off by default — build with `-define:ECS_OBSERVERS_ENABLED=true`
-(see `OBSERVERS_ENABLED` in [ecs.odin](/ecs.odin)). With it off, every notify call site is
+(see `OBSERVERS_ENABLED` in [ecs.odin](/src/ecs.odin)). With it off, every notify call site is
 `when OBSERVERS_ENABLED`-gated: the code does not exist in the binary, not just a skipped runtime
 branch — enabling the feature costs nothing until you actually attach an observer.
 

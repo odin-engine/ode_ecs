@@ -103,8 +103,7 @@ package ode_core
         testing.expect(t, mem.free(p, tracked) == .None)
         testing.expect(t, mem_track__check_leaks(&mt) == false)
 
-        // freeing a pointer this allocator never allocated is a bad free
-        // (collected, not panicked — see mem_track__init)
+        // freeing a pointer this allocator never allocated is a bad free (collected, not panicked)
         x: int
         mem.free(&x, tracked)
         testing.expect(t, mem_track__check_bad_frees(&mt) == true)

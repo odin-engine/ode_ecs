@@ -47,8 +47,7 @@ package ode_ecs
         // trusted until database__resume_packing (or group__rebuild) fixes it
         dirty: bool,
 
-        // Deferred tail swap for this group's owned tables only, independent
-        // of db.tail_swap_paused. See group__pause_packing.
+        // Deferred tail swap for this group's owned tables only, independent of db.tail_swap_paused.
         pause_packing: bool,
     }
 
@@ -75,8 +74,7 @@ package ode_ecs
 
         if owned == nil || len(owned) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
-        // Make sure we do not have repeating tables.
-        // Sort a copy — the caller's slice must not be mutated.
+        // Make sure we do not have repeating tables — sort a copy, since the caller's slice must not be mutated.
         sorted_owned := slice.clone(owned, db.allocator) or_return
         defer delete(sorted_owned, db.allocator)
         slice.sort(sorted_owned)
@@ -143,8 +141,7 @@ package ode_ecs
             assert(self.db != nil)
         }
 
-        // Release ownership. A table that was itself terminated already reset
-        // its owner field (see table_raw__terminate / arch_table__terminate).
+        // Release ownership; a table that was itself terminated already reset its owner field.
         for table in self.tables {
             if table != nil && table.owner == self do table.owner = nil
         }
@@ -164,14 +161,12 @@ package ode_ecs
         self.dirty = false
         self.pause_packing = false
 
-        // Leave the group in Not_Initialized state (not Terminated) so the same
-        // struct can be re-init'd without zeroing it first. See issue #8.
+        // Leave the group in Not_Initialized state (not Terminated) so the same struct can be re-init'd without zeroing it first.
         self.state = Object_State.Not_Initialized
         return nil
     }
 
-    // While dirty (membership deferred by a paused tail swap) the stored len is stale until
-    // resume_packing rebuilds it. Asserts under VALIDATIONS, mirroring group__slice's nil return.
+    // While dirty (membership deferred by a paused tail swap) the stored len is stale until resume_packing rebuilds it.
     group__len :: #force_inline proc "contextless" (self: ^Group) -> int {
         when VALIDATIONS {
             assert_contextless(!self.dirty, "group_len while the group is dirty (paused packing) — resume_packing first")
@@ -179,12 +174,7 @@ package ode_ecs
         return self.len
     }
 
-    // Batch (dense) access: the owned `table`'s components of all group members, in group
-    // order, as table.rows[:group_len] — no alignment check needed, unlike View's slice.
-    // Slices for different owned tables share indexing (slice_a[i]/slice_b[i] = same entity,
-    //
-    // get it via get_entity(table, i)). Nil if `table` isn't owned or the group is dirty.
-    //
+    // Batch (dense) access: the owned `table`'s components of all group members, as table.rows[:group_len] — no alignment check needed, unlike View's slice.
     group__slice :: proc "contextless" (self: ^Group, table: ^Table($T)) -> []T {
         if self == nil || table == nil do return nil
         if self.state != Object_State.Normal do return nil
@@ -196,8 +186,7 @@ package ode_ecs
         }
     }
 
-    // Same as group__slice, for an owned Arch_Table's column: columns are type-erased (no
-    // single-typed rows field), so this derives the pointer via arch_table__column_index.
+    // Same as group__slice, for an owned Arch_Table's column: columns are type-erased, so this derives the pointer via arch_table__column_index.
     group__slice_arch :: proc(self: ^Group, table: ^Arch_Table, $T: typeid) -> []T {
         if self == nil || table == nil do return nil
         if self.state != Object_State.Normal do return nil
@@ -211,11 +200,7 @@ package ode_ecs
         return slice.from_ptr(cast(^T) raw_data(col.rows), self.len)
     }
 
-    // Entity ids for the group's aligned prefix, in the same row order as group__slice/
-    // group__slice_arch. Reads from tables[0] (or arch_tables[0] if the group owns no
-    // plain Table) — any owned table works, since rid_to_eid[:group.len] is identical
-    // across all of them by the alignment invariant. Nil if the group owns nothing yet,
-    // or under the same conditions group__slice returns nil.
+    // Entity ids for the group's aligned prefix, in the same row order as group__slice/group__slice_arch.
     group__entities_slice :: proc "contextless" (self: ^Group) -> []entity_id {
         if self == nil do return nil
         if self.state != Object_State.Normal do return nil
@@ -228,9 +213,7 @@ package ode_ecs
         return nil
     }
 
-    // Rebuild the group prefix from scratch — O(smallest owned table) matches, each paying
-    // O(owned tables) swaps. Normally unneeded (membership is maintained incrementally);
-    // resume_packing calls it for dirty groups. While paused, only marks the group dirty.
+    // Rebuild the group prefix from scratch — normally unneeded, since membership is maintained incrementally; resume_packing calls it for dirty groups.
     group__rebuild :: proc(self: ^Group) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 
@@ -241,8 +224,7 @@ package ode_ecs
 
         self.len = 0
 
-        // Iterate the smallest owned table, swap every full match into the prefix. Not a hot
-        // path (init/resume_packing only), so branching between Table/Arch_Table costs nothing.
+        // Iterate the smallest owned table, swap every full match into the prefix (not a hot path).
         min_len := max(int)
         min_rid_to_eid: []entity_id
         for table in self.tables {
@@ -284,9 +266,7 @@ package ode_ecs
         return total
     }
 
-    // Pause tail swapping for every table this group owns, as one atomic unit, independent of
-    // database-wide pause_packing and other groups — lets one group be isolated from a
-    // concurrent database-wide (or another group's) pause/resume cycle.
+    // Pause tail swapping for every table this group owns, as one atomic unit, independent of database-wide pause_packing and other groups.
     group__pause_packing :: proc(self: ^Group) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -297,8 +277,7 @@ package ode_ecs
         return nil
     }
 
-    // Resume tail swapping for this group: pack every owned table (clears
-    // holes), then rebuild the group prefix if membership changed while paused.
+    // Resume tail swapping for this group: pack every owned table, then rebuild the group prefix if membership changed while paused.
     group__resume_packing :: proc(self: ^Group) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -323,8 +302,7 @@ package ode_ecs
         return err
     }
 
-    // Pack every table this group owns (compact holes left while paused).
-    // Callable mid-pause too, like table-level pack.
+    // Pack every table this group owns (compact holes left while paused); callable mid-pause too, like table-level pack.
     group__pack :: proc(self: ^Group) -> Error {
         when VALIDATIONS {
             assert(self != nil)
@@ -354,8 +332,7 @@ package ode_ecs
     }
 
     @(private)
-    // Move entity's rows into the prefix at position len (in every owned table),
-    // then grow the prefix. The entity must have all owned components.
+    // Move entity's rows into the prefix at position len (in every owned table), then grow the prefix.
     group__swap_in :: #force_inline proc(self: ^Group, eid: entity_id) {
         for table in self.tables {
             table_raw__swap_rows(table, int(table.eid_to_rid[eid.ix]), self.len)
@@ -367,8 +344,7 @@ package ode_ecs
     }
 
     @(private)
-    // Move entity's rows out of the prefix (to position len-1 in every owned
-    // table), then shrink the prefix. The entity must currently be a member.
+    // Move entity's rows out of the prefix (to position len-1 in every owned table), then shrink the prefix.
     group__swap_out :: #force_inline proc(self: ^Group, eid: entity_id) {
         last := self.len - 1
         for table in self.tables {
@@ -381,9 +357,7 @@ package ode_ecs
     }
 
     @(private)
-    // Called by an owned table after a component was added (bits already updated). Idempotent:
-    // the add path also notifies on the already-exists branch. Returns whether rows moved, so
-    // the caller only re-derives its component pointer when the swap actually happened.
+    // Called by an owned table after a component was added; returns whether rows moved, so the caller only re-derives its component pointer when the swap actually happened.
     group__on_add :: #force_inline proc(self: ^Group, eid: entity_id) -> (moved: bool) {
         // full match? (needs every owned component)
         if !uni_bits__is_subset(&self.bits, &self.db.eid_to_bits[eid.ix]) do return false
@@ -394,8 +368,7 @@ package ode_ecs
             return false
         }
 
-        // Already inside the prefix? Members sit at the same rid < len in every owned table,
-        // so checking one suffices — prefer tables[0] (most groups own a Table); else arch_tables[0].
+        // Already inside the prefix? Members sit at the same rid < len in every owned table, so checking one suffices.
         #no_bounds_check {
             if len(self.tables) > 0 {
                 if int(self.tables[0].eid_to_rid[eid.ix]) < self.len do return false

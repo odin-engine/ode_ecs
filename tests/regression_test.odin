@@ -13,8 +13,8 @@ package ode_ecs__tests
     import "core:mem"
 
 // ODE
-    import ecs ".."
-    import oc "../ode_core"
+    import ecs "../src"
+    import oc "../src/ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Re-init (issue #8) must not leak state from the previous life

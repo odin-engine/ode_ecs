@@ -14,8 +14,8 @@ package ode_ecs__tests
     import "core:mem"
 
 // ODE
-    import ecs ".."
-    import oc "../ode_core"
+    import ecs "../src"
+    import oc "../src/ode_core"
 
 when ecs.OBSERVERS_ENABLED {
 

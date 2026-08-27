@@ -20,8 +20,8 @@ package ode_ecs_sample5
     import "core:time"
      
 // ODE_ECS
-    import ecs "../../"
-    import oc "../../ode_core"
+    import ecs "../../src"
+    import oc "../../src/ode_core"
 
 //
 // Components

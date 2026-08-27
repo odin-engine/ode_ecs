@@ -55,9 +55,9 @@ I highly recommend going through the [samples](../samples) to learn about ODE_EC
 
 # 📖 How to read the source code
 
-To check the main **ODE\_ECS** procedures, you can go to [ecs.odin](/ecs.odin) and scroll down to the **aliases** section. Those are the main or most commonly used procedures, though not all of them.
+To check the main **ODE\_ECS** procedures, you can go to [ecs.odin](/src/ecs.odin) and scroll down to the **aliases** section. Those are the main or most commonly used procedures, though not all of them.
 
-If you want to find all procedures related to a specific object—for example, **Table** (or [View](/view.odin), [Iterator](/iterator.odin), [Tiny\_Table](/tiny_table.odin), [Compact\_Table](/compact_table.odin), etc.)—you can go to its respective file. For **Table**, that would be [table.odin](/table.odin).
+If you want to find all procedures related to a specific object—for example, **Table** (or [View](/src/view.odin), [Iterator](/src/iterator.odin), [Tiny\_Table](/src/tiny_table.odin), [Compact\_Table](/src/compact_table.odin), etc.)—you can go to its respective file. For **Table**, that would be [table.odin](/src/table.odin).
 
 Scroll down to the **Table** section (ignore the **Table\_Base** and **Table\_Raw** objects/sections), and there you’ll find all of the public **Table** procedures along with their implementations.
 

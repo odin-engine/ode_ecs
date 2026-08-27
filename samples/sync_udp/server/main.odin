@@ -19,7 +19,7 @@ package ode_ecs_sync_udp_server
     import "core:time"
 
 // ODE_ECS
-    import ecs "../../../"
+    import ecs "../../../src"
     import common "../common"
 
 main :: proc() {

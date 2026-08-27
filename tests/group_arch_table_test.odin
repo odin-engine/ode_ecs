@@ -13,7 +13,7 @@ package ode_ecs__tests
     import "core:testing"
 
 // ODE
-    import ecs ".."
+    import ecs "../src"
 
     Group_Speed :: struct { value: f64 }
 

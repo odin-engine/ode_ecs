@@ -10,11 +10,7 @@ package ode_ecs
     import oc "ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Overbase — a shareable entity ID space. Databases attach via database__init
-// or database__init_from_overbase so entity_id refers to the same logical
-// entity across all of them. Entity lifecycle is fully owned by Overbase:
-// destroying an entity removes its components from every attached Database
-// before the id is freed, so a recycled index never resurfaces stale data.
+// Overbase — a shareable entity ID space; entity lifecycle is fully owned by Overbase, so destroying an entity removes its components from every attached Database before the id is freed.
 
     Overbase :: struct {
         allocator: runtime.Allocator,
@@ -26,10 +22,7 @@ package ode_ecs
         // notified in database__destroy_entity_local order when an entity dies.
         databases: oc.Dense_Arr(^Database),
 
-        // Fast path for the common case (exactly one Database attached — true
-        // for every plain ecs.init-created Database): mirrors databases.items[0],
-        // nil otherwise. Lets destroy_entity skip the Dense_Arr walk entirely.
-        // Maintained by overbase__attach_database / overbase__detach_database.
+        // Fast path for the common case (exactly one Database attached): mirrors databases.items[0], nil otherwise, letting destroy_entity skip the Dense_Arr walk entirely.
         primary_database: ^Database,
     }
 
@@ -73,8 +66,7 @@ package ode_ecs
         oc.dense_arr__terminate(&self.databases, self.allocator) or_return
         oc.ix_gen_factory__terminate(&self.id_factory, self.allocator) or_return
 
-        // Not_Initialized (not Terminated) so the struct can be re-init'd
-        // without zeroing it first, matching database__terminate. See issue #8.
+        // Not_Initialized (not Terminated) so the struct can be re-init'd without zeroing it first, matching database__terminate.
         self.state = Object_State.Not_Initialized
         return nil
     }
@@ -120,10 +112,7 @@ package ode_ecs
 // Private
 
     @(private)
-    // A descendant discovered via one Database's relations table may already
-    // be fully destroyed by another Database's relations cascade (see
-    // database__destroy_entity_local). tolerate_expired turns that harmless
-    // race into a no-op instead of propagating Entity_Id_Expired.
+    // A descendant discovered via one Database's relations table may already be fully destroyed by another Database's relations cascade; tolerate_expired turns that harmless race into a no-op.
     overbase__destroy_entity_impl :: proc(self: ^Overbase, eid: entity_id, destroy_children: bool, tolerate_expired: bool) -> Error {
         when VALIDATIONS {
             assert(self != nil)

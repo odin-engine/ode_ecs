@@ -16,8 +16,8 @@ package ode_ecs__tests
     import "core:math/rand"
 
 // ODE
-    import ecs ".."
-    import oc "../ode_core"
+    import ecs "../src"
+    import oc "../src/ode_core"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Relations_Table

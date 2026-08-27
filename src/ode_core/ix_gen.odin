@@ -12,8 +12,7 @@ package ode_core
     import "core:testing"
 
 ///////////////////////////////////////////////////////////////////////////////
-// ix_gen -- index + generation. Reusing an id (old entity destroyed) bumps
-// gen, so a stale saved id with the same ix reads as different from the new one.
+// ix_gen -- index + generation; reusing an id bumps gen, so a stale saved id with the same ix reads as different from the new one.
 
     GEN_MAX :: 4_294_967_295
 
@@ -129,8 +128,7 @@ package ode_core
     // #no_bounds_check: id.ix is range-checked right above
     ix_gen_factory__is_expired :: #force_inline proc "contextless" (self: ^Ix_Gen_Factory, id: ix_gen) -> bool #no_bounds_check {
         if id.ix < 0 || id.ix >= self.cap do return true // out of range -> expired
-        // Comparing the whole id (ix + gen), not just gen, also rejects never-created/freed
-        // slots (ix == DELETED_INDEX), so a zero/default id can't slip through.
+        // Comparing the whole id (ix + gen), not just gen, also rejects never-created/freed slots.
         return self.items[id.ix] != id
     }
 
@@ -153,9 +151,7 @@ package ode_core
         return total
     }
 
-    // bump_gen advances every slot's generation so pre-clear ids stop matching
-    // post-clear ones. Defaults true; pass false only when items are about to
-    // be overwritten wholesale (init, deserialization) since it silently revives old ids.
+    // bump_gen advances every slot's generation so pre-clear ids stop matching post-clear ones; pass false only when items are about to be overwritten wholesale.
     ix_gen_factory__clear :: proc(self: ^Ix_Gen_Factory, bump_gen := true) {
         assert(self != nil)
         assert(self.items != nil)
@@ -356,13 +352,7 @@ package ode_core
         testing.expect(t, ix_gen_factory__is_expired(&factory, id_2) == false)
     }
 
-    // 32-bit generation wrap driven through the public path: after GEN_MAX + 1
-    // free/new cycles on the same slot the generation returns to its starting
-    // value, so a stale id held across the full cycle reads as live again (the
-    // documented ABA limit of a 32-bit generation). GEN_MAX is 4.29 billion, so
-    // actually looping that many cycles isn't a reasonable unit test — instead,
-    // poke the internal slot state directly to fast-forward to the edge of the
-    // wrap, then exercise the last two cycles through the public API.
+    // GEN_MAX is 4.29 billion, so this pokes the internal slot state directly to fast-forward to the edge of the wrap instead of actually looping that many cycles.
     @(test)
     ix_gen_factory__gen_wraparound__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
@@ -397,8 +387,7 @@ package ode_core
         testing.expect(t, ix_gen_factory__is_expired(&factory, first_id) == false)
     }
 
-    // The clear default (bump_gen = true) must expire ids issued before the
-    // clear — the false path revives them, which is why it is opt-in only.
+    // The clear default (bump_gen = true) must expire ids issued before the clear.
     @(test)
     ix_gen_factory__clear_default_expires__test :: proc(t: ^testing.T) {
         context.logger = log.create_console_logger()
