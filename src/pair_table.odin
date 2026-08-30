@@ -450,7 +450,9 @@ package ode_ecs
             r = next
         }
 
-        return tag_table__remove_tag(&self.presence, holder, loc)
+        terr := tag_table__remove_tag(&self.presence, holder, loc)
+        if terr != nil && terr != oc.Core_Error.Not_Found do return terr
+        return nil
     }
 
     pair_table__remove_all :: proc(self: ^Pair_Table($T), holder: entity_id, loc := #caller_location) -> Error {
@@ -468,7 +470,8 @@ package ode_ecs
             pair_table_base__unlink_row(self, r)
 
             if self.first_pair[holder.ix] == Pair_Row_Id(DELETED_INDEX) {
-                tag_table__remove_tag(&self.presence, holder) or_return
+                terr := tag_table__remove_tag(&self.presence, holder)
+                if terr != nil && terr != oc.Core_Error.Not_Found do return terr
             }
 
             r = next

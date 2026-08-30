@@ -411,6 +411,7 @@ package ode_ecs
         for pt in self.pair_tables.items {
             if pt == nil || pt.state != Object_State.Normal do continue
             pair_table_base__remove_target(pt, eid) or_return
+            pair_table_base__remove_all(pt, eid) or_return
         }
 
         uni_bits__clear(&self.eid_to_bits[eid.ix])

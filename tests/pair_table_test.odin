@@ -382,6 +382,126 @@ package ode_ecs__tests
             testing.expect(t, ecs.pair_table__len(&pt) == 1)
     }
 
+    @(test)
+    pair_table__holder_destroy_cleaned_up__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            pt: ecs.Pair_Table(Likes_Data)
+            view: ecs.View
+            defer ecs.terminate(&db)
+            defer ecs.pair_table__terminate(&pt)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.pair_init(&pt, &db, holders_cap=10, pairs_cap=10) == nil)
+            testing.expect(t, ecs.view_init(&view, &db, {&pt.presence}) == nil)
+
+            a, _ := ecs.create_entity(&db)
+            b, _ := ecs.create_entity(&db)
+
+            _, err := ecs.pair_add(&pt, a, b, Likes_Data{strength=1})
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.pair_table__len(&pt) == 1)
+            testing.expect(t, ecs.pair_has_any(&pt, a))
+            testing.expect(t, ecs.view_len(&view) == 1)
+
+            testing.expect(t, ecs.destroy_entity(&db, a) == nil)
+            testing.expect(t, ecs.is_expired(&db, a))
+            testing.expect(t, ecs.pair_table__len(&pt) == 0)
+            testing.expect(t, ecs.view_len(&view) == 0)
+
+            a2, _ := ecs.create_entity(&db)
+            testing.expect(t, a2.ix == a.ix)
+            testing.expect(t, !ecs.pair_has_any(&pt, a2))
+            targets_a2, terr := ecs.pair_targets_of(&pt, a2)
+            testing.expect(t, terr == nil)
+            testing.expect(t, len(targets_a2) == 0)
+            testing.expect(t, ecs.view_len(&view) == 0)
+    }
+
+    @(test)
+    pair_table__self_pair_destroy_cleaned_up__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            pt: ecs.Pair_Table(Likes_Data)
+            defer ecs.terminate(&db)
+            defer ecs.pair_table__terminate(&pt)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.pair_init(&pt, &db, holders_cap=10, pairs_cap=10) == nil)
+
+            a, _ := ecs.create_entity(&db)
+            b, _ := ecs.create_entity(&db)
+
+            _, err := ecs.pair_add(&pt, a, a, Likes_Data{strength=1})
+            testing.expect(t, err == nil)
+            _, err = ecs.pair_add(&pt, a, b, Likes_Data{strength=2})
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.pair_table__len(&pt) == 2)
+
+            testing.expect(t, ecs.destroy_entity(&db, a) == nil)
+            testing.expect(t, ecs.pair_table__len(&pt) == 0)
+
+            testing.expect(t, !ecs.pair_has_any(&pt, b))
+    }
+
+    @(test)
+    pair_table__holder_and_target_destroy_cleaned_up__test :: proc(t: ^testing.T) {
+        //
+        // Prepare
+        //
+            context.logger = log.create_console_logger()
+            defer log.destroy_console_logger(context.logger)
+
+            allocator := context.allocator
+            context.allocator = mem.panic_allocator()
+        //
+        // Test
+        //
+            db: ecs.Database
+            pt: ecs.Pair_Table(Likes_Data)
+            defer ecs.terminate(&db)
+            defer ecs.pair_table__terminate(&pt)
+
+            testing.expect(t, ecs.init(&db, entities_cap=10, allocator=allocator) == nil)
+            testing.expect(t, ecs.pair_init(&pt, &db, holders_cap=10, pairs_cap=10) == nil)
+
+            a, _ := ecs.create_entity(&db)
+            b, _ := ecs.create_entity(&db)
+            c, _ := ecs.create_entity(&db)
+
+            _, err := ecs.pair_add(&pt, a, b, Likes_Data{strength=1})
+            testing.expect(t, err == nil)
+            _, err = ecs.pair_add(&pt, c, a, Likes_Data{strength=2})
+            testing.expect(t, err == nil)
+            testing.expect(t, ecs.pair_table__len(&pt) == 2)
+
+            testing.expect(t, ecs.destroy_entity(&db, a) == nil)
+
+            testing.expect(t, ecs.pair_table__len(&pt) == 0)
+            testing.expect(t, !ecs.pair_has_any(&pt, b))
+            testing.expect(t, !ecs.pair_has_any(&pt, c))
+    }
+
     // database__terminate must auto-terminate a still-attached Pair_Table
     // (matches Relations_Table's existing auto-terminate behavior) — no
     // explicit pair_table__terminate call here at all.
