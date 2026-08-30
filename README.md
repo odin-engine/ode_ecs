@@ -1,7 +1,7 @@
 ![alt text](/img/banner.png?raw=true)
 # 🐏 ODE_ECS
 
-⚡ A high-performance [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
+⚡ A high-performance hybrid [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 For a manual, pure archetype-based ECS built for extreme performance, check out our [ODE_BRUTAL_ECS](https://github.com/odin-engine/ode_brutal_ecs).
 

@@ -78,9 +78,9 @@ Compiler flags that matter for release builds of your game:
 - `-no-bounds-check` — disables bounds checking globally. The library already annotates its provably-safe hot paths with `#no_bounds_check`, so this mostly affects your own code.
 - `-microarch:native` — allows the compiler to use your CPU's full instruction set.
 
-# 💪 Benchmarks (ODE_ECS vs other ECSes)
+# 💪 Benchmarks
 
-- ODE_ECS vs moecs vs odecs benchmark is [here](https://github.com/zm69/ecs_bench).
+- ODE_ECS vs ODE_BRUTAL_ECS vs moecs vs odecs benchmark is [here](https://github.com/zm69/ecs_bench).
 
 # ‼️ When to open an issue ticket
 If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I’ll try to answer, fix, or add new functionality.
