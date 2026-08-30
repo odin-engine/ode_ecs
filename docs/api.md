@@ -1,17 +1,11 @@
 # API Reference
 
-The full public ODE_ECS surface, grouped by object. This is a flat reference — for narrative
-explanations and examples see [Database](database.md), [Tables](tables.md),
+The full public ODE_ECS surface, grouped by object.
+
+For narrative explanations and examples see [Database](database.md), [Tables](tables.md),
 [Arch_Table](arch_table.md), [View](view.md), [Group](group.md), [Overbase](overbase.md),
 [Command_Buffer](command_buffer.md), [Observers](observers.md), [Relations](relations.md),
 [Pairs](pair_table.md) and [Serialization](serialization.md).
-
-Every name below is a public alias or proc-group entry defined in
-[`/src/ecs.odin`](/src/ecs.odin) — the only file you need to import from (`import ecs "ode_ecs/src"`).
-A `proc group` note means the short name is overloaded across several object types; the compiler
-picks the match by argument types. Signatures drop `loc := #caller_location` (present on most
-procedures purely for better assert/error messages) and other implementation-only attributes for
-brevity.
 
 All procedures take their object by pointer (`self: ^Database`, `self: ^Table($T)`, ...) as the
 first argument, shown here as `self`.
@@ -559,7 +553,7 @@ overbase_load_from_file(self: ^Overbase, path: string, allocator := context.allo
 ## Core types & errors
 
 ```odin
-entity_id ::            oc.ix_gen              // bit_field { ix: u32, gen: u32 }
+entity_id ::             oc.ix_gen              // bit_field { ix: u32, gen: u32 }
 table_id ::              distinct int
 table_record_id ::       distinct int
 view_id ::               distinct int
@@ -571,7 +565,7 @@ observer_id ::           distinct int
 Pair_Row_Id ::           distinct int           // row handle returned by pair_add, stable until pair_remove
 
 is_not_set(e: entity_id) -> bool        // true when e.ix == DELETED_INDEX (a "no entity" value)
-DELETED_INDEX                            // sentinel index value
+DELETED_INDEX                           // sentinel index value
 
 Object_State :: enum {
     Not_Initialized, Normal, Invalid, Terminated,
