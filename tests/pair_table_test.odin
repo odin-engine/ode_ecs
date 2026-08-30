@@ -54,7 +54,7 @@ package ode_ecs__tests
             testing.expect(t, ecs.pair_init(&pt, &db, holders_cap=5, pairs_cap=8) == nil)
             testing.expect(t, ecs.is_valid(&pt))
             testing.expect(t, ecs.pair_table__len(&pt) == 0)
-            testing.expect(t, ecs.pair_table__cap(&pt) == 8)
+            testing.expect(t, ecs.pair_cap(&pt) == 8)
             testing.expect(t, ecs.pair_table__memory_usage(&pt) > 0)
 
             // A second, independent Pair_Table on the same Database is fine.

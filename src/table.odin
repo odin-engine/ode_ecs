@@ -567,10 +567,12 @@ package ode_ecs
         return table_raw__pack(self)
     }
 
+    @(private)
     table_raw__len :: #force_inline proc "contextless" (self: ^Table_Raw) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
 
+    @(private)
     table_raw__clear :: proc (self: ^Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 

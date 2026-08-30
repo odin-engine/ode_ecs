@@ -7,6 +7,7 @@ Main:
 * [Tables](tables.md)
 * [Arch_Table (Archetype Table)](arch_table.md)
 * [View](view.md)
+* [API reference](api.md)
 
 Optional:
 * [Group](group.md)

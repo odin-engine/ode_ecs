@@ -75,7 +75,7 @@ main :: proc() {
         fmt.println()
 
         units: ecs.Arch_Table
-        err = ecs.arch_table__init(&units, &db, cap = 100, component_types = {Position, Velocity})
+        err = ecs.arch_table_init(&units, &db, cap = 100, component_types = {Position, Velocity})
         if err != nil { report_error(err); return }
 
         eids: [5]ecs.entity_id
@@ -106,7 +106,7 @@ main :: proc() {
             fmt.println("  entity", eids_col[i], "pos =", pos_col[i])
         }
 
-        err = ecs.arch_table__remove_entity(&units, eids[2])
+        err = ecs.remove_component(&units, eids[2])
         if err != nil { report_error(err); return }
         fmt.println()
         fmt.println("After removing entity 2 from units, row count:", ecs.table_len(&units))
@@ -172,7 +172,7 @@ main :: proc() {
             fmt.println("  entity", eid, "hp =", health_slice[i].hp, "pos =", pos_slice[i], "vel =", vel_slice[i])
         }
 
-        err = ecs.arch_table__remove_entity(&units, eids[1])
+        err = ecs.remove_component(&units, eids[1])
         if err != nil { report_error(err); return }
         fmt.println()
         fmt.println("After removing entity 1 from units, group size:", ecs.group_len(&group))

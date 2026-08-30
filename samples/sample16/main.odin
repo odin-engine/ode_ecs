@@ -113,7 +113,7 @@ main :: proc() {
     // View integration
     //
         off_duty: ecs.Tag_Table
-        err = ecs.tag_table__init(&off_duty, &db, 10)
+        err = ecs.tag_table_init(&off_duty, &db, 10)
         if err != nil { report_error(err); return }
 
         err = ecs.tag(&off_duty, gamma)
@@ -193,7 +193,7 @@ main :: proc() {
         fmt.println("remove_all(beta) -> has_any(beta):", ecs.pair_has_any(&assignments, beta))
 
         fmt.println("on_duty view is now empty:", ecs.view_len(&on_duty) == 0)
-        fmt.println("total live pairs:", ecs.pair_table__len(&assignments))
+        fmt.println("total live pairs:", ecs.pair_len(&assignments))
 
         fmt.println()
         fmt.println("Command_Buffer recording (cmd_pair_add/cmd_pair_remove) and full")

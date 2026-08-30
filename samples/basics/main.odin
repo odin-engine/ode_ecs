@@ -46,7 +46,7 @@ main :: proc() {
     //
     // Create entity and add components
     //
-    robot, _ := ecs.database__create_entity(&my_ecs)
+    robot, _ := ecs.create_entity(&my_ecs)
 
     fmt.println("Robot entity:", robot)
 

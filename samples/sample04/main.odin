@@ -96,7 +96,7 @@ main :: proc() {
         //
         pos_table : ecs.Tiny_Table(Position)
 
-        err = ecs.tiny_table__init(&pos_table, &db)
+        err = ecs.tiny_table_init(&pos_table, &db)
         if err != nil { report_error(err); return }
 
         //
@@ -157,25 +157,25 @@ main :: proc() {
         // Table
         //
         health_table : ecs.Table(Health)
-        err = ecs.table__init(&health_table, &db, 20)
+        err = ecs.table_init(&health_table, &db, 20)
         if err != nil { report_error(err); return }
 
         //
         // Tag_Table
         //
         is_alive_tag_table : ecs.Tag_Table
-        err = ecs.tag_table__init(&is_alive_tag_table, &db, 20)
+        err = ecs.tag_table_init(&is_alive_tag_table, &db, 20)
         if err != nil { report_error(err); return }
 
         //
         // Compact_Table
         //
         inventory_table : ecs.Compact_Table(Inventory)
-        err = ecs.compact_table__init(&inventory_table, &db, 5)
+        err = ecs.compact_table_init(&inventory_table, &db, 5)
         if err != nil { report_error(err); return }
 
         view: ecs.View
-        err = ecs.view__init(&view, &db, {&pos_table, &health_table, &inventory_table, &is_alive_tag_table})
+        err = ecs.view_init(&view, &db, {&pos_table, &health_table, &inventory_table, &is_alive_tag_table})
         if err != nil { report_error(err); return }
 
         //
@@ -211,7 +211,7 @@ main :: proc() {
         bird_inventory.items[0][0] = Item_Type.Food
         bird_inventory.item_count = 1
 
-        ecs.view__rebuild(&view)
+        ecs.rebuild(&view)
 
         view_eids := ecs.entities_slice(&view)
         pos_slice := ecs.slice(&view, Position)

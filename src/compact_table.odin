@@ -506,10 +506,12 @@ package ode_ecs
         return compact_table_raw__pack(self)
     }
 
+    @(private)
     compact_table_raw__len :: #force_inline proc "contextless" (self: ^Compact_Table_Raw) -> int {
         return (^runtime.Raw_Slice)(&self.rows).len
     }
 
+    @(private)
     compact_table_raw__clear :: proc (self: ^Compact_Table_Raw, zero_components := true) -> Error {
         if self.state != Object_State.Normal do return API_Error.Object_Invalid
 

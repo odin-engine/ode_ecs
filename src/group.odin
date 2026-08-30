@@ -174,6 +174,14 @@ package ode_ecs
         return self.len
     }
 
+    // The group can never exceed its smallest owned table's cap.
+    group__cap :: proc "contextless" (self: ^Group) -> int {
+        cap := max(int)
+        for t in self.tables do cap = min(cap, table_base__cap(t))
+        for t in self.arch_tables do cap = min(cap, arch_table__cap(t))
+        return cap
+    }
+
     // Batch (dense) access: the owned `table`'s components of all group members, as table.rows[:group_len] — no alignment check needed, unlike View's slice.
     group__slice :: proc "contextless" (self: ^Group, table: ^Table($T)) -> []T {
         if self == nil || table == nil do return nil

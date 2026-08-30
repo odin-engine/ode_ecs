@@ -110,12 +110,26 @@ package ode_ecs
         self.cap = cap
         self.last_col_type = nil
 
-        self.columns = make([]Arch_Column, len(component_types), db.allocator) or_return
-        self.col_payload_offsets = make([]int, len(component_types), db.allocator) or_return
+        // Columns are stored in ascending Type_Info-address order so
+        // arch_table__column_index can binary-search instead of scanning.
+        tis := make([]^runtime.Type_Info, len(component_types), db.allocator) or_return
+        defer delete(tis, db.allocator)
+        for t, i in component_types do tis[i] = type_info_of(t)
+        for i in 1..<len(tis) {
+            key := tis[i]
+            j := i - 1
+            for j >= 0 && uintptr(tis[j]) > uintptr(key) {
+                tis[j + 1] = tis[j]
+                j -= 1
+            }
+            tis[j + 1] = key
+        }
+
+        self.columns = make([]Arch_Column, len(tis), db.allocator) or_return
+        self.col_payload_offsets = make([]int, len(tis), db.allocator) or_return
 
         offset := 0
-        for t, i in component_types {
-            ti := type_info_of(t)
+        for ti, i in tis {
             self.columns[i].type_info = ti
             self.columns[i].rows = make([]byte, cap * ti.size, db.allocator) or_return
 
@@ -156,6 +170,7 @@ package ode_ecs
         }
 
         for &bits in self.db.eid_to_bits do uni_bits__remove(&bits, self.id)
+        for &owner in self.db.eid_to_arch_table do if owner == self do owner = nil
 
         database__detach_table(self.db, self)
 
@@ -200,6 +215,11 @@ package ode_ecs
         if err != nil do return false
 
         return self.eid_to_rid[eid.ix] != ARCH_TABLE_NO_RID
+    }
+
+    @(require_results)
+    arch_table__is_in :: proc(self: ^Arch_Table, eid: entity_id) -> bool {
+        return arch_table__has_entity(self, eid)
     }
 
     arch_table__disable_component :: proc(self: ^Arch_Table, eid: entity_id) -> Error {
@@ -247,11 +267,21 @@ package ode_ecs
     arch_table__column_index :: proc "contextless" (self: ^Arch_Table, id: typeid) -> int {
         if id == self.last_col_type do return self.last_col_idx
 
-        for &col, i in self.columns {
-            if col.type_info.id == id {
+        target := uintptr(type_info_of(id))
+
+        lo, hi := 0, len(self.columns) - 1
+        for lo <= hi {
+            mid := (lo + hi) / 2
+            mid_ti := uintptr(self.columns[mid].type_info)
+            if mid_ti == target {
                 self.last_col_type = id
-                self.last_col_idx = i
-                return i
+                self.last_col_idx = mid
+                return mid
+            }
+            if mid_ti < target {
+                lo = mid + 1
+            } else {
+                hi = mid - 1
             }
         }
         return -1
@@ -336,6 +366,9 @@ package ode_ecs
             return API_Error.Component_Already_Exist
         }
 
+        other := self.db.eid_to_arch_table[eid.ix]
+        if other != nil && other != self do return API_Error.Entity_Already_In_Table
+
         if self.len >= self.cap do return oc.Core_Error.Container_Is_Full
 
         new_rid := self.len
@@ -348,6 +381,7 @@ package ode_ecs
 
         self.eid_to_rid[eid.ix] = u32(new_rid)
         self.rid_to_eid[new_rid] = eid
+        self.db.eid_to_arch_table[eid.ix] = self
 
         database__add_component(self.db, eid, self.id)
         database__notify_observers(self.db, .Arch_Entity_Added, eid, table_id = self.id)
@@ -401,6 +435,7 @@ package ode_ecs
         if target_rid == ARCH_TABLE_NO_RID do return oc.Core_Error.Not_Found
 
         database__notify_observers(self.db, .Arch_Entity_Removed, target_eid, table_id = self.id)
+        self.db.eid_to_arch_table[target_eid.ix] = nil
 
         paused := arch_table__is_packing_paused(self)
 
@@ -497,6 +532,106 @@ package ode_ecs
         arch_table__notify_any_of_views(self, target_eid)
 
         return nil
+    }
+
+    @(private)
+    arch_table__move_entity_impl :: proc(eid: entity_id, from: ^Arch_Table, to: ^Arch_Table, sudo: bool, loc := #caller_location) -> Error {
+        database__is_entity_correct(from.db, eid) or_return
+
+        if !arch_table__has_entity(from, eid) do return API_Error.Entity_Not_In_Table
+
+        // Checked unconditionally (not just under VALIDATIONS) so a plain
+        // move never silently degrades into sudo_move's drop-what-doesn't-fit
+        // behavior in a release build (-define:ECS_VALIDATIONS=false).
+        if !sudo {
+            for col in from.columns {
+                if arch_table__column_index(to, col.type_info.id) < 0 do return API_Error.Table_To_Cannot_Contain_Entity
+            }
+        }
+
+        src_rid := int(from.eid_to_rid[eid.ix])
+
+        db := from.db
+        db.eid_to_arch_table[eid.ix] = nil // untable so add_entity below doesn't see `from` as a conflicting owner
+        if aerr := arch_table__add_entity(to, eid, loc); aerr != nil {
+            db.eid_to_arch_table[eid.ix] = from
+            return aerr
+        }
+
+        dst_rid := int(to.eid_to_rid[eid.ix])
+
+        for &col in from.columns {
+            dst_idx := arch_table__column_index(to, col.type_info.id)
+            if dst_idx < 0 do continue // sudo: to doesn't have this column, drop it
+            elem_size := col.type_info.size
+            src := rawptr(uintptr(raw_data(col.rows)) + uintptr(src_rid) * uintptr(elem_size))
+            dst := arch_table__component_rawptr_by_col(to, dst_rid, dst_idx)
+            mem.copy(dst, src, elem_size)
+        }
+
+        return arch_table__remove_entity(from, eid, loc)
+    }
+
+    arch_table__move_entity :: proc(eid: entity_id, from: ^Arch_Table, to: ^Arch_Table, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            for col in from.columns {
+                assert(arch_table__column_index(to, col.type_info.id) >= 0, "move: to does not contain all of from's component types", loc = loc)
+            }
+        }
+        return arch_table__move_entity_impl(eid, from, to, sudo = false, loc = loc)
+    }
+
+    arch_table__sudo_move_entity :: proc(eid: entity_id, from: ^Arch_Table, to: ^Arch_Table, loc := #caller_location) -> Error {
+        return arch_table__move_entity_impl(eid, from, to, sudo = true, loc = loc)
+    }
+
+    @(private)
+    arch_table__copy_entity_impl :: proc(eid: entity_id, from: ^Arch_Table, to: ^Arch_Table, sudo: bool, loc := #caller_location) -> (new_eid: entity_id, err: Error) {
+        if ierr := database__is_entity_correct(from.db, eid); ierr != nil do return entity_id{ix = DELETED_INDEX}, ierr
+
+        if !arch_table__has_entity(from, eid) do return entity_id{ix = DELETED_INDEX}, API_Error.Entity_Not_In_Table
+
+        // Checked unconditionally (not just under VALIDATIONS) so a plain
+        // copy never silently degrades into sudo_copy's drop-what-doesn't-fit
+        // behavior in a release build (-define:ECS_VALIDATIONS=false).
+        if !sudo {
+            for col in from.columns {
+                if arch_table__column_index(to, col.type_info.id) < 0 do return entity_id{ix = DELETED_INDEX}, API_Error.Table_To_Cannot_Contain_Entity
+            }
+        }
+
+        src_rid := int(from.eid_to_rid[eid.ix])
+
+        new_eid, err = arch_table__create_entity(to, loc)
+        if err != nil do return entity_id{ix = DELETED_INDEX}, err
+
+        dst_rid := int(to.eid_to_rid[new_eid.ix])
+
+        for &col in from.columns {
+            dst_idx := arch_table__column_index(to, col.type_info.id)
+            if dst_idx < 0 do continue // sudo: to doesn't have this column, drop it
+            elem_size := col.type_info.size
+            src := rawptr(uintptr(raw_data(col.rows)) + uintptr(src_rid) * uintptr(elem_size))
+            dst := arch_table__component_rawptr_by_col(to, dst_rid, dst_idx)
+            mem.copy(dst, src, elem_size)
+        }
+
+        return new_eid, nil
+    }
+
+    @(require_results)
+    arch_table__copy_entity :: proc(eid: entity_id, from: ^Arch_Table, to: ^Arch_Table, loc := #caller_location) -> (new_eid: entity_id, err: Error) {
+        when VALIDATIONS {
+            for col in from.columns {
+                assert(arch_table__column_index(to, col.type_info.id) >= 0, "copy: to does not contain all of from's component types", loc = loc)
+            }
+        }
+        return arch_table__copy_entity_impl(eid, from, to, sudo = false, loc = loc)
+    }
+
+    @(require_results)
+    arch_table__sudo_copy_entity :: proc(eid: entity_id, from: ^Arch_Table, to: ^Arch_Table, loc := #caller_location) -> (new_eid: entity_id, err: Error) {
+        return arch_table__copy_entity_impl(eid, from, to, sudo = true, loc = loc)
     }
 
     arch_table__pack :: proc(self: ^Arch_Table) -> Error {

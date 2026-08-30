@@ -51,7 +51,7 @@ main :: proc() {
             if err != nil do report_error(err)
         }
 
-        err = ecs.database__init(&db, 10, allocator)
+        err = ecs.init(&db, 10, allocator)
         if err != nil { report_error(err); return }
     
     ///////////////////////////////////////////////////////////////////////////////
@@ -59,7 +59,7 @@ main :: proc() {
     //
         is_alive_table : ecs.Tag_Table
 
-        err = ecs.tag_table__init(&is_alive_table, &db, 10)
+        err = ecs.tag_table_init(&is_alive_table, &db, 10)
         if err != nil { report_error(err); return }
 
         view : ecs.View
@@ -232,26 +232,26 @@ main :: proc() {
 
         movement_table : ecs.Tiny_Table(Movement)
 
-        err = ecs.tiny_table__init(&movement_table, &db)
+        err = ecs.tiny_table_init(&movement_table, &db)
         if err != nil { report_error(err); return } 
 
         movement: ^Movement
 
-        movement, err = ecs.tiny_table__add_component(&movement_table, human)
+        movement, err = ecs.add_component(&movement_table, human)
         if err != nil { report_error(err); return } 
 
         movement.speed = 5.0
         movement.direction = 180.0  
         movement.state = Character_State.Walking
 
-        movement, err = ecs.tiny_table__add_component(&movement_table, bird)
+        movement, err = ecs.add_component(&movement_table, bird)
         if err != nil { report_error(err); return }
 
         movement.speed = 20.0
         movement.direction = 90.0
         movement.state = Character_State.Flying
 
-        movement, err = ecs.tiny_table__add_component(&movement_table, chair)
+        movement, err = ecs.add_component(&movement_table, chair)
         if err != nil { report_error(err); return }
 
         movement.speed = 0.0
@@ -304,10 +304,10 @@ main :: proc() {
             }
         }
 
-        movement = ecs.tiny_table__get_component_by_entity(&movement_table, human)
+        movement = ecs.get_component(&movement_table, human)
         movement.state = Character_State.Idle
 
-        movement = ecs.tiny_table__get_component_by_entity(&movement_table, chair)
+        movement = ecs.get_component(&movement_table, chair)
         movement.state = Character_State.Sliding
 
         fmt.println()
@@ -326,9 +326,9 @@ main :: proc() {
         }
 
 
-        ecs.view__rerun_filter(&view4, human)
+        ecs.rerun_filter(&view4, human)
 
-        ecs.tiny_table__rerun_views_filters(&movement_table, chair)
+        ecs.rerun_views_filters(&movement_table, chair)
 
         fmt.println()
         fmt.println("Now view is updated after we rerun filters:")
@@ -385,9 +385,9 @@ main :: proc() {
         is_flying_table: ecs.Tag_Table
         is_heavy_table:  ecs.Tag_Table
 
-        err = ecs.tag_table__init(&is_flying_table, &db, 10)
+        err = ecs.tag_table_init(&is_flying_table, &db, 10)
         if err != nil { report_error(err); return }
-        err = ecs.tag_table__init(&is_heavy_table, &db, 10)
+        err = ecs.tag_table_init(&is_heavy_table, &db, 10)
         if err != nil { report_error(err); return }
 
         err = ecs.tag(&is_flying_table, bird)

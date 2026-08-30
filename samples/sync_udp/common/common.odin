@@ -37,8 +37,8 @@ package sync_udp_common
     world_init :: proc(w: ^World, allocator := context.allocator) -> ecs.Error {
         ecs.init(&w.db, entities_cap = ENTITY_COUNT, allocator = allocator) or_return
         ecs.table_init(&w.positions, &w.db, ENTITY_COUNT) or_return
-        ecs.compact_table__init(&w.healths, &w.db, ENTITY_COUNT) or_return
-        ecs.tag_table__init(&w.stunned, &w.db, ENTITY_COUNT) or_return
+        ecs.compact_table_init(&w.healths, &w.db, ENTITY_COUNT) or_return
+        ecs.tag_table_init(&w.stunned, &w.db, ENTITY_COUNT) or_return
         return nil
     }
 

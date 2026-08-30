@@ -43,7 +43,7 @@ World :: struct {
 world__init :: proc(w: ^World, allocator: mem.Allocator) -> ecs.Error {
     ecs.init(&w.db, entities_cap=100, allocator=allocator) or_return
     ecs.table_init(&w.positions, &w.db, 100) or_return
-    ecs.tag_table__init(&w.is_alive, &w.db, 100) or_return
+    ecs.tag_table_init(&w.is_alive, &w.db, 100) or_return
     return nil
 }
 

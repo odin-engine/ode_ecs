@@ -189,3 +189,19 @@ package ode_ecs__tests
             testing.expect(t, row_eid == eids[0] || row_eid == eids[2])
         }
     }
+
+    @(test)
+    group__cap_with_arch_table__test :: proc(t: ^testing.T) {
+        db: ecs.Database
+        speeds: ecs.Table(Group_Speed)
+        at: ecs.Arch_Table
+        group: ecs.Group
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, 100) == nil)
+        testing.expect(t, ecs.table_init(&speeds, &db, 100) == nil)
+        testing.expect(t, ecs.arch_table__init(&at, &db, 30, {Position}) == nil)
+        testing.expect(t, ecs.group_init(&group, &db, {&speeds, &at}) == nil)
+
+        testing.expect(t, ecs.group_cap(&group) == 30)
+    }

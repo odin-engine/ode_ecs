@@ -83,8 +83,8 @@ package ode_ecs_fat_struct_mix
         world.entities = make([dynamic]Entity, 0, int(max_entities))
 
         ecs.init(&world.db, max_entities)
-        ecs.compact_table__init(&world.inventories, &world.db, 10)
-        ecs.compact_table__init(&world.ais, &world.db, 10)
+        ecs.compact_table_init(&world.inventories, &world.db, 10)
+        ecs.compact_table_init(&world.ais, &world.db, 10)
     }
 
     world_terminate :: proc(world: ^World) {

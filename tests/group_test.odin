@@ -500,3 +500,19 @@ package ode_ecs__tests
         testing.expect(t, ecs.resume_packing(&db) == nil)
         group__verify(t, &group, &pos, &vel)
     }
+
+    @(test)
+    group__cap_is_min_of_owned_tables__test :: proc(t: ^testing.T) {
+        db: ecs.Database
+        pos: ecs.Table(Group_Pos)
+        vel: ecs.Table(Group_Vel)
+        group: ecs.Group
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, 100) == nil)
+        testing.expect(t, ecs.table_init(&pos, &db, 100) == nil)
+        testing.expect(t, ecs.table_init(&vel, &db, 30) == nil)
+        testing.expect(t, ecs.group_init(&group, &db, {&pos, &vel}) == nil)
+
+        testing.expect(t, ecs.group_cap(&group) == 30)
+    }

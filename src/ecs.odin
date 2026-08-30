@@ -135,7 +135,31 @@ package ode_ecs
         table_terminate         :: table__terminate
 
     //
-    // View 
+    // Compact_Table
+    //
+        compact_table_init      :: compact_table__init
+        compact_table_terminate :: compact_table__terminate
+
+    //
+    // Tiny_Table
+    //
+        tiny_table_init         :: tiny_table__init
+        tiny_table_terminate    :: tiny_table__terminate
+
+    //
+    // Tag_Table
+    //
+        tag_table_init          :: tag_table__init
+        tag_table_terminate     :: tag_table__terminate
+
+    //
+    // Arch_Table
+    //
+        arch_table_init         :: arch_table__init
+        arch_table_terminate    :: arch_table__terminate
+
+    //
+    // View
     //
 
         view_init               :: view__init
@@ -157,6 +181,7 @@ package ode_ecs
         group_init          :: group__init
         group_terminate     :: group__terminate
         group_len           :: group__len
+        group_cap           :: group__cap
         group_rebuild       :: group__rebuild
 
     //
@@ -365,10 +390,15 @@ package ode_ecs
             tiny_table__add_component,
         }
 
+        add_entity :: proc {
+            arch_table__add_entity,
+        }
+
         remove_component    :: proc {
             table__remove_component,
             compact_table__remove_component,
             tiny_table__remove_component,
+            arch_table__remove_entity,
         }
 
         rerun_views_filters :: proc {
@@ -417,6 +447,32 @@ package ode_ecs
             tiny_table__move_component,
         }
 
+        is_in :: proc {
+            arch_table__is_in,
+        }
+
+        move :: proc {
+            arch_table__move_entity,
+            table__move_component,
+            compact_table__move_component,
+            tiny_table__move_component,
+        }
+
+        sudo_move :: proc {
+            arch_table__sudo_move_entity,
+        }
+
+        copy :: proc {
+            arch_table__copy_entity,
+            table__copy_component,
+            compact_table__copy_component,
+            tiny_table__copy_component,
+        }
+
+        sudo_copy :: proc {
+            arch_table__sudo_copy_entity,
+        }
+
         //
         // Tags
         //
@@ -439,6 +495,8 @@ package ode_ecs
 
         pair_init       :: pair_table__init
         pair_terminate  :: pair_table__terminate
+        pair_len        :: pair_table__len
+        pair_cap        :: pair_table__cap
 
         pair_add        :: pair_table__add
         pair_remove     :: pair_table__remove
@@ -659,6 +717,9 @@ package ode_ecs
             Sync_Feature_Disabled,
             Tables_Cap_Exceeds_Compile_Time_Limit,
             Observers_Feature_Disabled,
+            Entity_Not_In_Table,
+            Table_To_Cannot_Contain_Entity,
+            Entity_Already_In_Table,
         }
 
         Error :: union #shared_nil {

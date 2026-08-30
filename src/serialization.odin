@@ -768,10 +768,13 @@ package ode_ecs
         if has_relations != db_has_relations do return API_Error.Snapshot_Schema_Mismatch
 
         stamps: []i32
+        arch_owner_section: []i32 // which Arch_Table section (1-based) first claimed this eid; catches an eid split across two Arch_Tables
         if int(hdr.section_count) > 0 || has_relations {
             stamps = make([]i32, self.overbase.id_factory.cap, self.allocator) or_return
+            arch_owner_section = make([]i32, self.overbase.id_factory.cap, self.allocator) or_return
         }
         defer if stamps != nil do delete(stamps, self.allocator)
+        defer if arch_owner_section != nil do delete(arch_owner_section, self.allocator)
 
         prev_id := -1
         prev_tag_id := -1
@@ -830,6 +833,8 @@ package ode_ecs
                     snapshot__validate_row_eid(self, eid, saved_items, apply_entity_ids) or_return
                     if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
                     stamps[eid.ix] = i32(section_ix + 1)
+                    if arch_owner_section[eid.ix] != 0 && arch_owner_section[eid.ix] != i32(section_ix + 1) do return API_Error.Snapshot_Invalid
+                    arch_owner_section[eid.ix] = i32(section_ix + 1)
                 }
                 snap_reader__pad8(&r) or_return
 
@@ -1140,6 +1145,7 @@ package ode_ecs
                     eid := eids[rid]
                     at.eid_to_rid[eid.ix] = u32(rid)
                     uni_bits__add(&db.eid_to_bits[eid.ix], at.id)
+                    db.eid_to_arch_table[eid.ix] = at
                 }
 
                 at.len = n

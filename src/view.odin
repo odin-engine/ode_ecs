@@ -479,18 +479,6 @@ package ode_ecs
                     uni_bits__no_intersection(&self.tag_bits, &self.db.eid_to_tag_disabled_bits[eid.ix])))
     }
 
-    view__filter_match :: proc(self: ^View, eid: entity_id) -> bool {
-        if self == nil do return false
-        if self.filter == nil do return true
-
-        rid := self.eid_to_rid[eid.ix]
-        if rid == VIEW_NO_RID {
-            view__fill_columns(self, eid, self.cap)
-            return view__filter_match_private(self, self.cap)
-        }
-        return view__filter_match_private(self, int(rid))
-    }
-
     view__rerun_filter :: proc(self: ^View, eid: entity_id) -> Error {
         if !view__components_match(self, eid) do return nil
 

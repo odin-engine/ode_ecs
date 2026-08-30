@@ -247,12 +247,13 @@ package ode_ecs
         when VALIDATIONS {
             assert(arch_table__is_valid(arch), loc = loc)
             assert(len(arch.columns) == 1, "Arch_Table does not have exactly 1 column", loc = loc)
-            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
         }
+        idx1 := arch_table__column_index(arch, typeid_of(T1))
+        when VALIDATIONS do assert(idx1 >= 0, "component type is not one of this archetype's columns", loc = loc)
 
         offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
         v1 := v1
-        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx1, &v1, size_of(T1))
         return command_buffer__append(self, cmd)
     }
 
@@ -260,14 +261,18 @@ package ode_ecs
         when VALIDATIONS {
             assert(arch_table__is_valid(arch), loc = loc)
             assert(len(arch.columns) == 2, "Arch_Table does not have exactly 2 columns", loc = loc)
-            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
-            assert(arch.columns[1].type_info.id == typeid_of(T2), "component type/order does not match arch_table__init", loc = loc)
+        }
+        idx1 := arch_table__column_index(arch, typeid_of(T1))
+        idx2 := arch_table__column_index(arch, typeid_of(T2))
+        when VALIDATIONS {
+            assert(idx1 >= 0, "component type is not one of this archetype's columns", loc = loc)
+            assert(idx2 >= 0, "component type is not one of this archetype's columns", loc = loc)
         }
 
         offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
         v1, v2 := v1, v2
-        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
-        command_buffer__write_arch_payload_column(self, arch, offset, 1, &v2, size_of(T2))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx1, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx2, &v2, size_of(T2))
         return command_buffer__append(self, cmd)
     }
 
@@ -275,16 +280,21 @@ package ode_ecs
         when VALIDATIONS {
             assert(arch_table__is_valid(arch), loc = loc)
             assert(len(arch.columns) == 3, "Arch_Table does not have exactly 3 columns", loc = loc)
-            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
-            assert(arch.columns[1].type_info.id == typeid_of(T2), "component type/order does not match arch_table__init", loc = loc)
-            assert(arch.columns[2].type_info.id == typeid_of(T3), "component type/order does not match arch_table__init", loc = loc)
+        }
+        idx1 := arch_table__column_index(arch, typeid_of(T1))
+        idx2 := arch_table__column_index(arch, typeid_of(T2))
+        idx3 := arch_table__column_index(arch, typeid_of(T3))
+        when VALIDATIONS {
+            assert(idx1 >= 0, "component type is not one of this archetype's columns", loc = loc)
+            assert(idx2 >= 0, "component type is not one of this archetype's columns", loc = loc)
+            assert(idx3 >= 0, "component type is not one of this archetype's columns", loc = loc)
         }
 
         offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
         v1, v2, v3 := v1, v2, v3
-        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
-        command_buffer__write_arch_payload_column(self, arch, offset, 1, &v2, size_of(T2))
-        command_buffer__write_arch_payload_column(self, arch, offset, 2, &v3, size_of(T3))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx1, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx2, &v2, size_of(T2))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx3, &v3, size_of(T3))
         return command_buffer__append(self, cmd)
     }
 
@@ -292,18 +302,24 @@ package ode_ecs
         when VALIDATIONS {
             assert(arch_table__is_valid(arch), loc = loc)
             assert(len(arch.columns) == 4, "Arch_Table does not have exactly 4 columns", loc = loc)
-            assert(arch.columns[0].type_info.id == typeid_of(T1), "component type/order does not match arch_table__init", loc = loc)
-            assert(arch.columns[1].type_info.id == typeid_of(T2), "component type/order does not match arch_table__init", loc = loc)
-            assert(arch.columns[2].type_info.id == typeid_of(T3), "component type/order does not match arch_table__init", loc = loc)
-            assert(arch.columns[3].type_info.id == typeid_of(T4), "component type/order does not match arch_table__init", loc = loc)
+        }
+        idx1 := arch_table__column_index(arch, typeid_of(T1))
+        idx2 := arch_table__column_index(arch, typeid_of(T2))
+        idx3 := arch_table__column_index(arch, typeid_of(T3))
+        idx4 := arch_table__column_index(arch, typeid_of(T4))
+        when VALIDATIONS {
+            assert(idx1 >= 0, "component type is not one of this archetype's columns", loc = loc)
+            assert(idx2 >= 0, "component type is not one of this archetype's columns", loc = loc)
+            assert(idx3 >= 0, "component type is not one of this archetype's columns", loc = loc)
+            assert(idx4 >= 0, "component type is not one of this archetype's columns", loc = loc)
         }
 
         offset, cmd := command_buffer__record_arch_add_header(self, arch, eid, loc) or_return
         v1, v2, v3, v4 := v1, v2, v3, v4
-        command_buffer__write_arch_payload_column(self, arch, offset, 0, &v1, size_of(T1))
-        command_buffer__write_arch_payload_column(self, arch, offset, 1, &v2, size_of(T2))
-        command_buffer__write_arch_payload_column(self, arch, offset, 2, &v3, size_of(T3))
-        command_buffer__write_arch_payload_column(self, arch, offset, 3, &v4, size_of(T4))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx1, &v1, size_of(T1))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx2, &v2, size_of(T2))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx3, &v3, size_of(T3))
+        command_buffer__write_arch_payload_column(self, arch, offset, idx4, &v4, size_of(T4))
         return command_buffer__append(self, cmd)
     }
 

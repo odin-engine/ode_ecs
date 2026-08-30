@@ -124,8 +124,8 @@ main :: proc() {
         inventories: ecs.Compact_Table(Inventory)
         ais:         ecs.Compact_Table(AI_State)
 
-        ecs.compact_table__init(&inventories, &db, 10)
-        ecs.compact_table__init(&ais, &db, 10)
+        ecs.compact_table_init(&inventories, &db, 10)
+        ecs.compact_table_init(&ais, &db, 10)
 
         // Rock: Active only — no physics, no inventory, no AI.
         rock, _ := ecs.create_entity(&db)

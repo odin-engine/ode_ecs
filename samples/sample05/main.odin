@@ -87,16 +87,16 @@ main :: proc() {
         large_table : ecs.Table(Health)
         large_compact_table : ecs.Compact_Table(Health)
 
-        err = ecs.table__init(&table, &db, COMPONENTS_CAP)
+        err = ecs.table_init(&table, &db, COMPONENTS_CAP)
         if err != nil { report_error(err); return }
 
-        err = ecs.compact_table__init(&compact_table, &db, COMPONENTS_CAP)
+        err = ecs.compact_table_init(&compact_table, &db, COMPONENTS_CAP)
         if err != nil { report_error(err); return }
 
-        err = ecs.table__init(&large_table, &db, ENTITIES_CAP)
+        err = ecs.table_init(&large_table, &db, ENTITIES_CAP)
         if err != nil { report_error(err); return }
 
-        err = ecs.compact_table__init(&large_compact_table, &db, ENTITIES_CAP)
+        err = ecs.compact_table_init(&large_compact_table, &db, ENTITIES_CAP)
         if err != nil { report_error(err); return }
 
 
@@ -241,13 +241,13 @@ main :: proc() {
         table8: ecs.Table(Health)
         compact_table8: ecs.Compact_Table(Health)
 
-        err = ecs.tiny_table__init(&tiny_table, &db)
+        err = ecs.tiny_table_init(&tiny_table, &db)
         if err != nil { report_error(err); return }
 
-        err = ecs.table__init(&table8, &db, ecs.TINY_TABLE__ROW_CAP)
+        err = ecs.table_init(&table8, &db, ecs.TINY_TABLE__ROW_CAP)
         if err != nil { report_error(err); return }
 
-        err = ecs.compact_table__init(&compact_table8, &db, ecs.TINY_TABLE__ROW_CAP)
+        err = ecs.compact_table_init(&compact_table8, &db, ecs.TINY_TABLE__ROW_CAP)
         if err != nil { report_error(err); return }
 
         //
@@ -335,7 +335,7 @@ main :: proc() {
         time.stopwatch_stop(&sw)
         _, _, _, table8_time := time.precise_clock_from_stopwatch(sw)
 
-        s:= oc.add_thousand_separator(ecs.database__entities_len(&db), sep=',', allocator=allocator)
+        s:= oc.add_thousand_separator(ecs.entities_len(&db), sep=',', allocator=allocator)
         fmt.printfln("%-30s %s", "Entities count:", s)
         delete(s, allocator)
 
