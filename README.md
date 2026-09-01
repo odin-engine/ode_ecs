@@ -3,7 +3,7 @@
 
 ⚡ A high-performance [hybrid](/docs/ecs_types.md) [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
-For a minimal, manual, [Archetype ECS](/docs/ecs_types.md) built for extreme performance, check out our 👊 [ODE_BRUTAL_ECS](https://github.com/odin-engine/ode_brutal_ecs).
+For a minimal, manual, Archetype ECS built for extreme performance, check out our 👊 [ODE_BRUTAL_ECS](https://github.com/odin-engine/ode_brutal_ecs).
 
 ### What ODE_ECS offers
 
