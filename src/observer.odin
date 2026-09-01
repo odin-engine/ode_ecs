@@ -141,6 +141,9 @@ package ode_ecs
 
     @(private)
     database__attach_observer :: proc(self: ^Database, o: ^Observer) -> (observer_id, Error) {
+        if self.observers.items == nil {
+            if aerr := oc.sparse_arr__init(&self.observers, self.observers_cap, self.allocator); aerr != nil do return DELETED_INDEX, aerr
+        }
         id, err := oc.sparse_arr__add_growing(&self.observers, o, self.allocator)
         if err != nil do return DELETED_INDEX, err
 

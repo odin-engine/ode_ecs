@@ -31,6 +31,7 @@ package ode_ecs
         views: oc.Sparse_Arr(View),
 
         groups: oc.Dense_Arr(^Group),
+        groups_cap: int,
 
         eid_to_bits: []Uni_Bits,
 
@@ -49,9 +50,12 @@ package ode_ecs
         relations: ^Relations_Table,
 
         pair_tables: oc.Sparse_Arr(Pair_Table_Base),
+        pair_tables_cap: int,
 
         command_buffers: oc.Sparse_Arr(Command_Buffer),
+        command_buffers_cap: int,
         observers: oc.Sparse_Arr(Observer),
+        observers_cap: int,
 
         tail_swap_paused: bool,
 
@@ -66,10 +70,10 @@ package ode_ecs
         if !oc.sparse_arr__is_valid(&self.tables) do return false
         if !oc.sparse_arr__is_valid(&self.tag_tables) do return false
         if !oc.sparse_arr__is_valid(&self.views) do return false
-        if !oc.dense_arr__is_valid(&self.groups) do return false
-        if !oc.sparse_arr__is_valid(&self.pair_tables) do return false
-        if !oc.sparse_arr__is_valid(&self.command_buffers) do return false
-        if !oc.sparse_arr__is_valid(&self.observers) do return false
+        if !oc.dense_arr__is_valid_or_empty(&self.groups) do return false
+        if !oc.sparse_arr__is_valid_or_empty(&self.pair_tables) do return false
+        if !oc.sparse_arr__is_valid_or_empty(&self.command_buffers) do return false
+        if !oc.sparse_arr__is_valid_or_empty(&self.observers) do return false
         if self.eid_to_bits == nil do return false
         if self.eid_to_disabled_bits == nil do return false
         if self.eid_to_tag_bits == nil do return false
@@ -105,10 +109,10 @@ package ode_ecs
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.tag_tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
-        oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.pair_tables, pair_tables_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.command_buffers, command_buffers_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.observers, observers_cap, self.allocator) or_return
+        self.groups_cap = tables_cap
+        self.pair_tables_cap = pair_tables_cap
+        self.command_buffers_cap = command_buffers_cap
+        self.observers_cap = observers_cap
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
@@ -148,10 +152,10 @@ package ode_ecs
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.tag_tables, tables_cap, self.allocator) or_return
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
-        oc.dense_arr__init(&self.groups, tables_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.pair_tables, pair_tables_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.command_buffers, command_buffers_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.observers, observers_cap, self.allocator) or_return
+        self.groups_cap = tables_cap
+        self.pair_tables_cap = pair_tables_cap
+        self.command_buffers_cap = command_buffers_cap
+        self.observers_cap = observers_cap
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
@@ -690,6 +694,7 @@ package ode_ecs
 
     @(private)
     database__attach_group :: proc(self: ^Database, group: ^Group) -> Error {
+        if self.groups.items == nil do oc.dense_arr__init(&self.groups, self.groups_cap, self.allocator) or_return
         _, err := oc.dense_arr__add_growing(&self.groups, group, self.allocator)
         return err
     }
@@ -714,6 +719,9 @@ package ode_ecs
 
     @(private)
     database__attach_pair_table :: proc(self: ^Database, pt: ^Pair_Table_Base) -> (pair_table_id, Error) {
+        if self.pair_tables.items == nil {
+            if aerr := oc.sparse_arr__init(&self.pair_tables, self.pair_tables_cap, self.allocator); aerr != nil do return DELETED_INDEX, aerr
+        }
         id, err := oc.sparse_arr__add_growing(&self.pair_tables, pt, self.allocator)
         if err != nil do return DELETED_INDEX, err
 
@@ -727,6 +735,9 @@ package ode_ecs
 
     @(private)
     database__attach_command_buffer :: proc(self: ^Database, cb: ^Command_Buffer) -> (command_buffer_id, Error) {
+        if self.command_buffers.items == nil {
+            if aerr := oc.sparse_arr__init(&self.command_buffers, self.command_buffers_cap, self.allocator); aerr != nil do return DELETED_INDEX, aerr
+        }
         id, err := oc.sparse_arr__add_growing(&self.command_buffers, cb, self.allocator)
         if err != nil do return DELETED_INDEX, err
 

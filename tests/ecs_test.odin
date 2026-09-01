@@ -191,7 +191,9 @@ package ode_ecs__tests
         groups_cap_before := db.groups.cap
         testing.expect(t, tables_cap_before == 2)
         testing.expect(t, views_cap_before == 2)
-        testing.expect(t, groups_cap_before == 2)
+        // groups is lazily allocated on first Group — still nil/0 right after init.
+        testing.expect(t, groups_cap_before == 0)
+        testing.expect(t, db.groups.items == nil)
 
         t1: ecs.Table(Position)
         defer ecs.table_terminate(&t1)

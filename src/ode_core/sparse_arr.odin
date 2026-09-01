@@ -23,9 +23,16 @@ package ode_core
     sparse_arr__is_valid :: proc(self: ^Sparse_Arr($T)) -> bool {
         if self == nil do return false
         if self.items == nil do return false
-        if self.cap <= 0 do return false 
-        
+        if self.cap <= 0 do return false
+
         return true
+    }
+
+    // True if valid OR legitimately not-yet-allocated (a lazy field with no first `add` yet).
+    sparse_arr__is_valid_or_empty :: proc(self: ^Sparse_Arr($T)) -> bool {
+        if self == nil do return false
+        if self.cap == 0 do return self.items == nil
+        return self.items != nil
     }
 
     sparse_arr__init :: proc(self: ^Sparse_Arr($T), cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
@@ -289,6 +296,32 @@ package ode_core
         alloc_err = sparse_arr__terminate(&sa, allocator)
         testing.expect(t, alloc_err == runtime.Allocator_Error.None)
         testing.expect(t, sparse_arr__is_valid(&sa) == false)
+    }
+
+    @(test)
+    sparse_arr__is_valid_or_empty__test :: proc(t: ^testing.T) {
+        context.logger = log.create_console_logger()
+        defer log.destroy_console_logger(context.logger)
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        // never allocated -- legitimately empty, should read as valid
+        zero_value: Sparse_Arr(int)
+        testing.expect(t, sparse_arr__is_valid_or_empty(&zero_value))
+
+        nil_sa: ^Sparse_Arr(int)
+        testing.expect(t, sparse_arr__is_valid_or_empty(nil_sa) == false)
+
+        sa: Sparse_Arr(int)
+        alloc_err := sparse_arr__init(&sa, 2, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, sparse_arr__is_valid_or_empty(&sa))
+
+        // terminated -- items collapses back to nil, should read as valid (empty) again
+        alloc_err = sparse_arr__terminate(&sa, allocator)
+        testing.expect(t, alloc_err == runtime.Allocator_Error.None)
+        testing.expect(t, sparse_arr__is_valid_or_empty(&sa))
     }
 
     // sparse_arr__add's "more than one nil hole" branch: only the first hole fills, and has_nil_item stays true.
