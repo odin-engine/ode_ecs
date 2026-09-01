@@ -74,7 +74,6 @@ package ode_ecs
         if self.eid_to_disabled_bits == nil do return false
         if self.eid_to_tag_bits == nil do return false
         if self.eid_to_tag_disabled_bits == nil do return false
-        if self.eid_to_arch_table == nil do return false
         if self.tiny_table_subscriber_slots == nil do return false
 
         return true
@@ -116,7 +115,6 @@ package ode_ecs
         self.eid_to_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
         self.eid_to_tag_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
         self.eid_to_tag_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
-        self.eid_to_arch_table = make([]^Arch_Table, int(entities_cap), self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -160,7 +158,6 @@ package ode_ecs
         self.eid_to_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
         self.eid_to_tag_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
         self.eid_to_tag_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
-        self.eid_to_arch_table = make([]^Arch_Table, self.overbase.id_factory.cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 

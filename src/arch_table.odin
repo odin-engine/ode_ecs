@@ -142,6 +142,10 @@ package ode_ecs
         self.rid_to_eid = make([]entity_id, cap, db.allocator) or_return
         self.eid_to_rid = make([]u32, db.overbase.id_factory.cap, db.allocator) or_return
 
+        if db.eid_to_arch_table == nil {
+            db.eid_to_arch_table = make([]^Arch_Table, db.overbase.id_factory.cap, db.allocator) or_return
+        }
+
         self.subscribers_cap = subscribers_cap
 
         self.id = database__attach_table(db, self) or_return
