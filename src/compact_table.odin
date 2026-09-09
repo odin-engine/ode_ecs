@@ -642,6 +642,25 @@ package ode_ecs
         return compact_table_raw__remove_component_sized(cast(^Compact_Table_Raw) self, eid, size_of(T), loc)
     }
 
+    @(require_results)
+    compact_table__remove_components :: proc(self: ^Compact_Table($T), eids: []entity_id, loc := #caller_location) -> (removed: int, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(self.type_info.id == typeid_of(T), loc = loc)
+        }
+
+        for eid in eids {
+            rerr := compact_table__remove_component(self, eid, loc)
+            if rerr == nil {
+                removed += 1
+            } else if rerr != oc.Core_Error.Not_Found && rerr != API_Error.Entity_Id_Expired && rerr != API_Error.Entity_Id_Out_of_Bounds {
+                err = rerr
+            }
+        }
+
+        return
+    }
+
     compact_table__rerun_views_filters :: proc(self: ^Compact_Table($T), eid: entity_id) -> Error {
         database__is_entity_correct(self.db, eid) or_return
 
@@ -693,6 +712,33 @@ package ode_ecs
 
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
+
+        c := compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
+        if c == nil do return nil
+        compact_table_base__mark_touched(self, eid)
+        return cast(^T) c
+    }
+
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    compact_table__get_component_unchecked :: proc (self: ^Compact_Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
+        return cast(^T) compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
+    }
+
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    compact_table__get_component_mut_unchecked :: proc (self: ^Compact_Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
 
         c := compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
         if c == nil do return nil

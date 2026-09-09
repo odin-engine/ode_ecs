@@ -54,6 +54,12 @@
         get_random_compact  shuffled random get_component by entity (Compact_Table)
         get_random_compact_miss  same, against a half-populated Compact_Table
                             (50% lookups miss — exercises the Robin Hood probe exit)
+        get_random_unchecked / _mut_unchecked / _compact_unchecked  same patterns via
+                            get_component_unchecked — isolates the generation-check cost
+        get_random_tiny / _tiny_unchecked  same, against a Tiny_Table
+        get_random_arch / _arch_unchecked  same, against an Arch_Table
+        iter_compact_view  a View over a Compact_Table column — pointer-cache path,
+                            no dense/aligned fast path here (unlike plain Table)
         churn               add+remove a component with 2 subscribed views
         churn_partial       add+remove a component with 2 subscribed two-table views
                             that never match (entities lack the second component)
@@ -62,8 +68,16 @@
         churn_tag           tag/untag churn against a Tag_Table (tag map path)
         churn_small_view    churn on a small (512-cap) view inside an N-entity db —
                             measures the view's per-entity eid_to_rid representation
+        remove_batch_table / _compact / _tiny  (loop) vs (batch) — same removal set,
+                            loop of remove_component vs one remove_components call.
+                            No presort (an earlier version tried one, ~10x slower)
+        command_buffer_replay (interleaved) vs (grouped)  same commands across 8
+                            tables, recorded interleaved vs pre-grouped by table —
+                            tests whether replay order affects cost
         destroy             create+destroy entities with 3 components, with
                             8 / 32 / 128 tables attached to the database
+        destroy_batch       same rig, via destroy_entities (unoptimized wrapper) —
+                            expect it near destroy, not faster
         rebuild             full view rebuild over N rows
         walk_hierarchy      whole-forest breadth-first Relations_Table walk (100
                             root chains) — reports ns per entity visited
@@ -141,11 +155,21 @@ package ode_ecs_benchmarks
 
     arch_db: ecs.Database
     arch_pv: ecs.Arch_Table
+    arch_shuffled: []ecs.entity_id
 
     mv_db: ecs.Database
     mv_positions: ecs.Table(Position)
     mv_arch: ecs.Arch_Table
     mv_view: ecs.View
+
+    TINY_GET_CAP :: 8
+    tiny_get_db: ecs.Database
+    tiny_get_ais: ecs.Tiny_Table(AI)
+    tiny_get_eids: [TINY_GET_CAP]ecs.entity_id
+
+    compact_view_db: ecs.Database
+    cv_ais: ecs.Compact_Table(AI)
+    cv_view: ecs.View
 
 main :: proc() {
     rand.reset(SEED)
@@ -176,6 +200,20 @@ main :: proc() {
     bench_get_random_mut()
     bench_get_random_compact()
     bench_get_random_compact_miss()
+    bench_get_random_unchecked()
+    bench_get_random_mut_unchecked()
+    bench_get_random_compact_unchecked()
+
+    setup_tiny_get_db()
+    bench_get_random_tiny()
+    bench_get_random_tiny_unchecked()
+
+    bench_get_random_arch()
+    bench_get_random_arch_unchecked()
+
+    setup_compact_view_db()
+    bench_iter_compact_view()
+
     bench_rebuild()
 
     bench_churn()
@@ -188,11 +226,21 @@ main :: proc() {
     bench_churn_tag()
     bench_churn_small_view()
 
+    bench_remove_batch_table()
+    bench_remove_batch_compact()
+    bench_remove_batch_tiny()
+
+    bench_command_buffer_replay()
+
     bench_create_entity()
 
     bench_destroy(8)
     bench_destroy(32)
     bench_destroy(128)
+
+    bench_destroy_entities_batch(8)
+    bench_destroy_entities_batch(32)
+    bench_destroy_entities_batch(128)
 
     bench_walk_hierarchy()
     bench_roots()
@@ -429,6 +477,8 @@ setup_arch_db :: proc() {
     if ecs.init(&arch_db, N, context.allocator) != nil do panic("arch db init failed")
     if ecs.arch_table__init(&arch_pv, &arch_db, N, {Position, Velocity}) != nil do panic("arch_pv init failed")
 
+    arch_shuffled = make([]ecs.entity_id, N)
+
     for i in 0..<N {
         eid, err := ecs.arch_table__create_entity(&arch_pv)
         if err != nil do panic("arch create_entity failed")
@@ -440,7 +490,25 @@ setup_arch_db :: proc() {
         v := ecs.arch_table__get_component(&arch_pv, eid, Velocity)
         v.dx = 1
         v.dy = f32(i % 7)
+
+        arch_shuffled[i] = eid
     }
+    rand.shuffle(arch_shuffled)
+}
+
+setup_tiny_get_db :: proc() {
+    if ecs.init(&tiny_get_db, TINY_GET_CAP, context.allocator) != nil do panic("tiny get db init failed")
+    if ecs.tiny_table__init(&tiny_get_ais, &tiny_get_db) != nil do panic("tiny get ais init failed")
+
+    for i in 0..<TINY_GET_CAP {
+        eid, err := ecs.create_entity(&tiny_get_db)
+        if err != nil do panic("create_entity failed")
+        a, aerr := ecs.add_component(&tiny_get_ais, eid)
+        if aerr != nil do panic("add ai failed")
+        a.neurons_count = i
+        tiny_get_eids[i] = eid
+    }
+    rand.shuffle(tiny_get_eids[:])
 }
 
 bench_iter_arch_slice :: proc() {
@@ -641,6 +709,183 @@ bench_get_random_compact_miss :: proc() {
     }
 
     report("get_random_compact_miss", best, N)
+}
+
+bench_get_random_unchecked :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in shuffled {
+            s += ecs.get_component_unchecked(&positions, eid).x
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_unchecked", best, N)
+}
+
+bench_get_random_mut_unchecked :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in shuffled {
+            s += ecs.get_component_mut_unchecked(&positions, eid).x
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_mut_unchecked", best, N)
+}
+
+bench_get_random_compact_unchecked :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: int = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in shuffled {
+            s += ecs.get_component_unchecked(&ais, eid).neurons_count
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_compact_unchecked", best, N)
+}
+
+bench_get_random_tiny :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+    rounds := max(1, N / TINY_GET_CAP)
+
+    for _ in 0..<REPS {
+        s: int = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for _ in 0..<rounds {
+            for eid in tiny_get_eids {
+                s += ecs.get_component(&tiny_get_ais, eid).neurons_count
+            }
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_tiny", best, TINY_GET_CAP * rounds)
+}
+
+bench_get_random_tiny_unchecked :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+    rounds := max(1, N / TINY_GET_CAP)
+
+    for _ in 0..<REPS {
+        s: int = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for _ in 0..<rounds {
+            for eid in tiny_get_eids {
+                s += ecs.get_component_unchecked(&tiny_get_ais, eid).neurons_count
+            }
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_tiny_unchecked", best, TINY_GET_CAP * rounds)
+}
+
+bench_get_random_arch :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in arch_shuffled {
+            s += ecs.get_component(&arch_pv, eid, Position).x
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_arch", best, N)
+}
+
+bench_get_random_arch_unchecked :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: f32 = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in arch_shuffled {
+            s += ecs.get_component_unchecked(&arch_pv, eid, Position).x
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("get_random_arch_unchecked", best, N)
+}
+
+//
+// View over a Compact_Table — pointer-cache path, no dense/aligned fast path (unlike Table)
+//
+
+setup_compact_view_db :: proc() {
+    if ecs.init(&compact_view_db, N, context.allocator) != nil do panic("compact view db init failed")
+    if ecs.compact_table__init(&cv_ais, &compact_view_db, N) != nil do panic("cv_ais init failed")
+    if ecs.view_init(&cv_view, &compact_view_db, {&cv_ais}) != nil do panic("cv_view init failed")
+
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&compact_view_db)
+        if err != nil do panic("create_entity failed")
+        a, aerr := ecs.add_component(&cv_ais, eid)
+        if aerr != nil do panic("add ai failed")
+        a.neurons_count = i
+    }
+}
+
+bench_iter_compact_view :: proc() {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        s: int = 0
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        ais_col := ecs.slice(&cv_view, AI)
+        for a in ais_col {
+            s += a.neurons_count
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+        g_sink += f64(s)
+    }
+
+    report("iter_compact_view", best, N)
 }
 
 //
@@ -1118,6 +1363,251 @@ bench_churn_small_view :: proc() {
 }
 
 //
+// Batch structural removal: loop-of-singles vs remove_components/destroy_entities
+//
+
+bench_remove_batch_table :: proc() {
+    churn_db: ecs.Database
+    churn_pos: ecs.Table(Position)
+
+    if ecs.init(&churn_db, CHURN_N, context.allocator) != nil do panic("remove_batch_table db init failed")
+    if ecs.table_init(&churn_pos, &churn_db, CHURN_N) != nil do panic("remove_batch_table table init failed")
+
+    churn_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(churn_eids)
+    for i in 0..<CHURN_N {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+
+    sw: time.Stopwatch
+    best_loop: i64 = max(i64)
+    for _ in 0..<REPS {
+        for eid in churn_eids {
+            p, perr := ecs.add_component(&churn_pos, eid)
+            if perr != nil do panic("add failed")
+            p.x = 1
+        }
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in churn_eids {
+            if ecs.remove_component(&churn_pos, eid) != nil do panic("remove failed")
+        }
+        time.stopwatch_stop(&sw)
+        best_loop = min(best_loop, elapsed_ns(&sw))
+    }
+    report("remove_batch_table (loop)", best_loop, CHURN_N)
+
+    best_batch: i64 = max(i64)
+    for _ in 0..<REPS {
+        for eid in churn_eids {
+            p, perr := ecs.add_component(&churn_pos, eid)
+            if perr != nil do panic("add failed")
+            p.x = 1
+        }
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        removed, rerr := ecs.remove_components(&churn_pos, churn_eids)
+        time.stopwatch_stop(&sw)
+        if rerr != nil || removed != CHURN_N do panic("batch remove failed")
+        best_batch = min(best_batch, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.table_len(&churn_pos))
+
+    report("remove_batch_table (batch)", best_batch, CHURN_N)
+
+    if ecs.terminate(&churn_db) != nil do panic("remove_batch_table db terminate failed")
+}
+
+bench_remove_batch_compact :: proc() {
+    churn_db: ecs.Database
+    churn_pos: ecs.Compact_Table(Position)
+
+    if ecs.init(&churn_db, CHURN_N, context.allocator) != nil do panic("remove_batch_compact db init failed")
+    if ecs.compact_table__init(&churn_pos, &churn_db, CHURN_N) != nil do panic("remove_batch_compact table init failed")
+
+    churn_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(churn_eids)
+    for i in 0..<CHURN_N {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+
+    sw: time.Stopwatch
+    best_loop: i64 = max(i64)
+    for _ in 0..<REPS {
+        for eid in churn_eids {
+            p, perr := ecs.add_component(&churn_pos, eid)
+            if perr != nil do panic("add failed")
+            p.x = 1
+        }
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for eid in churn_eids {
+            if ecs.remove_component(&churn_pos, eid) != nil do panic("remove failed")
+        }
+        time.stopwatch_stop(&sw)
+        best_loop = min(best_loop, elapsed_ns(&sw))
+    }
+    report("remove_batch_compact (loop)", best_loop, CHURN_N)
+
+    best_batch: i64 = max(i64)
+    for _ in 0..<REPS {
+        for eid in churn_eids {
+            p, perr := ecs.add_component(&churn_pos, eid)
+            if perr != nil do panic("add failed")
+            p.x = 1
+        }
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        removed, rerr := ecs.remove_components(&churn_pos, churn_eids)
+        time.stopwatch_stop(&sw)
+        if rerr != nil || removed != CHURN_N do panic("batch remove failed")
+        best_batch = min(best_batch, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.compact_table__len(&churn_pos))
+
+    report("remove_batch_compact (batch)", best_batch, CHURN_N)
+
+    if ecs.terminate(&churn_db) != nil do panic("remove_batch_compact db terminate failed")
+}
+
+bench_remove_batch_tiny :: proc() {
+    TINY :: 8
+
+    churn_db: ecs.Database
+    churn_pos: ecs.Tiny_Table(Position)
+
+    if ecs.init(&churn_db, 16, context.allocator) != nil do panic("remove_batch_tiny db init failed")
+    if ecs.tiny_table__init(&churn_pos, &churn_db) != nil do panic("remove_batch_tiny table init failed")
+
+    churn_eids: [TINY]ecs.entity_id
+    for i in 0..<TINY {
+        eid, err := ecs.create_entity(&churn_db)
+        if err != nil do panic("create_entity failed")
+        churn_eids[i] = eid
+    }
+
+    rounds := max(1, CHURN_N / TINY)
+
+    sw: time.Stopwatch
+    best_loop: i64 = max(i64)
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for _ in 0..<rounds {
+            for eid in churn_eids {
+                p, perr := ecs.add_component(&churn_pos, eid)
+                if perr != nil do panic("add failed")
+                p.x = 1
+            }
+            for eid in churn_eids {
+                if ecs.remove_component(&churn_pos, eid) != nil do panic("remove failed")
+            }
+        }
+        time.stopwatch_stop(&sw)
+        best_loop = min(best_loop, elapsed_ns(&sw))
+    }
+    report("remove_batch_tiny (loop)", best_loop, TINY * rounds)
+
+    best_batch: i64 = max(i64)
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        for _ in 0..<rounds {
+            for eid in churn_eids {
+                p, perr := ecs.add_component(&churn_pos, eid)
+                if perr != nil do panic("add failed")
+                p.x = 1
+            }
+            removed, rerr := ecs.remove_components(&churn_pos, churn_eids[:])
+            if rerr != nil || removed != TINY do panic("batch remove failed")
+        }
+        time.stopwatch_stop(&sw)
+        best_batch = min(best_batch, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.tiny_table__len(&churn_pos))
+
+    report("remove_batch_tiny (batch)", best_batch, TINY * rounds)
+
+    if ecs.terminate(&churn_db) != nil do panic("remove_batch_tiny db terminate failed")
+}
+
+//
+// Command_Buffer replay: interleaved-across-tables vs already-grouped-by-table recording
+//
+
+CMD_TABLES :: 8
+
+bench_command_buffer_replay :: proc() {
+    cb_db: ecs.Database
+    cb_tables: [CMD_TABLES]ecs.Table(Position)
+    cb: ecs.Command_Buffer
+
+    if ecs.init(&cb_db, CHURN_N, context.allocator) != nil do panic("cb db init failed")
+    for &t in cb_tables {
+        if ecs.table_init(&t, &cb_db, CHURN_N) != nil do panic("cb table init failed")
+    }
+    if ecs.command_buffer_init(&cb, &cb_db, CHURN_N, CHURN_N * (size_of(Position) + 8)) != nil do panic("cb init failed")
+
+    cb_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(cb_eids)
+    for i in 0..<CHURN_N {
+        eid, err := ecs.create_entity(&cb_db)
+        if err != nil do panic("create_entity failed")
+        cb_eids[i] = eid
+    }
+
+    sw: time.Stopwatch
+    best_interleaved: i64 = max(i64)
+    for _ in 0..<REPS {
+        for i in 0..<CHURN_N {
+            if ecs.cmd_add_component(&cb, &cb_tables[i % CMD_TABLES], cb_eids[i], Position{x = f32(i)}) != nil do panic("cmd add failed")
+        }
+
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        skipped, rerr := ecs.replay(&cb)
+        time.stopwatch_stop(&sw)
+        if rerr != nil || skipped != 0 do panic("replay failed")
+        best_interleaved = min(best_interleaved, elapsed_ns(&sw))
+
+        for i in 0..<CHURN_N {
+            if ecs.remove_component(&cb_tables[i % CMD_TABLES], cb_eids[i]) != nil do panic("remove failed")
+        }
+    }
+    report("command_buffer_replay (interleaved)", best_interleaved, CHURN_N)
+
+    best_grouped: i64 = max(i64)
+    for _ in 0..<REPS {
+        for t in 0..<CMD_TABLES {
+            for i in 0..<CHURN_N {
+                if i % CMD_TABLES != t do continue
+                if ecs.cmd_add_component(&cb, &cb_tables[t], cb_eids[i], Position{x = f32(i)}) != nil do panic("cmd add failed")
+            }
+        }
+
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        skipped, rerr := ecs.replay(&cb)
+        time.stopwatch_stop(&sw)
+        if rerr != nil || skipped != 0 do panic("replay failed")
+        best_grouped = min(best_grouped, elapsed_ns(&sw))
+
+        for i in 0..<CHURN_N {
+            if ecs.remove_component(&cb_tables[i % CMD_TABLES], cb_eids[i]) != nil do panic("remove failed")
+        }
+    }
+    g_sink += f64(ecs.command_buffer_len(&cb))
+
+    report("command_buffer_replay (grouped)", best_grouped, CHURN_N)
+
+    if ecs.terminate(&cb_db) != nil do panic("cb db terminate failed")
+}
+
+//
 // Entity creation
 //
 
@@ -1199,6 +1689,48 @@ bench_destroy :: proc(table_count: int) {
     report(fmt.tprintf("destroy (%v tables)", table_count), best, CHURN_N)
 
     if ecs.terminate(&des_db) != nil do panic("destroy db terminate failed")
+}
+
+// destroy_entities is an unoptimized loop — expect it near bench_destroy's number.
+bench_destroy_entities_batch :: proc(table_count: int) {
+    des_db: ecs.Database
+    tables := make([]ecs.Table(Position), table_count)
+    defer delete(tables)
+
+    if ecs.init(&des_db, CHURN_N, context.allocator) != nil do panic("destroy_batch db init failed")
+    for &t in tables {
+        if ecs.table_init(&t, &des_db, CHURN_N) != nil do panic("table init failed")
+    }
+
+    des_eids := make([]ecs.entity_id, CHURN_N)
+    defer delete(des_eids)
+
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+
+    for _ in 0..<REPS {
+        for i in 0..<CHURN_N {
+            eid, err := ecs.create_entity(&des_db)
+            if err != nil do panic("create_entity failed")
+            for j in 0..<3 {
+                _, aerr := ecs.add_component(&tables[j], eid)
+                if aerr != nil do panic("add failed")
+            }
+            des_eids[i] = eid
+        }
+
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        destroyed, derr := ecs.destroy_entities(&des_db, des_eids)
+        time.stopwatch_stop(&sw)
+        if derr != nil || destroyed != CHURN_N do panic("batch destroy failed")
+        best = min(best, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.entities_len(&des_db))
+
+    report(fmt.tprintf("destroy_batch (%v tables)", table_count), best, CHURN_N)
+
+    if ecs.terminate(&des_db) != nil do panic("destroy_batch db terminate failed")
 }
 
 WH_ROOTS :: 100

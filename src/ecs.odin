@@ -105,6 +105,8 @@ package ode_ecs
             overbase__destroy_entity,
         }
 
+        destroy_entities :: database__destroy_entities
+
         is_expired :: proc {
             database__is_entity_expired,
             overbase__is_entity_expired,
@@ -291,6 +293,13 @@ package ode_ecs
             tiny_table__get_component_mut,
         }
 
+        // UNSAFE: skips the generation check. Kept separate from get_component_mut for visibility.
+        get_component_mut_unchecked :: proc {
+            table__get_component_mut_unchecked,
+            compact_table__get_component_mut_unchecked,
+            tiny_table__get_component_mut_unchecked,
+        }
+
     //
     // Observers (structural-change callbacks)
     //
@@ -401,6 +410,13 @@ package ode_ecs
             arch_table__remove_entity,
         }
 
+        // Skips invalid/expired/absent eids. Table, Compact_Table, Tiny_Table only.
+        remove_components   :: proc {
+            table__remove_components,
+            compact_table__remove_components,
+            tiny_table__remove_components,
+        }
+
         rerun_views_filters :: proc {
             table__rerun_views_filters,
             compact_table__rerun_views_filters,
@@ -425,6 +441,14 @@ package ode_ecs
             iterator__get_component_for_arch_table,
             view__get_component_for_arch_table,
             view_row__get_component_for_arch_table,
+        }
+
+        // UNSAFE: skips the generation check. Kept separate from get_component for visibility.
+        get_component_unchecked :: proc {
+            table__get_component_unchecked,
+            compact_table__get_component_unchecked,
+            tiny_table__get_component_unchecked,
+            arch_table__get_component_unchecked,
         }
 
         has_component       :: proc {

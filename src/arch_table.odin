@@ -334,6 +334,21 @@ package ode_ecs
         }
     }
 
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    arch_table__get_component_unchecked :: proc(self: ^Arch_Table, eid: entity_id, $T: typeid) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+        }
+
+        #no_bounds_check {
+            rid := self.eid_to_rid[eid.ix]
+            if rid == ARCH_TABLE_NO_RID do return nil
+            return arch_table__get_component_by_row(self, int(rid), T)
+        }
+    }
+
     @(require_results)
     arch_table__column_slice :: proc(self: ^Arch_Table, $T: typeid) -> []T {
         idx := arch_table__column_index(self, typeid_of(T))

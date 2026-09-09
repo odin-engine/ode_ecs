@@ -734,6 +734,25 @@ package ode_ecs
         return tiny_table_raw__remove_component_sized(cast(^Tiny_Table_Raw) self, eid, size_of(T))
     }
 
+    @(require_results)
+    tiny_table__remove_components :: proc(self: ^Tiny_Table($T), eids: []entity_id) -> (removed: int, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
+        for eid in eids {
+            rerr := tiny_table__remove_component(self, eid)
+            if rerr == nil {
+                removed += 1
+            } else if rerr != oc.Core_Error.Not_Found && rerr != API_Error.Entity_Id_Expired && rerr != API_Error.Entity_Id_Out_of_Bounds {
+                err = rerr
+            }
+        }
+
+        return
+    }
+
     tiny_table__rerun_views_filters :: proc(self: ^Tiny_Table($T), eid: entity_id) -> Error {
         database__is_entity_correct(self.db, eid) or_return
 
@@ -774,6 +793,33 @@ package ode_ecs
 
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
+
+        c := tiny_table_base__get_component_by_entity(self, eid)
+        if c == nil do return nil
+        tiny_table_base__mark_touched(self, eid)
+        return cast(^T) c
+    }
+
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    tiny_table__get_component_unchecked :: proc (self: ^Tiny_Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
+        return cast(^T) tiny_table_base__get_component_by_entity(self, eid)
+    }
+
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    tiny_table__get_component_mut_unchecked :: proc (self: ^Tiny_Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
 
         c := tiny_table_base__get_component_by_entity(self, eid)
         if c == nil do return nil

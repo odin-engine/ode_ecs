@@ -708,6 +708,26 @@ package ode_ecs
         return table_raw__remove_component_sized(cast(^Table_Raw) self, eid, size_of(T), loc)
     }
 
+    // Skips invalid/expired/already-absent eids.
+    @(require_results)
+    table__remove_components :: proc(self: ^Table($T), eids: []entity_id, loc := #caller_location) -> (removed: int, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(self.type_info.id == typeid_of(T), loc = loc)
+        }
+
+        for eid in eids {
+            rerr := table__remove_component(self, eid, loc)
+            if rerr == nil {
+                removed += 1
+            } else if rerr != oc.Core_Error.Not_Found && rerr != API_Error.Entity_Id_Expired && rerr != API_Error.Entity_Id_Out_of_Bounds {
+                err = rerr
+            }
+        }
+
+        return
+    }
+
     table__rerun_views_filters :: proc(self: ^Table($T), eid: entity_id) -> Error {
         database__is_entity_correct(self.db, eid) or_return
 
@@ -763,6 +783,39 @@ package ode_ecs
 
         err := database__is_entity_correct(self.db, eid)
         if err != nil do return nil
+
+        #no_bounds_check {
+            rid := self.eid_to_rid[eid.ix]
+            if rid == TABLE_NO_RID do return nil
+            table_base__mark_touched(self, eid)
+            return &self.rows[rid]
+        }
+    }
+
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    table__get_component_unchecked :: proc (self: ^Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
+
+        #no_bounds_check {
+            rid := self.eid_to_rid[eid.ix]
+            if rid == TABLE_NO_RID do return nil
+            return &self.rows[rid]
+        }
+    }
+
+    // UNSAFE: skips the generation check — a stale eid silently returns the wrong entity's data, not nil.
+    @(require_results)
+    table__get_component_mut_unchecked :: proc (self: ^Table($T), eid: entity_id) -> ^T {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(eid.ix >= 0)
+            assert(self.type_info.id == typeid_of(T))
+        }
 
         #no_bounds_check {
             rid := self.eid_to_rid[eid.ix]

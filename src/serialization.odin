@@ -37,7 +37,7 @@ package ode_ecs
     SNAPSHOT_MAGIC :: u64(0x4244_5343_4545_444F)
 
     @(private)
-    SNAPSHOT_VERSION :: u32(8)
+    SNAPSHOT_VERSION :: u32(9) // v9: freed list narrowed int->u32
 
     @(private)
     SNAPSHOT_ENDIAN_CHECK :: u32(0x0A0B0C0D)
@@ -307,7 +307,7 @@ package ode_ecs
         size = size_of(Snapshot_Header)
         if self.owns_overbase {
             size += self.overbase.id_factory.cap * size_of(oc.ix_gen)
-            size += self.overbase.id_factory.freed_count * size_of(int)
+            size += self.overbase.id_factory.freed_count * size_of(u32)
             size = snap__align8(size)
         }
 
@@ -426,7 +426,7 @@ package ode_ecs
 
         if self.owns_overbase {
             snap_writer__write(&w, raw_data(self.overbase.id_factory.items), self.overbase.id_factory.cap * size_of(oc.ix_gen))
-            snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(int))
+            snap_writer__write(&w, raw_data(self.overbase.id_factory.freed), self.overbase.id_factory.freed_count * size_of(u32))
             snap_writer__pad8(&w)
         }
 
@@ -731,10 +731,10 @@ package ode_ecs
 
             saved_items = snap_reader__entity_ids(&r, saved_cap) or_return
 
-            freed_bytes := snap_reader__bytes(&r, freed_count * size_of(int)) or_return
-            saved_freed := slice.reinterpret([]int, freed_bytes)
+            freed_bytes := snap_reader__bytes(&r, freed_count * size_of(u32)) or_return
+            saved_freed := slice.reinterpret([]u32, freed_bytes)
             for f in saved_freed {
-                if f < 0 || f >= saved_cap do return API_Error.Snapshot_Invalid
+                if int(f) >= saved_cap do return API_Error.Snapshot_Invalid
                 if saved_items[f].ix != DELETED_INDEX do return API_Error.Snapshot_Invalid
             }
             snap_reader__pad8(&r) or_return
@@ -967,13 +967,13 @@ package ode_ecs
 
         if apply_entity_ids {
             snap_reader__read(&r, raw_data(self.overbase.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
-            snap_reader__read(&r, raw_data(self.overbase.id_factory.freed), freed_count * size_of(int)) or_return
+            snap_reader__read(&r, raw_data(self.overbase.id_factory.freed), freed_count * size_of(u32)) or_return
             snap_reader__pad8(&r) or_return
             self.overbase.id_factory.created_count = created_count
             self.overbase.id_factory.freed_count = freed_count
         } else if has_entity_ids {
             _ = snap_reader__bytes(&r, saved_cap * size_of(oc.ix_gen)) or_return
-            _ = snap_reader__bytes(&r, freed_count * size_of(int)) or_return
+            _ = snap_reader__bytes(&r, freed_count * size_of(u32)) or_return
             snap_reader__pad8(&r) or_return
         }
 

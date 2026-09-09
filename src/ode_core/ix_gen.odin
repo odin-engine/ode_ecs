@@ -27,7 +27,7 @@ package ode_core
         cap: int, 
         items: []ix_gen,
 
-        freed: []int,
+        freed: []u32, // ix < cap <= max(u32)
         freed_count: int
     }
 
@@ -44,7 +44,7 @@ package ode_core
         self.cap = cap
 
         self.items = make([]ix_gen, cap, allocator) or_return
-        self.freed = make([]int, cap, allocator) or_return
+        self.freed = make([]u32, cap, allocator) or_return
         ix_gen_factory__clear(self, bump_gen = false) // fresh items: gens start at 0
 
         return runtime.Allocator_Error.None
@@ -76,9 +76,9 @@ package ode_core
 
         if self.freed_count > 0 {
             // reuse freed id
-            self.freed_count -= 1 
-            ix = self.freed[self.freed_count]
-            self.freed[self.freed_count] = DELETED_INDEX
+            self.freed_count -= 1
+            ix = int(self.freed[self.freed_count])
+            self.freed[self.freed_count] = max(u32) // debug fill only
 
             p = &self.items[ix]
 
@@ -107,7 +107,7 @@ package ode_core
         if self.items[id.ix] != id do return Core_Error.Not_Found
         
         self.items[id.ix].ix = DELETED_INDEX
-        self.freed[self.freed_count] = id.ix
+        self.freed[self.freed_count] = u32(id.ix)
         self.freed_count += 1
 
         return Core_Error.None
@@ -167,7 +167,7 @@ package ode_core
         } else {
             for &item in self.items do item.ix = DELETED_INDEX
         }
-        for i:=0; i < self.cap; i+=1 do self.freed[i] = DELETED_INDEX
+        for i:=0; i < self.cap; i+=1 do self.freed[i] = max(u32) // debug fill only
 
     }
 

@@ -36,7 +36,7 @@ package ode_ecs
     OVERBASE_SNAPSHOT_MAGIC :: u64(0x424F_5343_4545_444F) // "ODEECSOB" as little-endian bytes
 
     @(private)
-    OVERBASE_SNAPSHOT_VERSION :: u32(2) // bumped: ix_gen bit_field repacked to ix:48/gen:16
+    OVERBASE_SNAPSHOT_VERSION :: u32(3) // v3: freed list narrowed int->u32
 
     @(private)
     Overbase_Snapshot_Header :: struct #packed {
@@ -57,7 +57,7 @@ package ode_ecs
 
         size = size_of(Overbase_Snapshot_Header)
         size += self.id_factory.cap * size_of(oc.ix_gen)
-        size += self.id_factory.freed_count * size_of(int)
+        size += self.id_factory.freed_count * size_of(u32)
         size = snap__align8(size)
 
         return size, nil
@@ -87,7 +87,7 @@ package ode_ecs
 
         // The WHOLE items array: generations drive expired-id detection and must round-trip.
         snap_writer__write(&w, raw_data(self.id_factory.items), self.id_factory.cap * size_of(oc.ix_gen))
-        snap_writer__write(&w, raw_data(self.id_factory.freed), self.id_factory.freed_count * size_of(int))
+        snap_writer__write(&w, raw_data(self.id_factory.freed), self.id_factory.freed_count * size_of(u32))
         snap_writer__pad8(&w)
 
         assert(w.offset == total)
@@ -124,10 +124,10 @@ package ode_ecs
 
         saved_items := snap_reader__entity_ids(&r, saved_cap) or_return
 
-        freed_bytes := snap_reader__bytes(&r, freed_count * size_of(int)) or_return
-        saved_freed := slice.reinterpret([]int, freed_bytes)
+        freed_bytes := snap_reader__bytes(&r, freed_count * size_of(u32)) or_return
+        saved_freed := slice.reinterpret([]u32, freed_bytes)
         for f in saved_freed {
-            if f < 0 || f >= saved_cap do return API_Error.Snapshot_Invalid
+            if int(f) >= saved_cap do return API_Error.Snapshot_Invalid
             if saved_items[f].ix != DELETED_INDEX do return API_Error.Snapshot_Invalid
         }
         snap_reader__pad8(&r) or_return
@@ -146,7 +146,7 @@ package ode_ecs
 
         // Slots >= saved_cap stay cleared (ix == DELETED_INDEX), so both new_id paths remain correct on a larger target Overbase.
         snap_reader__read(&r, raw_data(self.id_factory.items), saved_cap * size_of(oc.ix_gen)) or_return
-        snap_reader__read(&r, raw_data(self.id_factory.freed), freed_count * size_of(int)) or_return
+        snap_reader__read(&r, raw_data(self.id_factory.freed), freed_count * size_of(u32)) or_return
         snap_reader__pad8(&r) or_return
         self.id_factory.created_count = created_count
         self.id_factory.freed_count = freed_count

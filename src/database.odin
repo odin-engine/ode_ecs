@@ -344,6 +344,24 @@ package ode_ecs
         return overbase__destroy_entity(self.overbase, eid, destroy_children)
     }
 
+    // Plain loop over destroy_entity, not an optimized batch op. Invalid/expired eids are skipped, not fatal.
+    database__destroy_entities :: proc(self: ^Database, eids: []entity_id, destroy_children := false) -> (destroyed: int, err: Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+
+        for eid in eids {
+            derr := database__destroy_entity(self, eid, destroy_children)
+            if derr == nil {
+                destroyed += 1
+            } else if derr != API_Error.Entity_Id_Expired && derr != API_Error.Entity_Id_Out_of_Bounds {
+                err = derr
+            }
+        }
+
+        return
+    }
+
     @(private)
     database__destroy_entity_local :: #force_inline proc(self: ^Database, eid: entity_id, destroy_children: bool) -> Error {
         database__notify_observers(self, .Entity_Destroyed, eid)
