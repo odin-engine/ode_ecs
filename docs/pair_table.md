@@ -2,7 +2,7 @@
 
 `Pair_Table(T)` is a many-to-many relation type, unlike [`Relations_Table`](relations.md)'s single-parent model: a holder can point at any number of targets, and a target can be pointed at by any number of holders. Typical uses: "Likes", "Equipped", "TargetedBy" — anything relational that isn't a strict tree.
 
-Unlike `Relations_Table`, a `Pair_Table` **does** affect [Views](view.md). Every `Pair_Table` owns a real `Tag_Table` (`presence`) with one row per holder that currently has ≥ 1 pair — that `Tag_Table` gets full, correct View-subscriber notification for free, so `{&pairs.presence}` is usable directly in `view_init`'s `includes`/`excludes`/`any_of` to mean "has (or doesn't have) at least one pair of this relation."
+Unlike `Relations_Table`, a `Pair_Table` **does** affect [Views](view.md). Every `Pair_Table` owns a real `Tag_Table` (`presence`) with one row per holder that currently has ≥ 1 pair — that `Tag_Table` gets full, correct View-subscriber notification for free, so the pair table itself — `{&pairs}` — is usable directly in `view_init`'s `includes`/`excludes`/`any_of` to mean "has (or doesn't have) at least one pair of this relation."
 
 The actual `(holder, target, data)` rows live in a separate, non-View-visible row array, cross-indexed by **two** intrusive doubly-linked lists per row — one by holder (for `targets_of`/`remove`/`remove_all`, the same technique `Relations_Table` uses for `first_child`/`next_sibling`, generalized from "children of a parent" to "pair-rows of a holder"), one by target (for O(1) cleanup when a target entity is destroyed — see "Automatic cleanup on destroy" below). Rows are never tail-swapped/compacted (unlike `Table(T)`) — that would break row-id stability for both linked lists on every remove.
 
@@ -123,12 +123,11 @@ This is the same path `destroy_entity` runs automatically; it drops the presence
 
 ```odin
 view: ecs.View
-ecs.view_init(&view, &my_ecs, includes = {&positions}, excludes = {&likes.presence}) // has Position, likes nobody
-// or:
-ecs.view_init(&view, &my_ecs, includes = {&likes.presence}) // likes at least one thing
+ecs.view_init(&view, &my_ecs, includes = {&positions, &likes})              // has Position, likes at least one thing
+ecs.view_init(&view, &my_ecs, includes = {&positions}, excludes = {&likes})  // has Position, likes nobody
 ```
 
-This works with **zero** extra View code — `presence` is an ordinary `Tag_Table`, and `View` doesn't know or care that it happens to be embedded inside a `Pair_Table`.
+`view_init` takes a `Pair_Table` as a `View_Term` and uses its `presence` `Tag_Table` — the view itself has no pair-specific code. Passing `&likes.presence` explicitly is equivalent.
 
 ## Command_Buffer
 

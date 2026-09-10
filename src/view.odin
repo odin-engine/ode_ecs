@@ -19,6 +19,8 @@ package ode_ecs
     @(private)
     VIEW_NO_RID :: view_record_id(max(u32))
 
+    View_Term :: union { ^Shared_Table, ^Pair_Table_Base }
+
     View_Column :: struct {
         type_info: ^runtime.Type_Info,
         rows: []rawptr,
@@ -89,12 +91,24 @@ package ode_ecs
         return true
     }
 
+    @(private)
+    view__terms_to_tables :: proc(terms: []View_Term, allocator: runtime.Allocator) -> (res: []^Shared_Table, err: runtime.Allocator_Error) {
+        res = make([]^Shared_Table, len(terms), allocator) or_return
+        for term, i in terms {
+            switch t in term {
+            case ^Shared_Table:    res[i] = t
+            case ^Pair_Table_Base: res[i] = &t.presence
+            }
+        }
+        return res, nil
+    }
+
     view__init :: proc(
         self: ^View,
         db: ^Database,
-        includes: []^Shared_Table,
-        excludes: []^Shared_Table = nil,
-        any_of: []^Shared_Table = nil,
+        includes: []View_Term,
+        excludes: []View_Term = nil,
+        any_of: []View_Term = nil,
         filter: proc(row: ^View_Row, user_data: rawptr = nil) -> bool = nil,
         loc := #caller_location,
     ) -> Error {
@@ -121,7 +135,7 @@ package ode_ecs
         self.db = db
         self.filter = filter
 
-        sorted_includes := slice.clone(includes, db.allocator) or_return
+        sorted_includes := view__terms_to_tables(includes, db.allocator) or_return
         defer delete(sorted_includes, db.allocator)
         slice.sort(sorted_includes)
         uniq_tables := slice.unique(sorted_includes)
@@ -131,7 +145,7 @@ package ode_ecs
         sorted_excludes: []^Shared_Table
         defer if sorted_excludes != nil do delete(sorted_excludes, db.allocator)
         if excludes != nil && len(excludes) > 0 {
-            sorted_excludes = slice.clone(excludes, db.allocator) or_return
+            sorted_excludes = view__terms_to_tables(excludes, db.allocator) or_return
             slice.sort(sorted_excludes)
             uniq_excludes = slice.unique(sorted_excludes)
 
@@ -147,7 +161,7 @@ package ode_ecs
         sorted_any_of: []^Shared_Table
         defer if sorted_any_of != nil do delete(sorted_any_of, db.allocator)
         if any_of != nil && len(any_of) > 0 {
-            sorted_any_of = slice.clone(any_of, db.allocator) or_return
+            sorted_any_of = view__terms_to_tables(any_of, db.allocator) or_return
             slice.sort(sorted_any_of)
             uniq_any_of = slice.unique(sorted_any_of)
 

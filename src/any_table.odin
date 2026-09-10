@@ -6,14 +6,15 @@
     it does not know the type of at compile time: data-driven loaders,
     serializers, inspectors, debug dumps.
 
-    It is the public spelling of the ^Shared_Table pointer that view_init and
-    group_init already take, so `any_table(&positions)` and
-    `view_init(includes = {&positions})` speak the same currency. Shared_Table
-    itself stays package-private, so an Any_Table's fields are not reachable
-    from outside - only the procedures below.
+    It is the public spelling of the ^Shared_Table pointer that group_init takes
+    and View_Term (view_init) wraps, so `any_table(&positions)` accepts exactly
+    what those accept. Shared_Table itself stays package-private, so an
+    Any_Table's fields are not reachable from outside - only the procedures below.
+    Any_Table cannot itself be a View_Term variant: a second variant sharing
+    ^Shared_Table's underlying type makes every view_init call ambiguous.
 
     Note this erases the TABLE VARIANT, which costs a switch per call. Table_Raw
-    (table.odin) is the different, free erasure: it drops the component type T
+    is the different, free erasure: it drops the component type T
     within a variant that is already known. The dispatchers here are built on
     those. Gameplay should keep using ^Table(T) - reach for Any_Table only where
     the type genuinely is not known until runtime.
@@ -91,8 +92,7 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Rows
 //
-// UNSAFE by nature: `data` is an untyped pointer the caller promises matches
-// any_table_component_type. Tooling only - never a hot path.
+// UNSAFE: `data` must match any_table_component_type; tooling only.
 
     any_table_has_component :: proc(self: Any_Table, eid: entity_id) -> bool {
         return shared_table__has_component(cast(^Shared_Table) self, eid)
@@ -185,8 +185,7 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Entity membership
 
-    // Every table `eid` currently has a row (or tag) in, filled into `buf`.
-    // Disabled components are included — a disabled component still has its data.
+    // Tables `eid` has a row or tag in, disabled components included.
     entity_tables :: proc(db: ^Database, eid: entity_id, buf: []Any_Table) -> (res: []Any_Table, err: Error) #no_bounds_check {
         when VALIDATIONS {
             assert(db != nil)

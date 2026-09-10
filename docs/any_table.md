@@ -13,7 +13,7 @@ ecs.table_init(&positions, &my_ecs, 1000)
 a := ecs.any_table(&positions)
 ```
 
-`any_table` accepts every table variant, because they all embed the same header. It is the public spelling of the pointer [`view_init`](view.md) and [`group_init`](group.md) already take, so these speak the same currency:
+`any_table` accepts every table variant, because they all embed the same header. It is the public spelling of the pointer [`group_init`](group.md) takes and [`view_init`](view.md)'s `View_Term` wraps, so it accepts exactly what those accept:
 
 ```odin
 ecs.view_init(&view, &my_ecs, includes = {&positions})
@@ -21,6 +21,8 @@ a := ecs.any_table(&positions)
 ```
 
 Converting is free — `Any_Table` is a pointer, not a wrapper object. Each *operation* costs one switch on the table type.
+
+`Any_Table` itself cannot be passed to `view_init`: it is a `distinct ^Shared_Table`, and adding it as a `View_Term` variant would make every `view_init(&v, db, {&positions})` call ambiguous.
 
 > **NOTE:** This erases the **table variant**. That is a different thing from what the internal `Table_Raw` does (erase the component type `T` within a variant that is already known, for free, via a same-layout cast). The procedures below are built on those.
 

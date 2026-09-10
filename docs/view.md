@@ -190,6 +190,22 @@ A table can't be in both `includes` and `any_of` (redundant — AND already guar
 
 `any_of` costs one extra bitset test per membership check, same tier as `excludes` — well below a filter proc.
 
+## Pair tables
+
+`includes`, `excludes` and `any_of` take `View_Term`s, so a [`Pair_Table`](pair_table.md) can be passed directly. It stands for its `presence` tag — "has at least one pair of this relation":
+
+```odin
+positions: ecs.Table(Position)
+likes:     ecs.Pair_Table(Likes_Data)
+
+ecs.view_init(&v1, &my_ecs, {&positions, &likes})                 // has Position and likes someone
+ecs.view_init(&v2, &my_ecs, {&positions}, excludes = {&likes})    // has Position and likes nobody
+ecs.view_init(&v3, &my_ecs, {&positions}, any_of = {&likes, &boss})
+```
+
+Membership follows the pairs automatically: an entity joins on its first `pair_add` and leaves on its last `pair_remove` — or when its last target is destroyed. Passing `&likes.presence` is equivalent; listing both collapses to one term.
+
+
 ## Component enable/disable
 
 Unlike `excludes`/`any_of` (structural properties of the view itself, fixed at `view_init`), [`disable_component`/`enable_component`](tables.md#component-enable-disable) is a *per-entity* toggle that works with any view — disabling one of a view's included tables for an entity evicts it, without removing the component:

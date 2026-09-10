@@ -331,8 +331,10 @@ Iterates entities possessing a given set of component tables, stored column-majo
 [View](view.md).
 
 ```odin
-view_init(self: ^View, db: ^Database, includes: []^Shared_Table,
-     excludes: []^Shared_Table = nil, any_of: []^Shared_Table = nil,
+View_Term :: union { ^Shared_Table, ^Pair_Table_Base }   // any table (&positions), or a Pair_Table (&likes) meaning "has >= 1 pair"
+
+view_init(self: ^View, db: ^Database, includes: []View_Term,
+     excludes: []View_Term = nil, any_of: []View_Term = nil,
      filter: proc(row: ^View_Row, user_data: rawptr = nil) -> bool = nil) -> Error
 view_terminate(self: ^View) -> Error
 

@@ -1,6 +1,7 @@
 # 🐑 Updates Timeline
 
 **September 2026**
+- **new** •  [`View_Term`](/docs/view.md#pair-tables) — `view_init`'s `includes`/`excludes`/`any_of` now take `[]View_Term`, so a `Pair_Table` can be passed directly: `includes = {&positions, &likes}` means "has Position and at least one pair". Every existing call compiles unchanged; `&likes.presence` still works.
 - **new** •  [Any_Table](/docs/any_table.md) — a type-erased handle to any table variant, for data-driven loaders, inspectors and serializers. It is the public spelling of the pointer `view_init`/`group_init` already take, so `any_table(&positions)` and `view_init(includes = {&positions})` use the same currency. Comes with `any_tables`/`any_table_by_id` enumeration and `entity_tables` ("what is this entity made of?").
 - **new** •  `clone_component` — copies a component between two **entities** within one table (`copy_component` copies one entity's component between two **tables**). Prototype/prefab instantiation wants this direction. `any_table_clone_component` is the type-erased form, so a baker can clone every component of a template entity without knowing any of their types.
 - **new** •  [Inherited lookup](/docs/relations.md#inherited-lookup) — `get_component_up`/`has_tag_up` walk an entity's parent chain and return the first owner plus the entity the value came from; `find_up` is the general primitive. The relations-owning `Database` is passed explicitly, so the table and the hierarchy can live in different Databases sharing one `Overbase`.
