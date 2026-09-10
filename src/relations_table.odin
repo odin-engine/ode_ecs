@@ -465,3 +465,85 @@ package ode_ecs
         self.first_child[eid.ix].ix = DELETED_INDEX
         self.children_count[eid.ix] = 0
     }
+
+///////////////////////////////////////////////////////////////////////////////
+// Upward traversal
+
+    // eid's ancestor chain, nearest first, as a slice of the same scratch buffer children_of uses.
+    relations_table__ancestors_of :: proc(self: ^Relations_Table, eid: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Normal)
+        }
+
+        database__is_entity_correct(self.db, eid) or_return
+
+        n := 0
+        p := self.parent[eid.ix]
+        for !is_not_set(p) {
+            when VALIDATIONS do assert(n < len(self.scratch), "relation links corrupted — ancestor chain longer than cap")
+            self.scratch[n] = p
+            n += 1
+            p = self.parent[p.ix]
+        }
+
+        return self.scratch[:n], nil
+    }
+
+    // The topmost ancestor, or eid itself when it has no parent.
+    relations_table__root_of :: proc(self: ^Relations_Table, eid: entity_id) -> (root: entity_id, err: Error) #no_bounds_check {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Normal)
+        }
+
+        database__is_entity_correct(self.db, eid) or_return
+
+        root = eid
+        for {
+            p := self.parent[root.ix]
+            if is_not_set(p) do break
+            root = p
+        }
+
+        return root, nil
+    }
+
+    // Number of edges from eid up to its root; 0 when eid has no parent.
+    relations_table__depth_of :: proc(self: ^Relations_Table, eid: entity_id) -> (depth: int, err: Error) #no_bounds_check {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Normal)
+        }
+
+        database__is_entity_correct(self.db, eid) or_return
+
+        p := self.parent[eid.ix]
+        for !is_not_set(p) {
+            depth += 1
+            p = self.parent[p.ix]
+        }
+
+        return depth, nil
+    }
+
+    // Is `ancestor` anywhere on eid's parent chain? False when they are the same entity.
+    relations_table__is_ancestor_of :: proc(self: ^Relations_Table, ancestor: entity_id, eid: entity_id) -> (res: bool, err: Error) #no_bounds_check {
+        when VALIDATIONS {
+            assert(self != nil)
+            assert(self.state == Object_State.Normal)
+        }
+
+        database__is_entity_correct(self.db, ancestor) or_return
+        database__is_entity_correct(self.db, eid) or_return
+
+        if ancestor == eid do return false, nil
+
+        p := self.parent[eid.ix]
+        for !is_not_set(p) {
+            if p == ancestor do return true, nil
+            p = self.parent[p.ix]
+        }
+
+        return false, nil
+    }

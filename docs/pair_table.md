@@ -29,7 +29,7 @@ defer ecs.terminate(&my_ecs)
 defer ecs.pair_table__terminate(&likes) // optional — database termination alone is enough
 ```
 
-Memory cost: `presence`'s own `Tag_Table` cost (see [Tables](tables.md)) plus, for the pair-row storage, roughly `pairs_cap * (size_of(entity_id)*2 + size_of(T) + size_of(Pair_Row_Id)*4) + entities_cap * size_of(Pair_Row_Id)*2` bytes (the two doubly-linked lists cost `Pair_Row_Id`-sized `next`/`prev` arrays each, one indexed by holder and one by target).
+Memory cost: `presence`'s own `Tag_Table` cost (see [Tables](tables.md)) plus, for the pair-row storage, roughly `pairs_cap * (size_of(entity_id)*4 + size_of(T) + size_of(pair_row_id)*5) + entities_cap * size_of(pair_row_id)*2` bytes. `pair_row_id` is an `i32`, so that last term is 8 bytes per entity — note it is charged per `Pair_Table`, whether or not any pair exists, so a design with one `Pair_Table` per relation flavor should size `entities_cap` and the flavor count deliberately (30 flavors over 100k entities is ~24 MB of head arrays alone).
 
 ## Adding and removing pairs
 
@@ -76,7 +76,48 @@ targets, _ := ecs.pair_targets_of(&likes, alice)     // O(#pairs for alice), all
 
 > **NOTE:** `pair_first_target` returns an arbitrary target among several (pairs are head-inserted, most-recently-added first) — not a stable/deterministic choice, don't rely on which one you get when a holder has more than one pair.
 
-> **NOTE:** The slice returned by `pair_targets_of` points into an internal scratch buffer. It is valid only until the next `pair_targets_of` call or any structural change (`pair_add`/`pair_remove`/`pair_remove_all`) — use it immediately, do not store it. Same contract as [`children_of`](relations.md#queries).
+```odin
+holders, _ := ecs.pair_holders_of(&likes, bob)      // O(#pairs pointing at bob): who likes bob?
+
+ecs.pair_count_of(&likes, alice)                    // O(#pairs for alice)
+ecs.pair_count_to(&likes, bob)                      // O(#pairs pointing at bob)
+
+data, ok := ecs.pair_get_data(&likes, alice, bob)   // payload of one specific pair
+```
+
+> **NOTE:** The slices returned by `pair_targets_of` and `pair_holders_of` point into two separate internal scratch buffers. Each is valid only until the next call **on the same side** or any structural change (`pair_add`/`pair_remove`/`pair_remove_all`/`pair_remove_all_to`/`destroy_entity`) — use it immediately, do not store it. Same contract as [`children_of`](relations.md#queries). Because the buffers are separate, a `pair_holders_of` result survives a `pair_targets_of` call and vice versa.
+
+## Row cursor
+
+`pair_first_target`/`pair_first_data` only reach a holder's head row. To walk every row — in either direction — and read its payload, use the row cursor. A `pair_row_id` stays valid until that pair is removed.
+
+```odin
+// Outgoing: what does alice point at, and with what payload?
+for row, ok := ecs.pair_first_row_of(&likes, alice); ok; row, ok = ecs.pair_next_row_of(&likes, row) {
+    target := ecs.pair_row_target(&likes, row)
+    data   := ecs.pair_row_data(&likes, row)   // ^T, points into the table
+}
+
+// Incoming: who points at bob?
+for row, ok := ecs.pair_first_row_to(&likes, bob); ok; row, ok = ecs.pair_next_row_to(&likes, row) {
+    holder := ecs.pair_row_holder(&likes, row)
+    data   := ecs.pair_row_data(&likes, row)
+}
+```
+
+Both directions are O(1) per step and cost O(#matching pairs) in total, never O(`pairs_cap`) — the target-side walk uses the same doubly-linked list that makes target-destroy cleanup cheap. Unlike `pair_targets_of`/`pair_holders_of`, the cursor needs no scratch buffer, so the two can be interleaved freely.
+
+> **NOTE:** Rows are head-inserted, so a cursor yields most-recently-added first. That order is not stable or meaningful — do not rely on it. If you need deterministic ordering, put a sort key in `T` and order the rows yourself.
+
+Do not add or remove pairs while a cursor is live; collect first, then mutate (or record the mutations in a [Command_Buffer](command_buffer.md)).
+
+## Removing every pair pointing at a target
+
+```odin
+ecs.pair_remove_all_to(&likes, carol)   // mirror of pair_remove_all, target side
+```
+
+This is the same path `destroy_entity` runs automatically; it drops the presence tag of any holder whose last pair it removed.
 
 ## Using pairs in a View
 

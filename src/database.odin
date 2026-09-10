@@ -602,6 +602,46 @@ package ode_ecs
         return relations_table__is_parent_of(self.relations, a, b)
     }
 
+    database__ancestors_of :: proc(self: ^Database, eid: entity_id) -> ([]entity_id, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return nil, API_Error.Relations_Table_Not_Created
+        return relations_table__ancestors_of(self.relations, eid)
+    }
+
+    database__root_of :: proc(self: ^Database, eid: entity_id) -> (entity_id, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return entity_id{ix = DELETED_INDEX}, API_Error.Relations_Table_Not_Created
+        return relations_table__root_of(self.relations, eid)
+    }
+
+    database__depth_of :: proc(self: ^Database, eid: entity_id) -> (int, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return 0, API_Error.Relations_Table_Not_Created
+        return relations_table__depth_of(self.relations, eid)
+    }
+
+    database__is_ancestor_of :: proc(self: ^Database, ancestor: entity_id, eid: entity_id) -> (bool, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return false, API_Error.Relations_Table_Not_Created
+        return relations_table__is_ancestor_of(self.relations, ancestor, eid)
+    }
+
+    database__is_descendant_of :: proc(self: ^Database, eid: entity_id, ancestor: entity_id) -> (bool, Error) {
+        when VALIDATIONS {
+            assert(self != nil)
+        }
+        if self.relations == nil do return false, API_Error.Relations_Table_Not_Created
+        return relations_table__is_ancestor_of(self.relations, ancestor, eid)
+    }
+
     database__has_relations :: proc(self: ^Database, eid: entity_id) -> (bool, Error) {
         when VALIDATIONS {
             assert(self != nil)

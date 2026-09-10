@@ -328,6 +328,23 @@ package ode_ecs
         walk_subtree        :: database__walk_subtree
         walk_hierarchy      :: database__walk_hierarchy
 
+        ancestors_of        :: database__ancestors_of
+        root_of             :: database__root_of
+        depth_of            :: database__depth_of
+        is_ancestor_of      :: database__is_ancestor_of
+        is_descendant_of    :: database__is_descendant_of
+
+    //
+    // Inherited lookup (walks the Relations_Table parent chain, nearest first)
+    //
+        get_component_up :: proc {
+            table__get_component_up,
+            compact_table__get_component_up,
+            tiny_table__get_component_up,
+        }
+
+        has_tag_up :: tag_table__has_tag_up
+
     //
     // Component enable/disable
     //
@@ -465,6 +482,13 @@ package ode_ecs
             tiny_table__copy_component,
         }
 
+        // Copies a component between two ENTITIES within one table (copy_component crosses two TABLES for one entity).
+        clone_component     :: proc {
+            table__clone_component,
+            compact_table__clone_component,
+            tiny_table__clone_component,
+        }
+
         move_component      :: proc {
             table__move_component,
             compact_table__move_component,
@@ -531,6 +555,19 @@ package ode_ecs
         pair_first_target :: pair_table__first_target
         pair_first_data   :: pair_table__first_data
         pair_targets_of   :: pair_table__targets_of
+        pair_holders_of   :: pair_table__holders_of
+        pair_get_data     :: pair_table__get_data
+        pair_count_of     :: pair_table__count_of
+        pair_count_to     :: pair_table__count_to
+        pair_remove_all_to :: pair_table__remove_all_to
+
+        pair_first_row_of :: pair_table__first_row_of
+        pair_next_row_of  :: pair_table__next_row_of
+        pair_first_row_to :: pair_table__first_row_to
+        pair_next_row_to  :: pair_table__next_row_to
+        pair_row_holder   :: pair_table__row_holder
+        pair_row_target   :: pair_table__row_target
+        pair_row_data     :: pair_table__row_data
 
         //
         // Other
@@ -744,6 +781,7 @@ package ode_ecs
             Entity_Not_In_Table,
             Table_To_Cannot_Contain_Entity,
             Entity_Already_In_Table,
+            Table_Type_Not_Supported,
         }
 
         Error :: union #shared_nil {

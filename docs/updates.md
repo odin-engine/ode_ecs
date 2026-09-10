@@ -1,5 +1,14 @@
 # 🐑 Updates Timeline
 
+**September 2026**
+- **new** •  [Any_Table](/docs/any_table.md) — a type-erased handle to any table variant, for data-driven loaders, inspectors and serializers. It is the public spelling of the pointer `view_init`/`group_init` already take, so `any_table(&positions)` and `view_init(includes = {&positions})` use the same currency. Comes with `any_tables`/`any_table_by_id` enumeration and `entity_tables` ("what is this entity made of?").
+- **new** •  `clone_component` — copies a component between two **entities** within one table (`copy_component` copies one entity's component between two **tables**). Prototype/prefab instantiation wants this direction. `any_table_clone_component` is the type-erased form, so a baker can clone every component of a template entity without knowing any of their types.
+- **new** •  [Inherited lookup](/docs/relations.md#inherited-lookup) — `get_component_up`/`has_tag_up` walk an entity's parent chain and return the first owner plus the entity the value came from; `find_up` is the general primitive. The relations-owning `Database` is passed explicitly, so the table and the hierarchy can live in different Databases sharing one `Overbase`.
+- **new** •  [Upward hierarchy traversal](/docs/relations.md#upward-traversal) — `ancestors_of`, `root_of`, `depth_of`, `is_ancestor_of`, `is_descendant_of`. Complements the existing downward `children_of`/`walk_subtree`/`walk_hierarchy`; unlike `is_child_of`, `is_ancestor_of` is not limited to a direct link.
+- `Pair_Row_Id` is renamed to `pair_row_id`, matching every other id type, and is now `distinct i32` (was `distinct int`), halving a `Pair_Table`'s fixed per-entity index cost. Matters when you keep one `Pair_Table` per relation flavor; see [Pairs](/docs/pair_table.md).
+- **new** •  [Pair row cursor](/docs/pair_table.md#row-cursor) — `pair_first_row_of`/`pair_next_row_of` and `pair_first_row_to`/`pair_next_row_to` walk every pair row in either direction, with `pair_row_holder`/`pair_row_target`/`pair_row_data` reading the row. Previously only a holder's head row could be reached (`pair_first_data`).
+- **new** •  `pair_holders_of` — the reverse of `pair_targets_of` ("who points at this?"), O(#pairs for that target), on its own scratch buffer so the two sides do not clobber each other. Plus `pair_get_data`, `pair_count_of`, `pair_count_to` and `pair_remove_all_to`.
+
 **August 2026**
 - ** BREAKABLE CHANGE ** - sorry, moved source code to src/ folder to declutter root folder. Now you need to `import ecs "ode_ecs/src"` instead of `import ecs "ode_ecs"`.
 - More updates to Arch_Table (move, copy, sudo_move, sudo_copy). 

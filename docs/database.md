@@ -143,3 +143,14 @@ Parameter/state validation (nil checks, initialization-state checks) is done wit
 | `ECS_VIEWS_CAP` | `TABLES_CAP` | Max number of views |
 
 Example: `odin build . -define:ECS_TABLES_MULT=2` allows 256 component types.
+
+## What is this entity made of?
+
+```odin
+buf: [64]ecs.Any_Table
+tables, _ := ecs.entity_tables(&my_ecs, eid, buf[:])
+```
+
+Lists every table the entity currently has a row or tag in, by walking its internal membership
+bitsets — O(#tables the entity is in), not O(#tables), and allocation-free. See
+[Any_Table](any_table.md#what-is-this-entity-made-of).

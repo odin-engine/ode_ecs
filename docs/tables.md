@@ -239,3 +239,22 @@ Disabling is purely a `View`-matching concern: it does not evict an entity from 
 ## Choosing a variant
 
 Use `Tiny_Table` if `cap <= 8`; use `Compact_Table` if you want to save memory and `cap` is less than `entities_cap / 4` (but more than 8); otherwise — or if you don't care about memory — use `Table`. Use `Tag_Table` when there is no data to store at all. [Sample02](../samples/sample02/main.odin) demonstrates memory optimization with the different variants.
+
+## Cloning a component between entities
+
+`copy_component(dest, src, eid)` copies **one entity's** component between **two tables**.
+`clone_component` is the other direction — one table, two entities — which is what prototype,
+prefab and spawn code actually wants:
+
+```odin
+// archetype is a template entity holding the configured value
+c, _ := ecs.clone_component(&masses, archetype, instance)
+```
+
+It works on `Table`/`Compact_Table`/`Tiny_Table`. The destination row is created if it does not
+exist and overwritten if it does; the value is read out before the destination is added, so it is
+safe on a [Group](group.md)-owned table whose rows can move. `Not_Found` if the source entity has no
+component. Cloning an entity onto itself is a no-op that still returns the component.
+
+For the type-erased version — clone every component of a template without knowing their types — see
+[`any_table_clone_component`](any_table.md#cloning-a-component-between-entities).

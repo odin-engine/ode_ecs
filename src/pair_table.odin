@@ -18,7 +18,7 @@
     "children of a parent" to "pair-rows of a holder"), one by target
     (first_pair_by_target/next_pair_by_target/prev_pair_by_target, for O(1)
     per-row target-destroy cleanup).
-    Rows are never tail-swapped/compacted — that would break Pair_Row_Id
+    Rows are never tail-swapped/compacted — that would break pair_row_id
     stability for both linked lists on every remove.
 
     Split into a non-generic Pair_Table_Base (everything except the payload
@@ -58,7 +58,7 @@ package ode_ecs
 // ODE
     import oc "ode_core"
 
-    Pair_Row_Id :: distinct int // index into the pair-row arrays; DELETED_INDEX = none
+    pair_row_id :: distinct i32 // index into the pair-row arrays; DELETED_INDEX = none
 
 ///////////////////////////////////////////////////////////////////////////////
 // Pair_Table
@@ -73,25 +73,26 @@ package ode_ecs
         pairs_cap:   int,
         pairs_count: int,
 
-        // Freelist-based, never compacted (unlike Table($T)'s tail-swap) — a dense/tail-swapped array would break Pair_Row_Id stability for the linked lists below on every remove.
+        // Freelist-based, never compacted (unlike Table($T)'s tail-swap) — a dense/tail-swapped array would break pair_row_id stability for the linked lists below on every remove.
         targets:    []entity_id,   // pairs_cap
         row_holder: []entity_id,   // pairs_cap — owning holder, for freelist recycling
 
         // Doubly-linked list of a holder's pair rows, head-insert.
-        next_pair:  []Pair_Row_Id, // pairs_cap
-        prev_pair:  []Pair_Row_Id, // pairs_cap
-        first_pair: []Pair_Row_Id, // entities_cap, indexed by holder.ix
+        next_pair:  []pair_row_id, // pairs_cap
+        prev_pair:  []pair_row_id, // pairs_cap
+        first_pair: []pair_row_id, // entities_cap, indexed by holder.ix
 
         // Doubly-linked list of a target's pair rows, head-insert — lets pair_table_base__remove_target run in O(#pairs for that target) instead of O(pairs_cap).
-        next_pair_by_target:  []Pair_Row_Id, // pairs_cap
-        prev_pair_by_target:  []Pair_Row_Id, // pairs_cap
-        first_pair_by_target: []Pair_Row_Id, // entities_cap, indexed by target.ix
+        next_pair_by_target:  []pair_row_id, // pairs_cap
+        prev_pair_by_target:  []pair_row_id, // pairs_cap
+        first_pair_by_target: []pair_row_id, // entities_cap, indexed by target.ix
 
-        free_rows:  []Pair_Row_Id, // pairs_cap, freelist stack
+        free_rows:  []pair_row_id, // pairs_cap, freelist stack
         free_count: int,
 
-        // targets_of() result buffer — valid only until the next call or any structural change.
+        // targets_of() / holders_of() result buffers — valid only until the next call on the same side or any structural change.
         scratch: []entity_id, // pairs_cap
+        scratch_by_target: []entity_id, // pairs_cap
 
         // Set once at generic init — lets the non-generic procs below copy/size the `data` payload without needing T.
         data_type_info: ^runtime.Type_Info,
@@ -124,6 +125,7 @@ package ode_ecs
         if self.first_pair_by_target == nil do return false
         if self.free_rows == nil do return false
         if self.scratch == nil do return false
+        if self.scratch_by_target == nil do return false
         if self.pairs_cap <= 0 do return false
         if self.data_type_info == nil do return false
 
@@ -147,16 +149,17 @@ package ode_ecs
 
         self.targets    = make([]entity_id,   pairs_cap,    db.allocator) or_return
         self.row_holder = make([]entity_id,   pairs_cap,    db.allocator) or_return
-        self.next_pair  = make([]Pair_Row_Id, pairs_cap,    db.allocator) or_return
-        self.prev_pair  = make([]Pair_Row_Id, pairs_cap,    db.allocator) or_return
-        self.first_pair = make([]Pair_Row_Id, entities_cap, db.allocator) or_return
+        self.next_pair  = make([]pair_row_id, pairs_cap,    db.allocator) or_return
+        self.prev_pair  = make([]pair_row_id, pairs_cap,    db.allocator) or_return
+        self.first_pair = make([]pair_row_id, entities_cap, db.allocator) or_return
 
-        self.next_pair_by_target  = make([]Pair_Row_Id, pairs_cap,    db.allocator) or_return
-        self.prev_pair_by_target  = make([]Pair_Row_Id, pairs_cap,    db.allocator) or_return
-        self.first_pair_by_target = make([]Pair_Row_Id, entities_cap, db.allocator) or_return
+        self.next_pair_by_target  = make([]pair_row_id, pairs_cap,    db.allocator) or_return
+        self.prev_pair_by_target  = make([]pair_row_id, pairs_cap,    db.allocator) or_return
+        self.first_pair_by_target = make([]pair_row_id, entities_cap, db.allocator) or_return
 
-        self.free_rows = make([]Pair_Row_Id, pairs_cap, db.allocator) or_return
+        self.free_rows = make([]pair_row_id, pairs_cap, db.allocator) or_return
         self.scratch   = make([]entity_id,   pairs_cap, db.allocator) or_return
+        self.scratch_by_target = make([]entity_id, pairs_cap, db.allocator) or_return
 
         // database__attach_pair_table grows the registry on demand rather than hard-capping it, so failure here is only a rare OOM case; no special rollback needed.
         self.id = database__attach_pair_table(db, self) or_return
@@ -204,6 +207,7 @@ package ode_ecs
         delete(self.first_pair_by_target, self.db.allocator) or_return
         delete(self.free_rows, self.db.allocator) or_return
         delete(self.scratch, self.db.allocator) or_return
+        delete(self.scratch_by_target, self.db.allocator) or_return
 
         raw := cast(^Pair_Table_Raw) self
         if raw.data != nil do delete(raw.data, self.db.allocator) or_return
@@ -219,6 +223,7 @@ package ode_ecs
         self.first_pair_by_target = nil
         self.free_rows = nil
         self.scratch = nil
+        self.scratch_by_target = nil
         self.pairs_count = 0
         self.pairs_cap = 0
         self.free_count = 0
@@ -239,16 +244,16 @@ package ode_ecs
     @(private)
     pair_table_base__reset_rows :: proc(self: ^Pair_Table_Base) {
         for i := 0; i < len(self.first_pair); i += 1 {
-            self.first_pair[i] = Pair_Row_Id(DELETED_INDEX)
-            self.first_pair_by_target[i] = Pair_Row_Id(DELETED_INDEX)
+            self.first_pair[i] = pair_row_id(DELETED_INDEX)
+            self.first_pair_by_target[i] = pair_row_id(DELETED_INDEX)
         }
         for i := 0; i < self.pairs_cap; i += 1 {
             self.row_holder[i].ix = DELETED_INDEX
-            self.next_pair[i] = Pair_Row_Id(DELETED_INDEX)
-            self.prev_pair[i] = Pair_Row_Id(DELETED_INDEX)
-            self.next_pair_by_target[i] = Pair_Row_Id(DELETED_INDEX)
-            self.prev_pair_by_target[i] = Pair_Row_Id(DELETED_INDEX)
-            self.free_rows[i] = Pair_Row_Id(i)
+            self.next_pair[i] = pair_row_id(DELETED_INDEX)
+            self.prev_pair[i] = pair_row_id(DELETED_INDEX)
+            self.next_pair_by_target[i] = pair_row_id(DELETED_INDEX)
+            self.prev_pair_by_target[i] = pair_row_id(DELETED_INDEX)
+            self.free_rows[i] = pair_row_id(i)
         }
         self.free_count = self.pairs_cap
         self.pairs_count = 0
@@ -270,14 +275,15 @@ package ode_ecs
 
         if self.targets != nil               do total += size_of(entity_id) * self.pairs_cap
         if self.row_holder != nil            do total += size_of(entity_id) * self.pairs_cap
-        if self.next_pair != nil             do total += size_of(Pair_Row_Id) * self.pairs_cap
-        if self.prev_pair != nil             do total += size_of(Pair_Row_Id) * self.pairs_cap
-        if self.next_pair_by_target != nil   do total += size_of(Pair_Row_Id) * self.pairs_cap
-        if self.prev_pair_by_target != nil   do total += size_of(Pair_Row_Id) * self.pairs_cap
-        if self.free_rows != nil             do total += size_of(Pair_Row_Id) * self.pairs_cap
+        if self.next_pair != nil             do total += size_of(pair_row_id) * self.pairs_cap
+        if self.prev_pair != nil             do total += size_of(pair_row_id) * self.pairs_cap
+        if self.next_pair_by_target != nil   do total += size_of(pair_row_id) * self.pairs_cap
+        if self.prev_pair_by_target != nil   do total += size_of(pair_row_id) * self.pairs_cap
+        if self.free_rows != nil             do total += size_of(pair_row_id) * self.pairs_cap
         if self.scratch != nil               do total += size_of(entity_id) * self.pairs_cap
-        if self.first_pair != nil            do total += size_of(Pair_Row_Id) * len(self.first_pair)
-        if self.first_pair_by_target != nil  do total += size_of(Pair_Row_Id) * len(self.first_pair_by_target)
+        if self.scratch_by_target != nil     do total += size_of(entity_id) * self.pairs_cap
+        if self.first_pair != nil            do total += size_of(pair_row_id) * len(self.first_pair)
+        if self.first_pair_by_target != nil  do total += size_of(pair_row_id) * len(self.first_pair_by_target)
         if self.data_type_info != nil        do total += self.data_type_info.size * self.pairs_cap
 
         return total
@@ -298,7 +304,7 @@ package ode_ecs
 
     // Unlinks row from both the holder-side and target-side doubly-linked lists (O(1) each) and returns it to the freelist; does NOT touch `presence`.
     @(private)
-    pair_table_base__unlink_row :: #force_inline proc(self: ^Pair_Table_Base, row: Pair_Row_Id) #no_bounds_check {
+    pair_table_base__unlink_row :: #force_inline proc(self: ^Pair_Table_Base, row: pair_row_id) #no_bounds_check {
         holder := self.row_holder[row]
         target := self.targets[row]
 
@@ -311,20 +317,20 @@ package ode_ecs
         database__notify_observers(self.db, .Pair_Removed, holder, pair_table_id = self.id, related = target, data = data_ptr)
 
         pv, nx := self.prev_pair[row], self.next_pair[row]
-        if pv != Pair_Row_Id(DELETED_INDEX) do self.next_pair[pv] = nx
+        if pv != pair_row_id(DELETED_INDEX) do self.next_pair[pv] = nx
         else do self.first_pair[holder.ix] = nx
-        if nx != Pair_Row_Id(DELETED_INDEX) do self.prev_pair[nx] = pv
+        if nx != pair_row_id(DELETED_INDEX) do self.prev_pair[nx] = pv
 
         tpv, tnx := self.prev_pair_by_target[row], self.next_pair_by_target[row]
-        if tpv != Pair_Row_Id(DELETED_INDEX) do self.next_pair_by_target[tpv] = tnx
+        if tpv != pair_row_id(DELETED_INDEX) do self.next_pair_by_target[tpv] = tnx
         else do self.first_pair_by_target[target.ix] = tnx
-        if tnx != Pair_Row_Id(DELETED_INDEX) do self.prev_pair_by_target[tnx] = tpv
+        if tnx != pair_row_id(DELETED_INDEX) do self.prev_pair_by_target[tnx] = tpv
 
         self.row_holder[row].ix = DELETED_INDEX
-        self.next_pair[row] = Pair_Row_Id(DELETED_INDEX)
-        self.prev_pair[row] = Pair_Row_Id(DELETED_INDEX)
-        self.next_pair_by_target[row] = Pair_Row_Id(DELETED_INDEX)
-        self.prev_pair_by_target[row] = Pair_Row_Id(DELETED_INDEX)
+        self.next_pair[row] = pair_row_id(DELETED_INDEX)
+        self.prev_pair[row] = pair_row_id(DELETED_INDEX)
+        self.next_pair_by_target[row] = pair_row_id(DELETED_INDEX)
+        self.prev_pair_by_target[row] = pair_row_id(DELETED_INDEX)
 
         self.free_rows[self.free_count] = row
         self.free_count += 1
@@ -335,8 +341,8 @@ package ode_ecs
     //
     // Type-erased: this is what Command_Buffer replay and the generic pair_table__add both funnel through.
     @(private)
-    pair_table_base__add_raw :: proc(self: ^Pair_Table_Base, holder, target: entity_id, data: rawptr, loc := #caller_location) -> (row: Pair_Row_Id, err: Error) #no_bounds_check {
-        row = Pair_Row_Id(DELETED_INDEX)
+    pair_table_base__add_raw :: proc(self: ^Pair_Table_Base, holder, target: entity_id, data: rawptr, loc := #caller_location) -> (row: pair_row_id, err: Error) #no_bounds_check {
+        row = pair_row_id(DELETED_INDEX)
 
         when VALIDATIONS {
             assert(self != nil, loc = loc)
@@ -348,16 +354,16 @@ package ode_ecs
 
         // Dedupe: O(#pairs for holder), same complexity class as remove/targets_of.
         r := self.first_pair[holder.ix]
-        for r != Pair_Row_Id(DELETED_INDEX) {
+        for r != pair_row_id(DELETED_INDEX) {
             if self.targets[r] == target do return r, nil
             r = self.next_pair[r]
         }
 
         is_new_holder := !tag_table__has_tag(&self.presence, holder)
 
-        if self.free_count <= 0 do return Pair_Row_Id(DELETED_INDEX), oc.Core_Error.Container_Is_Full
+        if self.free_count <= 0 do return pair_row_id(DELETED_INDEX), oc.Core_Error.Container_Is_Full
         if is_new_holder && tag_table__len(&self.presence) >= tag_table__cap(&self.presence) {
-            return Pair_Row_Id(DELETED_INDEX), oc.Core_Error.Container_Is_Full
+            return pair_row_id(DELETED_INDEX), oc.Core_Error.Container_Is_Full
         }
 
         if is_new_holder {
@@ -371,13 +377,13 @@ package ode_ecs
         self.row_holder[new_row] = holder
 
         self.next_pair[new_row] = self.first_pair[holder.ix]
-        self.prev_pair[new_row] = Pair_Row_Id(DELETED_INDEX)
-        if self.first_pair[holder.ix] != Pair_Row_Id(DELETED_INDEX) do self.prev_pair[self.first_pair[holder.ix]] = new_row
+        self.prev_pair[new_row] = pair_row_id(DELETED_INDEX)
+        if self.first_pair[holder.ix] != pair_row_id(DELETED_INDEX) do self.prev_pair[self.first_pair[holder.ix]] = new_row
         self.first_pair[holder.ix] = new_row
 
         self.next_pair_by_target[new_row] = self.first_pair_by_target[target.ix]
-        self.prev_pair_by_target[new_row] = Pair_Row_Id(DELETED_INDEX)
-        if self.first_pair_by_target[target.ix] != Pair_Row_Id(DELETED_INDEX) do self.prev_pair_by_target[self.first_pair_by_target[target.ix]] = new_row
+        self.prev_pair_by_target[new_row] = pair_row_id(DELETED_INDEX)
+        if self.first_pair_by_target[target.ix] != pair_row_id(DELETED_INDEX) do self.prev_pair_by_target[self.first_pair_by_target[target.ix]] = new_row
         self.first_pair_by_target[target.ix] = new_row
 
         self.pairs_count += 1
@@ -395,7 +401,7 @@ package ode_ecs
         return new_row, nil
     }
 
-    pair_table__add :: proc(self: ^Pair_Table($T), holder: entity_id, target: entity_id, data: T, loc := #caller_location) -> (row: Pair_Row_Id, err: Error) {
+    pair_table__add :: proc(self: ^Pair_Table($T), holder: entity_id, target: entity_id, data: T, loc := #caller_location) -> (row: pair_row_id, err: Error) {
         value := data
         return pair_table_base__add_raw(&self.base, holder, target, &value, loc)
     }
@@ -411,16 +417,16 @@ package ode_ecs
         database__is_entity_correct(self.db, holder) or_return
 
         r := self.first_pair[holder.ix]
-        for r != Pair_Row_Id(DELETED_INDEX) {
+        for r != pair_row_id(DELETED_INDEX) {
             if self.targets[r] == target do break
             r = self.next_pair[r]
         }
 
-        if r == Pair_Row_Id(DELETED_INDEX) do return oc.Core_Error.Not_Found
+        if r == pair_row_id(DELETED_INDEX) do return oc.Core_Error.Not_Found
 
         pair_table_base__unlink_row(self, r)
 
-        if self.first_pair[holder.ix] == Pair_Row_Id(DELETED_INDEX) {
+        if self.first_pair[holder.ix] == pair_row_id(DELETED_INDEX) {
             tag_table__remove_tag(&self.presence, holder, loc) or_return
         }
 
@@ -442,9 +448,9 @@ package ode_ecs
         database__is_entity_correct(self.db, holder) or_return
 
         r := self.first_pair[holder.ix]
-        if r == Pair_Row_Id(DELETED_INDEX) do return nil
+        if r == pair_row_id(DELETED_INDEX) do return nil
 
-        for r != Pair_Row_Id(DELETED_INDEX) {
+        for r != pair_row_id(DELETED_INDEX) {
             next := self.next_pair[r]
             pair_table_base__unlink_row(self, r)
             r = next
@@ -463,13 +469,13 @@ package ode_ecs
     @(private)
     pair_table_base__remove_target :: proc(self: ^Pair_Table_Base, target: entity_id) -> Error #no_bounds_check {
         r := self.first_pair_by_target[target.ix]
-        for r != Pair_Row_Id(DELETED_INDEX) {
+        for r != pair_row_id(DELETED_INDEX) {
             next := self.next_pair_by_target[r]
             holder := self.row_holder[r]
 
             pair_table_base__unlink_row(self, r)
 
-            if self.first_pair[holder.ix] == Pair_Row_Id(DELETED_INDEX) {
+            if self.first_pair[holder.ix] == pair_row_id(DELETED_INDEX) {
                 terr := tag_table__remove_tag(&self.presence, holder)
                 if terr != nil && terr != oc.Core_Error.Not_Found do return terr
             }
@@ -485,7 +491,7 @@ package ode_ecs
         if database__is_entity_correct(self.db, holder) != nil do return false
 
         r := self.first_pair[holder.ix]
-        for r != Pair_Row_Id(DELETED_INDEX) {
+        for r != pair_row_id(DELETED_INDEX) {
             if self.targets[r] == target do return true
             r = self.next_pair[r]
         }
@@ -503,9 +509,9 @@ package ode_ecs
     }
 
     @(private)
-    pair_table_base__first_row :: #force_inline proc "contextless" (self: ^Pair_Table_Base, holder: entity_id) -> (row: Pair_Row_Id, ok: bool) #no_bounds_check {
+    pair_table_base__first_row :: #force_inline proc "contextless" (self: ^Pair_Table_Base, holder: entity_id) -> (row: pair_row_id, ok: bool) #no_bounds_check {
         r := self.first_pair[holder.ix]
-        if r == Pair_Row_Id(DELETED_INDEX) do return Pair_Row_Id(DELETED_INDEX), false
+        if r == pair_row_id(DELETED_INDEX) do return pair_row_id(DELETED_INDEX), false
         return r, true
     }
 
@@ -537,7 +543,7 @@ package ode_ecs
 
         n := 0
         r := self.first_pair[holder.ix]
-        for r != Pair_Row_Id(DELETED_INDEX) {
+        for r != pair_row_id(DELETED_INDEX) {
             when VALIDATIONS do assert(n < len(self.scratch), "pair links corrupted — more pairs than cap")
             self.scratch[n] = self.targets[r]
             n += 1
@@ -549,4 +555,130 @@ package ode_ecs
 
     pair_table__targets_of :: proc(self: ^Pair_Table($T), holder: entity_id) -> (res: []entity_id, err: Error) {
         return pair_table_base__targets_of(&self.base, holder)
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Row cursor
+
+    // Walks holder's rows, most-recently-added first: `for row, ok := pair_first_row_of(pt, h); ok; row, ok = pair_next_row_of(pt, row)`.
+    pair_table__first_row_of :: proc(self: ^Pair_Table($T), holder: entity_id) -> (row: pair_row_id, ok: bool) #no_bounds_check {
+        if database__is_entity_correct(self.db, holder) != nil do return pair_row_id(DELETED_INDEX), false
+        r := self.first_pair[holder.ix]
+        return r, r != pair_row_id(DELETED_INDEX)
+    }
+
+    pair_table__next_row_of :: #force_inline proc "contextless" (self: ^Pair_Table($T), row: pair_row_id) -> (next: pair_row_id, ok: bool) #no_bounds_check {
+        if row == pair_row_id(DELETED_INDEX) do return pair_row_id(DELETED_INDEX), false
+        n := self.next_pair[row]
+        return n, n != pair_row_id(DELETED_INDEX)
+    }
+
+    // Walks the rows pointing AT target — the reverse direction of first_row_of.
+    pair_table__first_row_to :: proc(self: ^Pair_Table($T), target: entity_id) -> (row: pair_row_id, ok: bool) #no_bounds_check {
+        if database__is_entity_correct(self.db, target) != nil do return pair_row_id(DELETED_INDEX), false
+        r := self.first_pair_by_target[target.ix]
+        return r, r != pair_row_id(DELETED_INDEX)
+    }
+
+    pair_table__next_row_to :: #force_inline proc "contextless" (self: ^Pair_Table($T), row: pair_row_id) -> (next: pair_row_id, ok: bool) #no_bounds_check {
+        if row == pair_row_id(DELETED_INDEX) do return pair_row_id(DELETED_INDEX), false
+        n := self.next_pair_by_target[row]
+        return n, n != pair_row_id(DELETED_INDEX)
+    }
+
+    pair_table__row_holder :: #force_inline proc "contextless" (self: ^Pair_Table($T), row: pair_row_id) -> entity_id #no_bounds_check {
+        return self.row_holder[row]
+    }
+
+    pair_table__row_target :: #force_inline proc "contextless" (self: ^Pair_Table($T), row: pair_row_id) -> entity_id #no_bounds_check {
+        return self.targets[row]
+    }
+
+    pair_table__row_data :: #force_inline proc "contextless" (self: ^Pair_Table($T), row: pair_row_id) -> ^T #no_bounds_check {
+        return &self.data[row]
+    }
+
+///////////////////////////////////////////////////////////////////////////////
+// Reverse and payload queries
+
+    // Every holder pointing at target, as a slice of the internal target-side scratch buffer — valid only until the next holders_of call or any structural change.
+    @(private)
+    pair_table_base__holders_of :: proc(self: ^Pair_Table_Base, target: entity_id) -> (res: []entity_id, err: Error) #no_bounds_check {
+        database__is_entity_correct(self.db, target) or_return
+
+        n := 0
+        r := self.first_pair_by_target[target.ix]
+        for r != pair_row_id(DELETED_INDEX) {
+            when VALIDATIONS do assert(n < len(self.scratch_by_target), "pair links corrupted — more pairs than cap")
+            self.scratch_by_target[n] = self.row_holder[r]
+            n += 1
+            r = self.next_pair_by_target[r]
+        }
+
+        return self.scratch_by_target[:n], nil
+    }
+
+    pair_table__holders_of :: proc(self: ^Pair_Table($T), target: entity_id) -> (res: []entity_id, err: Error) {
+        return pair_table_base__holders_of(&self.base, target)
+    }
+
+    // O(#pairs for holder): the payload of the (holder, target) row, or nil if there is no such pair.
+    pair_table__get_data :: proc(self: ^Pair_Table($T), holder: entity_id, target: entity_id) -> (data: ^T, ok: bool) #no_bounds_check {
+        if database__is_entity_correct(self.db, holder) != nil do return nil, false
+
+        r := self.first_pair[holder.ix]
+        for r != pair_row_id(DELETED_INDEX) {
+            if self.targets[r] == target do return &self.data[r], true
+            r = self.next_pair[r]
+        }
+
+        return nil, false
+    }
+
+    @(private)
+    pair_table_base__count_of :: proc(self: ^Pair_Table_Base, holder: entity_id) -> int #no_bounds_check {
+        if database__is_entity_correct(self.db, holder) != nil do return 0
+
+        n := 0
+        r := self.first_pair[holder.ix]
+        for r != pair_row_id(DELETED_INDEX) {
+            n += 1
+            r = self.next_pair[r]
+        }
+
+        return n
+    }
+
+    pair_table__count_of :: proc(self: ^Pair_Table($T), holder: entity_id) -> int {
+        return pair_table_base__count_of(&self.base, holder)
+    }
+
+    @(private)
+    pair_table_base__count_to :: proc(self: ^Pair_Table_Base, target: entity_id) -> int #no_bounds_check {
+        if database__is_entity_correct(self.db, target) != nil do return 0
+
+        n := 0
+        r := self.first_pair_by_target[target.ix]
+        for r != pair_row_id(DELETED_INDEX) {
+            n += 1
+            r = self.next_pair_by_target[r]
+        }
+
+        return n
+    }
+
+    pair_table__count_to :: proc(self: ^Pair_Table($T), target: entity_id) -> int {
+        return pair_table_base__count_to(&self.base, target)
+    }
+
+    // Removes every row pointing at target, dropping the presence tag of any holder whose last pair it was; the same path destroy_entity runs automatically.
+    pair_table__remove_all_to :: proc(self: ^Pair_Table($T), target: entity_id, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(self != nil, loc = loc)
+            assert(self.state == Object_State.Normal, loc = loc)
+        }
+
+        database__is_entity_correct(self.db, target) or_return
+
+        return pair_table_base__remove_target(&self.base, target)
     }

@@ -108,6 +108,49 @@ for i in 0..<len(levels)-1 {
 
 See [Sample15](/samples/sample15/main.odin) for a complete example, including per-level transform propagation.
 
+## Upward traversal
+
+`children_of`/`walk_subtree`/`walk_hierarchy` all go *down*. These go *up* — the direction a prototype/archetype chain is read in.
+
+```odin
+anc, _ := ecs.ancestors_of(&my_ecs, soldier)   // []entity_id, NEAREST first: parent, grandparent, ...
+                                                // empty for a root or an entity with no parent
+
+r, _   := ecs.root_of(&my_ecs, soldier)        // topmost ancestor, or `soldier` itself if it has no parent
+d, _   := ecs.depth_of(&my_ecs, soldier)       // edges up to the root; 0 when it has no parent
+
+yes, _ := ecs.is_ancestor_of(&my_ecs, squad, soldier)     // is `squad` ANYWHERE above `soldier`?
+yes, _  = ecs.is_descendant_of(&my_ecs, soldier, squad)   // the same question, arguments swapped
+```
+
+Note the difference from `is_child_of`/`is_parent_of`, which only answer about a **direct** link: for a grandparent, `is_child_of` is false while `is_ancestor_of` is true. An entity is never its own ancestor.
+
+All of these are O(tree depth) and allocate nothing.
+
+> **NOTE:** `ancestors_of` returns a slice of the **same** internal scratch buffer as `children_of` — valid only until the next call to either, or any structural change. Same "use immediately, don't store" contract. `root_of`, `depth_of`, `is_ancestor_of` and `is_descendant_of` return plain values and touch no buffer.
+
+## Inherited lookup
+
+Walking up to find *who actually has* a component is common enough to be a primitive. The entity itself is checked first, so a local value beats an inherited one, and the answer reports its source:
+
+```odin
+mass, source, ok := ecs.get_component_up(&masses, &my_ecs, guard42)
+// mass   -> ^Mass, pointing at whichever entity owns it
+// source -> the entity the value came from (guard42 itself, or an ancestor)
+
+source, ok := ecs.has_tag_up(&can_attach_rope, &my_ecs, planks01)
+```
+
+`get_component_up` works on `Table`/`Compact_Table`/`Tiny_Table`; `has_tag_up` is its `Tag_Table` counterpart. For anything else, use the underlying primitive:
+
+```odin
+found, ok := ecs.find_up(&my_ecs, guard42, user_data, proc(eid: ecs.entity_id, user_data: rawptr) -> bool {
+    // ...
+})
+```
+
+The `^Database` is passed **explicitly** rather than taken from the table, so the table and the hierarchy may live in different Databases sharing one [Overbase](overbase.md) — e.g. immutable configuration in one, runtime state in the other. With no `Relations_Table` on that database the chain is just the entity itself: a degenerate answer, not an error.
+
 ## Automatic cleanup on destroy
 
 `destroy_entity` keeps relations consistent — every `entity_id` stored in the relations table is always alive:

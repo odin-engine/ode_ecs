@@ -495,3 +495,49 @@ package ode_ecs
         return API_Error.Unexpected_Error
     }
 
+
+    shared_table__has_component :: proc (self: ^Shared_Table, eid: entity_id) -> bool {
+        switch self.type {
+            case Table_Type.Auto:
+                assert(false, "Shared_Table.type == Auto - this table pointer was never table_init'd (or terminated and never re-init'd), or it points to memory that was zeroed/reused after init.")
+            case Table_Type.Table:
+                return table_raw__get_component_by_entity(cast(^Table_Raw) self, eid) != nil
+            case Table_Type.Tiny_Table:
+                return tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) self, eid) != nil
+            case Table_Type.Compact_Table:
+                return compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid) != nil
+            case Table_Type.Tag_Table:
+                return tag_table__has_tag(cast(^Tag_Table) self, eid)
+            case Table_Type.Arch_Table:
+                return arch_table__has_entity(cast(^Arch_Table) self, eid)
+        }
+
+        assert(false)
+        return false
+    }
+
+    // Number of component types one row spans: 0 for Tag_Table, N for Arch_Table, 1 otherwise.
+    shared_table__column_count :: proc (self: ^Shared_Table) -> int {
+        #partial switch self.type {
+            case Table_Type.Tag_Table:
+                return 0
+            case Table_Type.Arch_Table:
+                return len((cast(^Arch_Table) self).columns)
+        }
+        return 1
+    }
+
+    shared_table__column_type :: proc (self: ^Shared_Table, col: int) -> typeid {
+        #partial switch self.type {
+            case Table_Type.Tag_Table:
+                return nil
+            case Table_Type.Arch_Table:
+                arch := cast(^Arch_Table) self
+                if col < 0 || col >= len(arch.columns) do return nil
+                return arch.columns[col].type_info.id
+        }
+
+        if col != 0 do return nil
+        ti := shared_table__type_info(self)
+        return ti.id if ti != nil else nil
+    }

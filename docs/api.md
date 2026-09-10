@@ -64,6 +64,12 @@ is_parent_of(self: ^Database, a: entity_id, b: entity_id) -> (bool, Error)
 has_relations(self: ^Database, eid: entity_id) -> (bool, Error)
 is_relation_of(self: ^Database, target: entity_id, eid: entity_id) -> (bool, Error)
 
+ancestors_of(self: ^Database, eid: entity_id) -> ([]entity_id, Error)   // nearest first; shares children_of's buffer
+root_of(self: ^Database, eid: entity_id) -> (entity_id, Error)
+depth_of(self: ^Database, eid: entity_id) -> (int, Error)
+is_ancestor_of(self: ^Database, ancestor: entity_id, eid: entity_id) -> (bool, Error)
+is_descendant_of(self: ^Database, eid: entity_id, ancestor: entity_id) -> (bool, Error)
+
 is_root(self: ^Database, eid: entity_id) -> (bool, Error)
 roots(self: ^Database) -> (entities: []entity_id, err: Error)
 walk_subtree(self: ^Database, root: entity_id) -> (entities: []entity_id, err: Error)
@@ -71,6 +77,21 @@ walk_hierarchy(self: ^Database) -> (entities: []entity_id, level_offsets: []int,
 
 table_len(self: ^Relations_Table) -> int   // proc group
 table_cap(self: ^Relations_Table) -> int   // proc group
+```
+
+### Inherited lookup (walks the `Relations_Table` parent chain, nearest first)
+
+The entity itself is checked first, so a local value wins over an inherited one. `db` is the
+relations-owning `Database`, passed explicitly so the table and the hierarchy may live in different
+Databases sharing one `Overbase`. With no `Relations_Table` the chain is just the entity itself.
+See [Relations](relations.md#inherited-lookup).
+
+```odin
+get_component_up(table: ^Table($T), db: ^Database, eid: entity_id) -> (component: ^T, source: entity_id, ok: bool)   // proc group: also Compact_Table, Tiny_Table
+has_tag_up(table: ^Tag_Table, db: ^Database, eid: entity_id) -> (source: entity_id, ok: bool)
+
+find_up(db: ^Database, eid: entity_id, user_data: rawptr,
+        pred: proc(eid: entity_id, user_data: rawptr) -> bool) -> (found: entity_id, ok: bool)
 ```
 
 ---
@@ -119,6 +140,7 @@ get_entity(self: ^Table($T), row_number: int) -> entity_id     // proc group (by
 
 copy_component(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error)   // proc group: also Compact_Table, Tiny_Table
 move_component(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error)                      // proc group: also Compact_Table, Tiny_Table
+clone_component(self: ^Table($T), src_eid: entity_id, dst_eid: entity_id) -> (component: ^T, err: Error)                    // proc group: also Compact_Table, Tiny_Table — copies between two ENTITIES within ONE table
 copy(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, src_component: ^T, err: Error)             // proc group — same shape as copy_component here; also Arch_Table's whole-row copy under a different signature (see Arch_Table)
 move(dest: ^Table($T), src: ^Table(T), eid: entity_id) -> (dest_component: ^T, err: Error)                                // proc group — same shape as move_component here; also Arch_Table's whole-row move under a different signature (see Arch_Table)
 
@@ -256,6 +278,50 @@ is_valid(self: ^Arch_Table) -> bool      // proc group
 
 `cmd_arch_add_entity` (see [Command_Buffer](#command_buffer-deferred-structural-operations)) is the
 deferred equivalent of `create_entity`/`add_entity` with typed values for up to 4 columns.
+
+---
+
+## Any_Table (type-erased table handle)
+
+A handle to any table variant, for tooling that does not know the component type at compile time.
+It is the public spelling of the pointer `view_init`/`group_init` already take. See
+[Any_Table](any_table.md).
+
+```odin
+Any_Table :: distinct ^Shared_Table
+
+any_table(self: ^Table($T) | ^Compact_Table($T) | ^Tiny_Table($T) | ^Tag_Table | ^Arch_Table) -> Any_Table
+
+any_table_id(self: Any_Table) -> table_id
+any_table_type(self: Any_Table) -> Table_Type
+any_table_component_type(self: Any_Table) -> typeid   // nil for Tag_Table and Arch_Table
+any_table_component_size(self: Any_Table) -> int
+any_table_column_count(self: Any_Table) -> int        // 0 Tag_Table, N Arch_Table, 1 otherwise
+any_table_column_type(self: Any_Table, col: int) -> typeid
+any_table_len(self: Any_Table) -> int
+any_table_cap(self: Any_Table) -> int
+any_table_is_valid(self: Any_Table) -> bool
+any_table_memory_usage(self: Any_Table) -> int
+
+any_table_has_component(self: Any_Table, eid: entity_id) -> bool
+any_table_get_component(self: Any_Table, eid: entity_id) -> rawptr             // nil for Tag_Table
+any_table_add_component(self: Any_Table, eid: entity_id, data: rawptr = nil) -> (rawptr, Error)
+any_table_remove_component(self: Any_Table, eid: entity_id) -> Error
+any_table_clone_component(self: Any_Table, src_eid: entity_id, dst_eid: entity_id) -> Error
+any_table_clear(self: Any_Table) -> Error
+any_table_entities_slice(self: Any_Table) -> []entity_id
+any_table_get_entity(self: Any_Table, row_number: int) -> entity_id
+
+// Enumeration — caller-provided buffers, allocation-free
+any_tables(db: ^Database, buf: []Any_Table) -> (res: []Any_Table, err: Error)
+any_tables_len(db: ^Database) -> int
+any_table_by_id(db: ^Database, id: table_id, kind: Table_Type) -> (res: Any_Table, ok: bool)
+entity_tables(db: ^Database, eid: entity_id, buf: []Any_Table) -> (res: []Any_Table, err: Error)
+```
+
+`data` in `any_table_add_component` is an untyped pointer the caller promises matches
+`any_table_component_type` — tooling only, never a hot path. Component tables and tag tables have
+independent id spaces, so `any_table_by_id` needs the `Table_Type` as well as the id.
 
 ---
 
@@ -505,7 +571,7 @@ pair_terminate(self: ^Pair_Table($T)) -> Error
 pair_len(self: ^Pair_Table($T)) -> int
 pair_cap(self: ^Pair_Table($T)) -> int
 
-pair_add(self: ^Pair_Table($T), holder: entity_id, target: entity_id, data: T) -> (row: Pair_Row_Id, err: Error)
+pair_add(self: ^Pair_Table($T), holder: entity_id, target: entity_id, data: T) -> (row: pair_row_id, err: Error)
 pair_remove(self: ^Pair_Table($T), holder: entity_id, target: entity_id) -> Error
 pair_remove_all(self: ^Pair_Table($T), holder: entity_id) -> Error   // removes every pair for that holder
 
@@ -513,7 +579,21 @@ pair_has_pair(self: ^Pair_Table($T), holder: entity_id, target: entity_id) -> bo
 pair_has_any(self: ^Pair_Table($T), holder: entity_id) -> bool             // O(1): does holder have >= 1 pair?
 pair_first_target(self: ^Pair_Table($T), holder: entity_id) -> (target: entity_id, ok: bool)
 pair_first_data(self: ^Pair_Table($T), holder: entity_id) -> (data: ^T, ok: bool)
-pair_targets_of(self: ^Pair_Table($T), holder: entity_id) -> (res: []entity_id, err: Error)  // valid until next call or structural change
+pair_targets_of(self: ^Pair_Table($T), holder: entity_id) -> (res: []entity_id, err: Error)  // valid until next targets_of call or structural change
+pair_holders_of(self: ^Pair_Table($T), target: entity_id) -> (res: []entity_id, err: Error)  // reverse of targets_of; separate scratch buffer
+pair_get_data(self: ^Pair_Table($T), holder: entity_id, target: entity_id) -> (data: ^T, ok: bool)
+pair_count_of(self: ^Pair_Table($T), holder: entity_id) -> int
+pair_count_to(self: ^Pair_Table($T), target: entity_id) -> int
+pair_remove_all_to(self: ^Pair_Table($T), target: entity_id) -> Error   // removes every pair pointing at target
+
+// Row cursor — walks every row in either direction, payload included; O(1) per step
+pair_first_row_of(self: ^Pair_Table($T), holder: entity_id) -> (row: pair_row_id, ok: bool)
+pair_next_row_of(self: ^Pair_Table($T), row: pair_row_id) -> (next: pair_row_id, ok: bool)
+pair_first_row_to(self: ^Pair_Table($T), target: entity_id) -> (row: pair_row_id, ok: bool)
+pair_next_row_to(self: ^Pair_Table($T), row: pair_row_id) -> (next: pair_row_id, ok: bool)
+pair_row_holder(self: ^Pair_Table($T), row: pair_row_id) -> entity_id
+pair_row_target(self: ^Pair_Table($T), row: pair_row_id) -> entity_id
+pair_row_data(self: ^Pair_Table($T), row: pair_row_id) -> ^T
 
 memory_usage(self: ^Pair_Table($T)) -> int   // proc group
 is_valid(self: ^Pair_Table($T)) -> bool      // proc group
@@ -562,7 +642,7 @@ view_column_id ::        int
 pair_table_id ::         distinct int
 command_buffer_id ::     distinct int
 observer_id ::           distinct int
-Pair_Row_Id ::           distinct int           // row handle returned by pair_add, stable until pair_remove
+pair_row_id ::           distinct i32           // row handle returned by pair_add, stable until pair_remove
 
 is_not_set(e: entity_id) -> bool        // true when e.ix == DELETED_INDEX (a "no entity" value)
 DELETED_INDEX                           // sentinel index value
@@ -593,6 +673,7 @@ API_Error :: enum {
     Sync_Buffer_Too_Small, Sync_Feature_Disabled,
     Tables_Cap_Exceeds_Compile_Time_Limit, Observers_Feature_Disabled,
     Entity_Not_In_Table, Table_To_Cannot_Contain_Entity, Entity_Already_In_Table,
+    Table_Type_Not_Supported,
 }
 
 Error :: union #shared_nil {
