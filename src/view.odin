@@ -179,11 +179,30 @@ package ode_ecs
     }
 
     @(private)
-    view__attach_flags_table :: proc(self: ^View, table: ^Flags_Table) -> Error {
-        for v in table.flags_subscribers.items do if v == self do return nil
+    view__attach_flags_table :: proc(self: ^View, f: Flags) -> Error {
+        table := f.table
+        mask := flags__term_mask(f)
+        table.flags_mask += mask
+        for &sub in table.flags_subscribers.items {
+            if sub.view == self {
+                sub.mask += mask
+                return nil
+            }
+        }
         if table.flags_subscribers.items == nil do oc.dense_arr__init(&table.flags_subscribers, SUBSCRIBERS_CAP, table.db.allocator) or_return
-        _, err := oc.dense_arr__add_growing(&table.flags_subscribers, self, table.db.allocator)
+        _, err := oc.dense_arr__add_growing(&table.flags_subscribers, Flags_Subscriber{self, mask}, table.db.allocator)
         return err
+    }
+
+    @(private)
+    view__detach_flags_table :: proc(self: ^View, table: ^Flags_Table) {
+        for sub, i in table.flags_subscribers.items {
+            if sub.view != self do continue
+            oc.dense_arr__remove_by_index(&table.flags_subscribers, i)
+            table.flags_mask = {}
+            for other in table.flags_subscribers.items do table.flags_mask += other.mask
+            return
+        }
     }
 
     @(private)
@@ -195,7 +214,7 @@ package ode_ecs
         self.match_extra = self.has_flags || oc.dense_arr__len(&self.any_of) > 0
 
         for group in ([][]Flags{self.flags_includes, self.flags_excludes, self.flags_any_of}) {
-            for f in group do view__attach_flags_table(self, f.table) or_return
+            for f in group do view__attach_flags_table(self, f) or_return
         }
         return nil
     }
@@ -463,7 +482,7 @@ package ode_ecs
         for group in ([][]Flags{self.flags_includes, self.flags_excludes, self.flags_any_of}) {
             for f in group {
                 if f.table == nil || f.table.type != Table_Type.Flags_Table do continue
-                _ = oc.dense_arr__remove_by_value(&f.table.flags_subscribers, self)
+                view__detach_flags_table(self, f.table)
             }
         }
         if self.flags_includes != nil do delete(self.flags_includes, self.db.allocator) or_return
@@ -542,11 +561,34 @@ package ode_ecs
 
         view__clear(self) or_return
 
+        min_table := view__pick_source(self)
+
+        min_eids := shared_table__rid_to_eid_slice(min_table)
+        assert(self.cap >= len(min_eids))
+
+        source_flags := view__source_flags(self, min_table)
+
+        for eid, i in min_eids {
+            if is_not_set(eid) do continue
+            if source_flags != nil && !view__flags_prefilter(self, source_flags, source_flags.rows[i]) do continue
+
+            if view__components_match(self, eid) {
+                view__add_record(self, eid) or_return
+            }
+        }
+
+        return nil
+    }
+
+    // Smallest included table; on a tie a Flags_Table, since its rows can be prefiltered.
+    @(private)
+    view__pick_source :: proc(self: ^View) -> ^Shared_Table {
         min_records_count: int = max(int)
         min_table: ^Shared_Table
         for table in self.tables {
             table_len := shared_table__len(table)
-            if table_len < min_records_count {
+            prefer_flags := table_len == min_records_count && self.has_flags && table.type == Table_Type.Flags_Table
+            if table_len < min_records_count || prefer_flags {
                 min_table = table
                 min_records_count = table_len
             }
@@ -558,19 +600,24 @@ package ode_ecs
                 min_records_count = tag_len
             }
         }
+        return min_table
+    }
 
-        min_eids := shared_table__rid_to_eid_slice(min_table)
-        assert(self.cap >= len(min_eids))
+    @(private)
+    view__source_flags :: #force_inline proc(self: ^View, source: ^Shared_Table) -> ^Flags_Table {
+        return self.has_flags && source.type == Table_Type.Flags_Table ? cast(^Flags_Table) source : nil
+    }
 
-        for eid in min_eids {
-            if is_not_set(eid) do continue
-
-            if view__components_match(self, eid) {
-                view__add_record(self, eid) or_return
-            }
+    // Rebuild shortcut: the source table's include/exclude terms tested on its row data, no lookup.
+    @(private)
+    view__flags_prefilter :: #force_inline proc(self: ^View, source: ^Flags_Table, e: Bits) -> bool {
+        for f in self.flags_includes {
+            if f.table == source && !flags__holds(e, f.bits, f.op) do return false
         }
-
-        return nil
+        for f in self.flags_excludes {
+            if f.table == source && flags__holds(e, f.bits, f.op) do return false
+        }
+        return true
     }
 
     view__len :: #force_inline proc "contextless" (self: ^View) -> int {
@@ -667,26 +714,13 @@ package ode_ecs
             }
         }
 
-        min_records_count: int = max(int)
-        min_table: ^Shared_Table
-        for table in self.tables {
-            table_len := shared_table__len(table)
-            if table_len < min_records_count {
-                min_table = table
-                min_records_count = table_len
-            }
-        }
-        for tag in self.tags {
-            tag_len := shared_table__len(cast(^Shared_Table) tag)
-            if tag_len < min_records_count {
-                min_table = cast(^Shared_Table) tag
-                min_records_count = tag_len
-            }
-        }
+        min_table := view__pick_source(self)
 
-        for eid in shared_table__rid_to_eid_slice(min_table) {
+        source_flags := view__source_flags(self, min_table)
+        for eid, i in shared_table__rid_to_eid_slice(min_table) {
             if is_not_set(eid) do continue
             if self.eid_to_rid[eid.ix] != VIEW_NO_RID do continue
+            if source_flags != nil && !view__flags_prefilter(self, source_flags, source_flags.rows[i]) do continue
             if !view__components_match(self, eid) do continue
 
             view__fill_columns(self, eid, self.cap)

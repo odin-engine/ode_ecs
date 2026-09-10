@@ -83,6 +83,12 @@ ecs.view_init(&alert, &my_ecs, {ecs.flags_term(&status, {ALERT})})
 
 Passing `&status` also gives the view a `^Bits` column: `ecs.slice(&view, ecs.Bits)`.
 
+## Flags_Table or Tag_Table?
+
+Prefer a Flags_Table for entity state: one table holds many flags, so you don't need a table per flag. A [`Tag_Table`](tables.md#tag_table) is still faster for a single condition that is toggled often or that views are built around. 
+
+So use a Tag_Table for a condition that changes very often in a hot path, or for a rare condition a view is built around. Use a Flags_Table for everything else.
+
 ## Storage and memory
 
 A `Flags_Table` is a [`Compact_Table(Bits)`](tables.md#compact_tablet): a Robin Hood map from entity to row, plus dense rows of `Bits` sized to `cap`. An entity has a row exactly when it has at least one flag — clearing its last flag removes the row.

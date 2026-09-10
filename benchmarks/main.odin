@@ -91,6 +91,14 @@
                             contrast against pair_first_target's O(1) number
         churn_pair          steady-state pair_add (fan-out 16) + pair_remove_all
                             per holder — Pair_Table's structural churn cost
+        tvf_* (tag) / (flags)  Tag_Table vs Flags_Table for the same "stunned" condition on
+                            10% of N entities; the Flags_Table also holds an Alive flag on
+                            every entity, as a shared status table would:
+          tvf_has           random has_tag / has_flag (10% hit)
+          tvf_rebuild_inc   rebuild a {Position, stunned} view, per db entity
+          tvf_rebuild_exc   rebuild a {Position} excluding-stunned view, per db entity
+          tvf_toggle        untag+tag / unflag+flag every stunned entity, 2 views watching
+          tvf_toggle_more_views  same, plus 4 views on other tags / flags
 */
 package ode_ecs_benchmarks
 
@@ -248,6 +256,9 @@ main :: proc() {
     bench_pair_first_target()
     bench_pair_targets_of()
     bench_pair_churn()
+
+    bench_tag_vs_flags(false)
+    bench_tag_vs_flags(true)
 
     bench_plain_view_iter()
     bench_iterator_manual_get_component()
@@ -2051,3 +2062,156 @@ bench_exp_view_iter :: proc() {
     if ecs.terminate(&x_db) != nil do panic("exp_view_iter db terminate failed")
 }
 
+//
+// Tag_Table vs Flags_Table
+//
+
+tvf_rebuild :: proc(view: ^ecs.View) -> i64 {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        if ecs.rebuild(view) != nil do panic("tvf rebuild failed")
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    g_sink += f64(ecs.view_len(view))
+    return best
+}
+
+tvf_toggle :: proc(use_flags: bool, status: ^ecs.Flags_Table, stunned: ^ecs.Tag_Table, subset: []ecs.entity_id, bit: int) -> i64 {
+    sw: time.Stopwatch
+    best: i64 = max(i64)
+    for _ in 0..<REPS {
+        time.stopwatch_reset(&sw)
+        time.stopwatch_start(&sw)
+        if use_flags {
+            for eid in subset {
+                if ecs.unflag(status, eid, bit) != nil do panic("unflag failed")
+            }
+            for eid in subset {
+                if ecs.flag(status, eid, bit) != nil do panic("flag failed")
+            }
+        } else {
+            for eid in subset {
+                if ecs.remove_tag(stunned, eid) != nil do panic("remove_tag failed")
+            }
+            for eid in subset {
+                if ecs.add_tag(stunned, eid) != nil do panic("add_tag failed")
+            }
+        }
+        time.stopwatch_stop(&sw)
+        best = min(best, elapsed_ns(&sw))
+    }
+    return best
+}
+
+bench_tag_vs_flags :: proc(use_flags: bool) {
+    EXTRA   :: 4
+    ALIVE   :: 0
+    STUNNED :: 1
+
+    tdb: ecs.Database
+    pos: ecs.Table(Position)
+    status: ecs.Flags_Table
+    stunned: ecs.Tag_Table
+    extra: [EXTRA]ecs.Tag_Table
+    v_inc, v_exc: ecs.View
+    v_extra: [EXTRA]ecs.View
+
+    if ecs.init(&tdb, N, context.allocator) != nil do panic("tvf db init failed")
+    if ecs.table_init(&pos, &tdb, N) != nil do panic("tvf table init failed")
+    if use_flags {
+        if ecs.flags_table_init(&status, &tdb, N) != nil do panic("tvf flags init failed")
+    } else {
+        if ecs.tag_table__init(&stunned, &tdb, N / 10 + 1) != nil do panic("tvf tag init failed")
+        for &t in extra {
+            if ecs.tag_table__init(&t, &tdb, N / 10 + 1) != nil do panic("tvf tag init failed")
+        }
+    }
+
+    all := make([]ecs.entity_id, N)
+    defer delete(all)
+    subset := make([]ecs.entity_id, (N + 9) / 10)
+    defer delete(subset)
+
+    j := 0
+    for i in 0..<N {
+        eid, err := ecs.create_entity(&tdb)
+        if err != nil do panic("create_entity failed")
+        all[i] = eid
+        if _, perr := ecs.add_component(&pos, eid); perr != nil do panic("add_component failed")
+
+        k := i % 10 - 1
+        if use_flags {
+            if ecs.flag(&status, eid, ALIVE) != nil do panic("flag failed")
+            if i % 10 == 0 && ecs.flag(&status, eid, STUNNED) != nil do panic("flag failed")
+            if k >= 0 && k < EXTRA && ecs.flag(&status, eid, 2 + k) != nil do panic("flag failed")
+        } else {
+            if i % 10 == 0 && ecs.add_tag(&stunned, eid) != nil do panic("add_tag failed")
+            if k >= 0 && k < EXTRA && ecs.add_tag(&extra[k], eid) != nil do panic("add_tag failed")
+        }
+        if i % 10 == 0 {
+            subset[j] = eid
+            j += 1
+        }
+    }
+    rand.shuffle(all)
+    rand.shuffle(subset)
+
+    suffix := use_flags ? " (flags)" : " (tag)"
+    name :: proc(base, suffix: string) -> string { return fmt.tprintf("%s%s", base, suffix) }
+
+    // has
+    {
+        sw: time.Stopwatch
+        best: i64 = max(i64)
+        hits := 0
+        for _ in 0..<REPS {
+            n := 0
+            time.stopwatch_reset(&sw)
+            time.stopwatch_start(&sw)
+            if use_flags {
+                for eid in all do if ecs.has_flag(&status, eid, STUNNED) do n += 1
+            } else {
+                for eid in all do if ecs.has_tag(&stunned, eid) do n += 1
+            }
+            time.stopwatch_stop(&sw)
+            best = min(best, elapsed_ns(&sw))
+            hits = n
+        }
+        g_sink += f64(hits)
+        report(name("tvf_has", suffix), best, N)
+    }
+
+    if use_flags {
+        if ecs.view_init(&v_inc, &tdb, {&pos, ecs.flags_term(&status, {STUNNED})}) != nil do panic("tvf view init failed")
+        if ecs.view_init(&v_exc, &tdb, {&pos}, excludes = {ecs.flags_term(&status, {STUNNED})}) != nil do panic("tvf view init failed")
+    } else {
+        if ecs.view_init(&v_inc, &tdb, {&pos, &stunned}) != nil do panic("tvf view init failed")
+        if ecs.view_init(&v_exc, &tdb, {&pos}, excludes = {&stunned}) != nil do panic("tvf view init failed")
+    }
+
+    report(name("tvf_rebuild_inc", suffix), tvf_rebuild(&v_inc), N)
+    report(name("tvf_rebuild_exc", suffix), tvf_rebuild(&v_exc), N)
+    if ecs.view_len(&v_inc) != len(subset) || ecs.view_len(&v_exc) != N - len(subset) do panic("tvf view sizes wrong")
+
+    report(name("tvf_toggle", suffix), tvf_toggle(use_flags, &status, &stunned, subset, STUNNED), 2 * len(subset))
+
+    for k in 0..<EXTRA {
+        err: ecs.Error
+        if use_flags {
+            err = ecs.view_init(&v_extra[k], &tdb, {&pos, ecs.flags_term(&status, {2 + k})})
+        } else {
+            err = ecs.view_init(&v_extra[k], &tdb, {&pos, &extra[k]})
+        }
+        if err != nil do panic("tvf extra view init failed")
+        if ecs.rebuild(&v_extra[k]) != nil do panic("tvf extra rebuild failed")
+    }
+
+    report(name("tvf_toggle_more_views", suffix), tvf_toggle(use_flags, &status, &stunned, subset, STUNNED), 2 * len(subset))
+    if ecs.view_len(&v_inc) != len(subset) do panic("tvf view size wrong after toggle")
+
+    if ecs.terminate(&tdb) != nil do panic("tvf db terminate failed")
+}

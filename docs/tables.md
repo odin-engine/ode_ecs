@@ -14,7 +14,7 @@ ODE_ECS has five table variants. They share the same core operations but trade m
 
 All variants preallocate everything at init and never reallocate. `cap` cannot exceed the database's `entities_cap`.
 
-For `Table(T)`, `Compact_Table(T)`, and `Tiny_Table(T)`, `T` must not be a zero-sized type (`size_of(T) == 0`) — `add_component` asserts on this (`API_Error.Component_Size_Cannot_Be_Zero` when validations are compiled out). Use `Tag_Table` for a marker/tag component that carries no data.
+For `Table(T)`, `Compact_Table(T)`, and `Tiny_Table(T)`, `T` must not be a zero-sized type (`size_of(T) == 0`) — `add_component` asserts on this (`API_Error.Component_Size_Cannot_Be_Zero` when validations are compiled out). Use a `Flags_Table` or a `Tag_Table` for markers that carry no data.
 
 Tables do **not** need to be terminated manually — terminating the database terminates them. (Manual `table_terminate` etc. is available if you need to tear one down early; note it invalidates any views that include the table.)
 
@@ -222,6 +222,8 @@ ecs.view_init(&view, &my_ecs, {&ais, &positions, &is_alive})
 
 See [Sample06](../samples/sample06/main.odin) for a complete Tag_Table example.
 
+For entity state (`Stunned`, `Dead`, `In_Air`, ...) prefer a [Flags_Table](flags_table.md): one table holds up to 128 flags instead of one table per tag. A Tag_Table stays faster for a single condition that changes very often or that views are built around — see [Flags_Table or Tag_Table?](flags_table.md#flags_table-or-tag_table).
+
 ## Component enable/disable
 
 A soft toggle: temporarily remove a component from query matching (any [View](view.md) that includes its table) without moving or losing the stored value — the opposite of `remove_component`/`add_component`, which is a real structural change that tail-swaps rows and re-zeroes the slot.
@@ -239,7 +241,7 @@ Disabling is purely a `View`-matching concern: it does not evict an entity from 
 
 ## Choosing a variant
 
-Use `Tiny_Table` if `cap <= 8`; use `Compact_Table` if you want to save memory and `cap` is less than `entities_cap / 4` (but more than 8); otherwise — or if you don't care about memory — use `Table`. Use `Tag_Table` when there is no data to store at all. [Sample02](../samples/sample02/main.odin) demonstrates memory optimization with the different variants.
+Use `Tiny_Table` if `cap <= 8`; use `Compact_Table` if you want to save memory and `cap` is less than `entities_cap / 4` (but more than 8); otherwise — or if you don't care about memory — use `Table`. When there is no data to store, use a `Flags_Table` for entity state, or a `Tag_Table` for a single condition that changes very often or that views are built around (see [Flags_Table or Tag_Table?](flags_table.md#flags_table-or-tag_table)). [Sample02](../samples/sample02/main.odin) demonstrates memory optimization with the different variants.
 
 ## Cloning a component between entities
 

@@ -20,7 +20,15 @@ package ode_ecs
 
     Flags_Table :: struct {
         using compact: Compact_Table(Bits),
-        flags_subscribers: oc.Dense_Arr(^View),
+        flags_subscribers: oc.Dense_Arr(Flags_Subscriber),
+        flags_mask: Bits, // union of subscriber masks
+    }
+
+    // A view and the bits its Flags terms on this table depend on.
+    @(private)
+    Flags_Subscriber :: struct {
+        view: ^View,
+        mask: Bits,
     }
 
     Flags_Op :: enum u8 {
@@ -129,9 +137,10 @@ package ode_ecs
 
     @(private)
     flags_table__terminate_raw :: proc(self: ^Flags_Table) -> Error {
-        for view in self.flags_subscribers.items do view.state = Object_State.Invalid
+        for sub in self.flags_subscribers.items do sub.view.state = Object_State.Invalid
         if self.flags_subscribers.items != nil do oc.dense_arr__terminate(&self.flags_subscribers, self.db.allocator) or_return
         self.flags_subscribers = {}
+        self.flags_mask = {}
         return compact_table_raw__terminate(cast(^Compact_Table_Raw) self)
     }
 
@@ -177,15 +186,25 @@ package ode_ecs
         change := Flags_Change{old, new}
         database__notify_observers(self.db, .Flags_Changed, eid, table_id = self.id, data = &change)
 
-        for view in self.flags_subscribers.items {
-            if view.suspended {
-                view__missed_update_for_member(view, eid)
-            } else {
-                view__reevaluate(view, eid)
+        changed := old ~ new
+        if changed & self.flags_mask != {} {
+            for sub in self.flags_subscribers.items {
+                if sub.mask & changed == {} do continue
+                if sub.view.suspended {
+                    view__missed_update_for_member(sub.view, eid)
+                } else {
+                    view__reevaluate(sub.view, eid)
+                }
             }
         }
 
         return nil
+    }
+
+    // Exact depends on every bit; the other ops only on the term's bits.
+    @(private)
+    flags__term_mask :: #force_inline proc "contextless" (f: Flags) -> Bits {
+        return f.op == Flags_Op.Exact ? ~Bits{} : f.bits
     }
 
     @(private)
