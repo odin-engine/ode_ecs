@@ -234,7 +234,7 @@ is_valid(self: ^Tag_Table) -> bool      // proc group
 
 ## Flags_Table
 
-Up to 128 flags (`Bits`) per entity, stored as a `Compact_Table(Bits)`; an entity has a row exactly
+Up to 128 flags (`Bits`) per table, and an entity can be in any number of Flags_Tables. Stored as a `Compact_Table(Bits)`; an entity has a row exactly
 when it has at least one flag. See [Flags_Table](flags_table.md).
 
 ```odin

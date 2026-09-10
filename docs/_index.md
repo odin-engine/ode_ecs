@@ -14,7 +14,7 @@ Optional:
 * [Command Buffer](command_buffer.md)
 * [Relations](relations.md)
 * [Pairs (many-to-many relations)](pair_table.md)
-* [Flags_Table (up to 128 flags per entity)](flags_table.md)
+* [Flags_Table (up to 128 flags per table)](flags_table.md)
 * [Observers (structural-change callbacks)](observers.md)
 * [Any_Table (type-erased table handle)](any_table.md)
 * [Serialization](serialization.md)

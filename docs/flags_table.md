@@ -1,6 +1,6 @@
-# Flags_Table (up to 128 flags per entity)
+# Flags_Table (up to 128 flags per table)
 
-A [`Tag_Table`](tables.md#tag_table) gives each entity one boolean. A `Flags_Table` gives each entity a whole set of up to 128 flags — a `Bits` value (`bit_set[0..<128]`) — and an entity can be in any number of Flags_Tables. Views can filter on specific flags with an operation (all of, any of, exactly one of, …).
+A [`Tag_Table`](tables.md#tag_table) gives each entity one boolean. A `Flags_Table` gives each entity a whole set of up to 128 flags — a `Bits` value (`bit_set[0..<128]`). The limit is per table: an entity can be in any number of Flags_Tables, so the total number of flags per entity is not limited to 128. Views can filter on specific flags with an operation (all of, any of, exactly one of, …).
 
 ```odin
 import ecs "ode_ecs/src"
