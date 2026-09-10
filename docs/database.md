@@ -108,7 +108,7 @@ While paused, removals clear components **in place**, leaving holes: no row move
 `pause_packing`/`resume_packing`/`pack` work at three levels:
 
 - **Database** (`ecs.pause_packing(&my_ecs)`, above) — pauses every table in the database.
-- **Table** (`ecs.pause_packing(&monsters)`) — pauses just that one table (`Table`, `Compact_Table`, `Tiny_Table`, or `Tag_Table`), independent of the database-wide flag. Rejected with `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group` if the table belongs to a `Group` — pause the group instead (see [group.md](group.md)).
+- **Table** (`ecs.pause_packing(&monsters)`) — pauses just that one table (`Table`, `Compact_Table`, `Tiny_Table`, `Flags_Table`, or `Tag_Table`), independent of the database-wide flag. Rejected with `ecs.API_Error.Cannot_Pause_Table_Owned_By_Group` if the table belongs to a `Group` — pause the group instead (see [group.md](group.md)).
 - **Group** (`ecs.pause_packing(&my_group)`) — pauses every table the group owns, as one atomic unit, since a group's owned tables must move rows in lock-step.
 
 Use table- or group-level pause to isolate one table (or one group) from a concurrent database-wide pause/resume — e.g. one thread mutates/iterates `&monsters` under a table-level pause while another thread runs a database-wide `pause_packing`/`resume_packing` cycle over unrelated tables. The scopes compose (OR together): a database-wide `resume_packing` still packs every table, but does not forcibly clear a table's or group's own independent pause.

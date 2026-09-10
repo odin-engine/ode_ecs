@@ -14,7 +14,7 @@ For a minimal, manual, Archetype ECS built for extreme performance, check out ou
 - Frame-to-frame stability from both CPU and memory standpoints.
 
 #### Low-level & hybrid
-- A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Tag_Table](/docs/tables.md#tag_table) (just tags, no data).
+- A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Flags_Table](/docs/flags_table.md) (up to 128 flags per table, no component data; an entity can be in any number of Flags_Tables).
 - Supports both sparse-set and archetype styles. [Arch_Table](/docs/arch_table.md) gives you an archetype approach, and it can be combined with regular Tables on the same entity if that's useful for your case.
 
 #### Other features
@@ -23,7 +23,7 @@ For a minimal, manual, Archetype ECS built for extreme performance, check out ou
 - [Relations](/docs/relations.md) — for modeling parent/child links between entities.
 - [Command buffers](/docs/command_buffer.md) — let you defer mutations, which can help in multithreaded code.
 - [Pause/resume packing](#️-pausing-a-single-table-or-group) — a way to mutate tables safely while iterating.
-- [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, tags, relations) to a buffer or file, with entity IDs staying valid after reload.
+- [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, flags, relations) to a buffer or file, with entity IDs staying valid after reload.
 - [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
 
 #### Tested & documented 
@@ -52,7 +52,7 @@ What if you need to iterate over entities with a specific combination of compone
 
 Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
 
-[Tag_Table](#️-tag_table) is used to tag entities (e.g., `is_stunned`, `is_dead`, `is_in_air`) and could be very useful with Views.
+[Flags_Table](#️-flags_table) stores many boolean flags per entity (e.g., `Stunned`, `Dead`, `In_Air`) in one table, up to 128 per table, and Views can filter on them. Need more? Use several Flags_Tables — an entity can be in any number of them.
 
 ODE_ECS supports both sparse-set and archetype [architectures](/docs/ecs_types.md). You can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
@@ -218,46 +218,72 @@ Instead of `len(pos_slice)` in the code snippet above, it can be `len(eids)`, `l
 ### 🔎 View filters
 Read about View filters [here](/docs/view.md#filters).
 
-## 🏷️ Tag_Table
+## 🏷️ Flags_Table
 
-`Tag_Table` is a variation of `Table`, but it doesn't contain any components. A `Tag_Table` only "tags" entities. You can create a `Tag_Table` like this:
+A `Flags_Table` gives each entity a set of flags (an `ecs.Bits` set), up to 128 flags per table, so one table can hold many boolean states. You don't need a separate table for every tag or flag, and an entity can be in any number of Flags_Tables (for example `status` and `abilities`), so the total number of flags per entity is not limited to 128. Flags are integer bits `0..<128` or values of your own enum:
 
 ```odin
-    is_alive : ecs.Tag_Table
-    ecs.tag_table__init(&is_alive, &db, 10)
+    Status :: enum u8 { Alive, Stunned, In_Air, Enemy }
+
+    status : ecs.Flags_Table
+    ecs.flags_table_init(&status, &db, cap = 1000) // cap = max entities that have at least one flag at once
 ```
 
-Then you can tag or untag entities like this:
+Then you can set, clear and query flags like this:
 
 ```odin
     human, _ := ecs.create_entity(&db)
-    
-    ecs.tag(&is_alive, human)       // add tag
-    ecs.untag(&is_alive, human)    // remove tag
 
-    ecs.has_tag(&is_alive, human)  // O(1) membership query
+    ecs.flag(&status, human, Status.Alive)       // set a flag
+    ecs.flag(&status, human, Status.In_Air)
+    ecs.unflag(&status, human, Status.In_Air)    // clear a flag
+
+    ecs.has_flag(&status, human, Status.Alive)   // O(1) query
+    ecs.has_tag(&status, human)                  // has any flag
+    ecs.get_flags(&status, human)                // all flags as ecs.Bits
+
+    ecs.set_flags(&status, human, ecs.flags_of(Status.Alive, Status.Enemy)) // replace the whole set
+    ecs.clear_flags(&status, human)
 ```
 
-`Tag_Table` is especially useful with `View`:
+`Flags_Table` is especially useful with `View`. A `Flags` term tests specific flags with an operation (`And` by default):
 
 ```odin
-    view : ecs.View
+    alive   := ecs.flags_of(Status.Alive)
+    stunned := ecs.flags_of(Status.Stunned)
 
-    // create a view for all entities that have AI, Position components, and the alive tag
-    ecs.view_init(&view, &db, {&ais, &positions, &is_alive})
+    // all entities that have AI, Position components, and the Alive flag
+    ecs.view_init(&view1, &db, {&ais, &positions, ecs.flags_term(&status, alive)})
+
+    // alive and not stunned
+    ecs.view_init(&view2, &db, {&ais, ecs.flags_term(&status, alive)}, excludes = {ecs.flags_term(&status, stunned)})
+
+    // alive or enemy
+    ecs.view_init(&view3, &db, {&positions, ecs.flags_term(&status, ecs.flags_of(Status.Alive, Status.Enemy), .Or)})
+
+    // passing the table itself means "has any flag"
+    ecs.view_init(&view4, &db, {&positions, &status})
 ```
 
-You can iterate over tagged entities like this:
+| op | holds when the entity |
+|---|---|
+| `And` (default) | has all of the flags |
+| `Or` | has any of them |
+| `Xor` | has exactly one of them |
+| `Nor` | has none of them |
+| `Nand` | lacks at least one of them |
+| `Exact` | has exactly these flags and nothing else |
+
+Views update automatically as flags change. You can also iterate over every entity that has at least one flag:
 
 ```odin
-    // iterate over entities tagged in is_alive
-    fmt.println("Tagged entities:")
-    for eid in ecs.slice(&is_alive) {
-        fmt.println("Entity tagged in `is_alive`:", eid)
+    flags := ecs.slice(&status)                 // []ecs.Bits, one per row
+    for eid, i in ecs.entities_slice(&status) {
+        fmt.println("Entity", eid, "has flags", flags[i])
     }
 ```
 
-[Sample06](/samples/sample06/main.odin) demonstrates how to use `Tag_Table`.
+See [docs/flags_table.md](/docs/flags_table.md) for details.
 
 ## 🪸 Mutating tables (destroying entities/removing components) while iterating over them
 
@@ -270,14 +296,14 @@ ODE_ECS performs tail swaps (packing) when you remove components from a table (m
 For example, avoid doing this:
 
 ```odin
-for d in ecs.slice(&my_tags_table) {
-    ecs.destroy_entity(&my_db, d)  // Mutates my_tags_table during iteration!
+for d in ecs.entities_slice(&my_flags_table) {
+    ecs.destroy_entity(&my_db, d)  // Mutates my_flags_table during iteration!
 }
 ```
 Correct pattern: Drain the table by repeatedly taking row `0` until it is empty:
 ```odin
-for ecs.table_len(&my_tags_table) > 0 {
-    d := ecs.slice(&my_tags_table)[0]
+for ecs.table_len(&my_flags_table) > 0 {
+    d := ecs.entities_slice(&my_flags_table)[0]
     ecs.destroy_entity(&my_db, d)   
 }
 ```
@@ -285,7 +311,7 @@ Or pause packing (tail swapping) for the duration of the iteration — see the n
 
 ### Mutating tables while iterating: pause_packing / resume_packing / pack
 
-`ecs.pause_packing(&db)` switches all tables (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`) into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate (`Tag_Table` doesn't have components, but it still moves "tags" around to keep them packed for fast iteration). The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_not_set`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
+`ecs.pause_packing(&db)` switches all tables into deferred-tail-swap mode: removing a component (or destroying an entity) clears the component **in place** instead of tail-swapping, so no other component moves — rows and component pointers stay stable while you iterate. The vacated row becomes a *hole*: `get_entity` for it returns an id with `ix == ecs.DELETED_INDEX` (check with `ecs.is_not_set`), and `table_len` keeps reporting the full row span (holes included). Views are still notified as usual.
 
 ```odin
 ecs.pause_packing(&db)
@@ -305,7 +331,7 @@ ecs.resume_packing(&db) // packs all tables with holes and re-enables tail swap
 
 ### ⏸️ Pausing a single table or group
 
-`pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Tag_Table`, `Arch_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
+`pause_packing`/`resume_packing`/`pack` also accept a table (`Table`, `Compact_Table`, `Tiny_Table`, `Flags_Table`, `Arch_Table`) or a `Group` directly, independent of the database-wide pause — useful in a multithreading scenario where one thread wants to safely mutate/iterate one table (or one group's tables) while other threads keep working on unrelated tables, without deferring packing everywhere:
 
 ```odin
 ecs.pause_packing(&monsters)          // pause just this table
@@ -323,7 +349,7 @@ Table-level and group-level pauses compose with (OR into) the database-wide paus
 
 ### 📃 Command_Buffer: record now, apply at a sync point
 
-Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component`, and `tag/untag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
+Where `pause_packing` keeps *table rows* stable, a `Command_Buffer` defers the structural changes themselves: it records `destroy_entity`, `add/remove component`, and `flag/unflag` **without touching the database**, and applies them later, in recorded order, with `replay`. Nothing moves or grows until the replay — so mutating while iterating anything (tables, views, slices, groups) becomes safe, and spawned/despawned entities become visible at the sync point instead of mid-loop. Like everything else, it is fully preallocated: `commands_cap` records plus `payload_cap` bytes for component values, zero allocations while recording or replaying.
 
 ```odin
 cb: ecs.Command_Buffer
@@ -336,7 +362,7 @@ ecs.cmd_remove_component(&cb, &shields, hit_eid)
 
 spawned, _ := ecs.create_entity(&db) // creating entities is already iteration-safe
 ecs.cmd_add_component(&cb, &positions, spawned, Position{ x = 10, y = 20 })
-ecs.cmd_tag(&cb, &is_enemy, spawned)
+ecs.cmd_flag(&cb, &status, spawned, Status.Enemy)
 
 // sync point, single-threaded:
 skipped, err := ecs.replay(&cb) // applies in order, then clears the buffer

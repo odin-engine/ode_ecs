@@ -252,7 +252,7 @@ clear_flags(self: ^Flags_Table, eid: entity_id) -> Error
 flags_of(a, b, ...: $E) -> Bits                                         // 1..8 enum values, or flags_of(bit_set[E]{...})
 flags_term(table: ^Flags_Table, bits: Bits, op := Flags_Op.And) -> Flags
 
-clear, table_len, table_cap, slice (-> []Bits), entities_slice, get_entity, memory_usage, is_valid   // proc groups
+clear, pack, pause_packing, resume_packing, table_len, table_cap, slice (-> []Bits), entities_slice, get_entity, memory_usage, is_valid   // proc groups
 ```
 
 ```odin

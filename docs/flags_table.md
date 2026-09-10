@@ -89,7 +89,7 @@ A `Flags_Table` is a [`Compact_Table(Bits)`](tables.md#compact_tablet): a Robin 
 
 Memory is `24·cap + 8·next_pow2(2·cap)` bytes (about 40 KB at `cap = 1000`), independent of `entities_cap`. Each Flags_Table uses one component-table id, from the same 128 × `ECS_TABLES_MULT` budget as other component tables.
 
-Because it is a real table, the usual machinery applies: `destroy_entity` clears the entity's flags; `table_len`, `table_cap`, `slice` (flags in row order), `entities_slice`, `memory_usage` and `is_valid` work; `any_table(&status)` reports component type `Bits` and `entity_tables` lists it.
+Because it is a real table, the usual machinery applies: `destroy_entity` clears the entity's flags; `table_len`, `table_cap`, `slice` (flags in row order), `entities_slice`, `memory_usage`, `is_valid` and `pause_packing`/`resume_packing`/`pack` work; `any_table(&status)` reports component type `Bits` and `entity_tables` lists it.
 
 The generic component procedures (`add_component`, `get_component_mut`, …) do not accept a `^Flags_Table` — use the flag API, which keeps views and observers in sync. Through `Any_Table`, `any_table_add_component` with `nil` or empty bits returns `Flags_Bits_Cannot_Be_Empty`.
 

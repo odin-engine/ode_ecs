@@ -649,6 +649,7 @@ package ode_ecs
             compact_table__pack,
             tiny_table__pack,
             tag_table__pack,
+            flags_table__pack,
             arch_table__pack,
             group__pack,
         }
@@ -659,6 +660,7 @@ package ode_ecs
             compact_table__pause_packing,
             tiny_table__pause_packing,
             tag_table__pause_packing,
+            flags_table__pause_packing,
             arch_table__pause_packing,
             group__pause_packing,
         }
@@ -669,6 +671,7 @@ package ode_ecs
             compact_table__resume_packing,
             tiny_table__resume_packing,
             tag_table__resume_packing,
+            flags_table__resume_packing,
             arch_table__resume_packing,
             group__resume_packing,
         }

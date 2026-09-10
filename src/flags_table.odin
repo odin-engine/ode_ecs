@@ -325,3 +325,18 @@ package ode_ecs
 
         return nil
     }
+
+    flags_table__pause_packing :: proc(self: ^Flags_Table) -> Error {
+        when VALIDATIONS do assert(flags_table__is_valid(self))
+        return compact_table_raw__pause_packing(cast(^Compact_Table_Raw) self)
+    }
+
+    flags_table__resume_packing :: proc(self: ^Flags_Table) -> Error {
+        when VALIDATIONS do assert(flags_table__is_valid(self))
+        return compact_table_raw__resume_packing(cast(^Compact_Table_Raw) self)
+    }
+
+    flags_table__pack :: proc(self: ^Flags_Table) -> Error {
+        when VALIDATIONS do assert(flags_table__is_valid(self))
+        return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
+    }
