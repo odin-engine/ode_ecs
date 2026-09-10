@@ -249,7 +249,7 @@ package ode_ecs
                 return 0
             case Table_Type.Table:
                 return (cast(^Table_Base) table).holes_count
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return (cast(^Compact_Table_Base) table).holes_count
             case Table_Type.Tiny_Table:
                 return (cast(^Tiny_Table_Base) table).holes_count
@@ -487,7 +487,7 @@ package ode_ecs
                 snap_writer__write(w, raw_data(raw.rid_to_eid), n * size_of(entity_id))
                 snap_writer__write(w, raw_data(raw.rows), n * ti.size)
                 snap_writer__pad8(w)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 raw := cast(^Compact_Table_Raw) table
                 snap_writer__write_name(w, ti)
                 snap_writer__pad8(w)
@@ -860,7 +860,19 @@ package ode_ecs
                         if stamps[eid.ix] == i32(section_ix + 1) do return API_Error.Snapshot_Invalid
                         stamps[eid.ix] = i32(section_ix + 1)
                     }
-                    _ = snap_reader__bytes(&r, n * ti.size) or_return
+                    row_bytes := snap_reader__bytes(&r, n * ti.size) or_return
+                    if table.type == Table_Type.Flags_Table {
+                        for i in 0..<n {
+                            empty := true
+                            for b in row_bytes[i * ti.size:(i + 1) * ti.size] {
+                                if b != 0 {
+                                    empty = false
+                                    break
+                                }
+                            }
+                            if empty do return API_Error.Snapshot_Invalid
+                        }
+                    }
                     snap_reader__pad8(&r) or_return
                 } else {
                     if th.comp_size != 0 || th.comp_align != 0 || name_len != 0 {
@@ -1074,7 +1086,7 @@ package ode_ecs
                     raw.eid_to_rid[eid.ix] = u32(rid)
                     uni_bits__add(&db.eid_to_bits[eid.ix], raw.id)
                 }
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 raw := cast(^Compact_Table_Raw) table
                 _ = snap_reader__bytes(r, int(th.name_len)) or_return
                 snap_reader__pad8(r) or_return

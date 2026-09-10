@@ -10,7 +10,6 @@ package ode_ecs
 ///////////////////////////////////////////////////////////////////////////////
 // Bits
 
-    Bits :: bit_set[0..<BIT_SET_VALUES_CAP]
     
     bits__clear :: proc "contextless" (self: ^Bits) {
         self^ = {}

@@ -2,7 +2,7 @@
 
 A **table** is a dense array of components of one type — very much like a table in a relational database. Each component type gets its own table, and every table is attached to a [Database](database.md). Components are stored 100% densely (no gaps, no per-component metadata), so iterating a table is just iterating a slice.
 
-ODE_ECS has four table variants. They share the same core operations but trade memory for capacity differently:
+ODE_ECS has five table variants. They share the same core operations but trade memory for capacity differently:
 
 | Variant | Component data | When to use |
 |---|---|---|
@@ -10,6 +10,7 @@ ODE_ECS has four table variants. They share the same core operations but trade m
 | `Compact_Table(T)` | dense array | Memory saver: the `eid → ptr` index is a Robin Hood hash map instead of a flat array. Good when `cap` is much smaller than `entities_cap` (rule of thumb: `cap < entities_cap / 4`) but bigger than a Tiny_Table. |
 | `Tiny_Table(T)` | fixed 8 rows stored inline in the struct | Very small tables (singletons, a handful of bosses). No row allocation at all. |
 | `Tag_Table` | none | Stores no data — only "tags" entities. Useful as a [view](view.md) filter. |
+| `Flags_Table` | `Bits` — up to 128 flags per entity | Several boolean states per entity in one table, testable in views with flag operations. See [Flags_Table](flags_table.md). |
 
 All variants preallocate everything at init and never reallocate. `cap` cannot exceed the database's `entities_cap`.
 

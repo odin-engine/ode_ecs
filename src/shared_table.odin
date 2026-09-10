@@ -53,6 +53,8 @@ package ode_ecs
                 tiny_table_base__terminate(cast(^Tiny_Table_Base)self) or_return
             case Table_Type.Compact_Table:
                 compact_table_raw__terminate(cast(^Compact_Table_Raw)self) or_return
+            case Table_Type.Flags_Table:
+                flags_table__terminate_raw(cast(^Flags_Table)self) or_return
             case Table_Type.Tag_Table:
                 tag_table__terminate(cast(^Tag_Table)self) or_return
             case Table_Type.Arch_Table:
@@ -79,7 +81,7 @@ package ode_ecs
                 return table_base__is_valid(cast(^Table_Base) self)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__is_valid(cast(^Tiny_Table_Base) self)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__is_valid(cast(^Compact_Table_Base) self)
             case Table_Type.Tag_Table:
                 return tag_table__is_valid(cast(^Tag_Table)self)
@@ -101,6 +103,8 @@ package ode_ecs
                 return tiny_table_base__memory_usage(cast(^Tiny_Table_Base) self)
             case Table_Type.Compact_Table:
                 return compact_table_base__memory_usage(cast(^Compact_Table_Base) self)
+            case Table_Type.Flags_Table:
+                return flags_table__memory_usage(cast(^Flags_Table) self)
             case Table_Type.Tag_Table:
                 return tag_table__memory_usage(cast(^Tag_Table)self)
             case Table_Type.Arch_Table:
@@ -119,7 +123,7 @@ package ode_ecs
                 return table_raw__len(cast(^Table_Raw)self)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__len(cast(^Tiny_Table_Base) self)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_raw__len(cast(^Compact_Table_Raw)self)
             case Table_Type.Tag_Table:
                 return tag_table__len(cast(^Tag_Table)self)
@@ -139,7 +143,7 @@ package ode_ecs
                 return table_base__cap(cast(^Table_Base)self)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__cap(cast(^Tiny_Table_Base)self)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__cap(cast(^Compact_Table_Base)self)
             case Table_Type.Tag_Table:
                 return tag_table__cap(cast(^Tag_Table)self)
@@ -162,7 +166,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 t := cast(^Tiny_Table_Base) self
                 return t.rid_to_eid[:t.len]
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 t := cast(^Compact_Table_Raw) self
                 return t.rid_to_eid[:len(t.rows)]
             case Table_Type.Tag_Table:
@@ -184,7 +188,7 @@ package ode_ecs
                 return table_base__get_entity_by_row_number(cast(^Table_Base) self, row_number)
             case Table_Type.Tiny_Table: 
                 return tiny_table_base__get_entity_by_row_number(cast(^Tiny_Table_Base) self, row_number)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__get_entity_by_row_number(cast(^Compact_Table_Base) self, row_number)
             case Table_Type.Tag_Table:
                return tag_table__get_entity_by_row_number(cast(^Tag_Table) self, row_number)
@@ -200,7 +204,7 @@ package ode_ecs
         #partial switch self.type {
             case Table_Type.Table:
                 return (cast(^Table_Base) self).type_info
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return (cast(^Compact_Table_Base) self).type_info
             case Table_Type.Tiny_Table:
                 return (cast(^Tiny_Table_Base) self).type_info
@@ -216,7 +220,7 @@ package ode_ecs
                 return table_raw__get_component_by_entity(cast(^Table_Raw) self, eid)
             case Table_Type.Tiny_Table: 
                 return tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) self, eid)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid)
             case Table_Type.Tag_Table:
                 return nil
@@ -238,6 +242,8 @@ package ode_ecs
                 return tiny_table_raw__add_component(cast(^Tiny_Table_Raw) self, eid, data)
             case Table_Type.Compact_Table:
                 return compact_table_raw__add_component(cast(^Compact_Table_Raw) self, eid, data)
+            case Table_Type.Flags_Table:
+                return flags_table__add_raw(cast(^Flags_Table) self, eid, data)
             case Table_Type.Tag_Table:
                 return nil, tag_table__add_tag(cast(^Tag_Table) self, eid)
             case Table_Type.Arch_Table:
@@ -258,6 +264,8 @@ package ode_ecs
                 return tiny_table_raw__remove_component(cast(^Tiny_Table_Raw) self, eid)
             case Table_Type.Compact_Table:
                 return compact_table_raw__remove_component(cast(^Compact_Table_Raw) self, eid)
+            case Table_Type.Flags_Table:
+                return flags_table__remove_row(cast(^Flags_Table) self, eid)
             case Table_Type.Tag_Table:
                 return tag_table__remove_tag(cast(^Tag_Table) self, eid)
             case Table_Type.Arch_Table:
@@ -276,7 +284,7 @@ package ode_ecs
                 return table_raw__pack(cast(^Table_Raw) self)
             case Table_Type.Tiny_Table:
                 return tiny_table_raw__pack(cast(^Tiny_Table_Raw) self)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_raw__pack(cast(^Compact_Table_Raw) self)
             case Table_Type.Tag_Table:
                 return tag_table__pack(cast(^Tag_Table) self)
@@ -300,7 +308,7 @@ package ode_ecs
                 return table_raw__clear(cast(^Table_Raw) self)
             case Table_Type.Tiny_Table: 
                 return tiny_table_raw__clear(cast(^Tiny_Table_Raw) self)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_raw__clear(cast(^Compact_Table_Raw) self)
             case Table_Type.Tag_Table:
                 return tag_table__clear(cast(^Tag_Table)self)
@@ -323,7 +331,7 @@ package ode_ecs
                 return table_base__attach_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__attach_subscriber(cast(^Tiny_Table_Base)self, view)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__attach_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__attach_subscriber(cast(^Tag_Table)self, view)
@@ -343,7 +351,7 @@ package ode_ecs
                 return table_base__detach_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__detach_subscriber(cast(^Tiny_Table_Base)self, view)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__detach_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__detach_subscriber(cast(^Tag_Table)self, view)
@@ -364,7 +372,7 @@ package ode_ecs
             case Table_Type.Tiny_Table:
                 slot := tiny_table_base__slot(cast(^Tiny_Table_Base) self)
                 return slot.subscribers[:]
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return (cast(^Compact_Table_Base) self).subscribers.items
             case Table_Type.Tag_Table:
                 return (cast(^Tag_Table) self).subscribers.items
@@ -384,7 +392,7 @@ package ode_ecs
                 return table_base__attach_exclude_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__attach_exclude_subscriber(cast(^Tiny_Table_Base)self, view)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__attach_exclude_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__attach_exclude_subscriber(cast(^Tag_Table)self, view)
@@ -404,7 +412,7 @@ package ode_ecs
                 return table_base__detach_exclude_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__detach_exclude_subscriber(cast(^Tiny_Table_Base)self, view)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__detach_exclude_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__detach_exclude_subscriber(cast(^Tag_Table)self, view)
@@ -424,7 +432,7 @@ package ode_ecs
                 return table_base__attach_any_of_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__attach_any_of_subscriber(cast(^Tiny_Table_Base)self, view)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__attach_any_of_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__attach_any_of_subscriber(cast(^Tag_Table)self, view)
@@ -444,7 +452,7 @@ package ode_ecs
                 return table_base__detach_any_of_subscriber(cast(^Table_Base)self, view)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__detach_any_of_subscriber(cast(^Tiny_Table_Base)self, view)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__detach_any_of_subscriber(cast(^Compact_Table_Base)self, view)
             case Table_Type.Tag_Table:
                 return tag_table__detach_any_of_subscriber(cast(^Tag_Table)self, view)
@@ -464,7 +472,7 @@ package ode_ecs
                 return table_base__attach_sync_channel(cast(^Table_Base)self, ch)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__attach_sync_channel(cast(^Tiny_Table_Base)self, ch)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__attach_sync_channel(cast(^Compact_Table_Base)self, ch)
             case Table_Type.Tag_Table:
                 return tag_table__attach_sync_channel(cast(^Tag_Table)self, ch)
@@ -484,7 +492,7 @@ package ode_ecs
                 return table_base__detach_sync_channel(cast(^Table_Base)self, ch)
             case Table_Type.Tiny_Table:
                 return tiny_table_base__detach_sync_channel(cast(^Tiny_Table_Base)self, ch)
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_base__detach_sync_channel(cast(^Compact_Table_Base)self, ch)
             case Table_Type.Tag_Table:
                 return tag_table__detach_sync_channel(cast(^Tag_Table)self, ch)
@@ -504,7 +512,7 @@ package ode_ecs
                 return table_raw__get_component_by_entity(cast(^Table_Raw) self, eid) != nil
             case Table_Type.Tiny_Table:
                 return tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) self, eid) != nil
-            case Table_Type.Compact_Table:
+            case Table_Type.Compact_Table, Table_Type.Flags_Table:
                 return compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) self, eid) != nil
             case Table_Type.Tag_Table:
                 return tag_table__has_tag(cast(^Tag_Table) self, eid)

@@ -1,6 +1,6 @@
 ## 💾 Saving and loading (snapshots)
 
-A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags, parent/child relations, and [`Pair_Table`](/docs/pair_table.md) many-to-many relations (including their payload data — `presence` round-trips as an ordinary `Tag_Table` section, and the `(holder, target, data)` rows round-trip alongside it). Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
+A whole `Database` can be serialized into a binary snapshot — entities (including their generations, so `entity_id`s you saved inside components or elsewhere stay valid after loading), all components across every table type, tags, [`Flags_Table`](/docs/flags_table.md) flags, parent/child relations, and [`Pair_Table`](/docs/pair_table.md) many-to-many relations (including their payload data — `presence` round-trips as an ordinary `Tag_Table` section, and the `(holder, target, data)` rows round-trip alongside it). Views and groups are derived data: they are not stored, and are rebuilt automatically after a load.
 
 ```odin
 // to/from a file (the only allocation is a temporary buffer):

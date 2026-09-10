@@ -18,6 +18,8 @@ package ode_ecs
 
     BIT_SET_VALUES_CAP :: 128
 
+    Bits :: bit_set[0..<BIT_SET_VALUES_CAP]
+
     TABLES_MULT :: #config(ECS_TABLES_MULT, 1)
 
     //
@@ -228,10 +230,12 @@ package ode_ecs
         replay                   :: command_buffer__replay
 
         cmd_destroy_entity  :: command_buffer__destroy_entity
-        cmd_add_tag         :: command_buffer__add_tag
-        cmd_tag             :: command_buffer__add_tag
-        cmd_remove_tag      :: command_buffer__remove_tag
-        cmd_untag           :: command_buffer__remove_tag
+        cmd_add_tag         :: proc { command_buffer__add_tag, command_buffer__flag, command_buffer__flag_enum }
+        cmd_tag             :: cmd_add_tag
+        cmd_remove_tag      :: proc { command_buffer__remove_tag, command_buffer__unflag, command_buffer__unflag_enum }
+        cmd_untag           :: cmd_remove_tag
+        cmd_flag            :: proc { command_buffer__flag, command_buffer__flag_enum }
+        cmd_unflag          :: proc { command_buffer__unflag, command_buffer__unflag_enum }
 
         cmd_add_component   :: proc {
             command_buffer__add_component_for_table,
@@ -273,11 +277,13 @@ package ode_ecs
             sync_channel__register_compact_table,
             sync_channel__register_tiny_table,
             sync_channel__register_tag_table,
+            sync_channel__register_flags_table,
             sync_channel__register_arch_table,
             sync_decoder__register_table,
             sync_decoder__register_compact_table,
             sync_decoder__register_tiny_table,
             sync_decoder__register_tag_table,
+            sync_decoder__register_flags_table,
             sync_decoder__register_arch_table,
         }
         sync_unregister :: sync_channel__unregister_table
@@ -293,7 +299,7 @@ package ode_ecs
             tiny_table__get_component_mut,
         }
 
-        // UNSAFE: skips the generation check. Kept separate from get_component_mut for visibility.
+        // UNSAFE: skips the generation check.
         get_component_mut_unchecked :: proc {
             table__get_component_mut_unchecked,
             compact_table__get_component_mut_unchecked,
@@ -393,6 +399,7 @@ package ode_ecs
             compact_table__get_entity_by_row_number,
             tiny_table__get_entity_by_row_number,
             tag_table__get_entity_by_row_number,
+            flags_table__get_entity_by_row_number,
             arch_table__get_entity_by_row_number,
             iterator__get_entity,
             view_row__get_entity,
@@ -403,6 +410,7 @@ package ode_ecs
             compact_table__get_entity_by_row_number,
             tiny_table__get_entity_by_row_number,
             tag_table__get_entity_by_row_number,
+            flags_table__get_entity_by_row_number,
             arch_table__get_entity_by_row_number,
         }
 
@@ -427,7 +435,7 @@ package ode_ecs
             arch_table__remove_entity,
         }
 
-        // Skips invalid/expired/absent eids. Table, Compact_Table, Tiny_Table only.
+        // Skips invalid/expired/absent eids; Table, Compact_Table, Tiny_Table only.
         remove_components   :: proc {
             table__remove_components,
             compact_table__remove_components,
@@ -460,7 +468,7 @@ package ode_ecs
             view_row__get_component_for_arch_table,
         }
 
-        // UNSAFE: skips the generation check. Kept separate from get_component for visibility.
+        // UNSAFE: skips the generation check.
         get_component_unchecked :: proc {
             table__get_component_unchecked,
             compact_table__get_component_unchecked,
@@ -473,6 +481,7 @@ package ode_ecs
             compact_table__has_component,
             tiny_table__has_component,
             tag_table__has_tag,
+            flags_table__has_any,
             arch_table__has_entity,
         }
 
@@ -527,15 +536,63 @@ package ode_ecs
 
         add_tag :: proc {
             tag_table__add_tag,
+            flags_table__flag,
+            flags_table__flag_enum,
         }
         tag :: add_tag
 
         remove_tag :: proc {
             tag_table__remove_tag,
+            flags_table__unflag,
+            flags_table__unflag_enum,
         }
         untag :: remove_tag
 
-        has_tag :: tag_table__has_tag
+        has_tag :: proc {
+            tag_table__has_tag,
+            flags_table__has_flag,
+            flags_table__has_flag_enum,
+            flags_table__has_any,
+        }
+
+        //
+        // Flags_Table
+        //
+
+        flags_table_init      :: flags_table__init
+        flags_table_terminate :: flags_table__terminate
+
+        flag :: proc {
+            flags_table__flag,
+            flags_table__flag_enum,
+        }
+
+        unflag :: proc {
+            flags_table__unflag,
+            flags_table__unflag_enum,
+        }
+
+        has_flag :: proc {
+            flags_table__has_flag,
+            flags_table__has_flag_enum,
+        }
+
+        has_flags   :: flags_table__has_flags
+        get_flags   :: flags_table__get_flags
+        set_flags   :: flags_table__set_flags
+        clear_flags :: flags_table__clear_flags
+
+        flags_of :: proc {
+            flags__of_set,
+            flags__of_1,
+            flags__of_2,
+            flags__of_3,
+            flags__of_4,
+            flags__of_5,
+            flags__of_6,
+            flags__of_7,
+            flags__of_8,
+        }
 
         //
         // Pairs
@@ -580,6 +637,7 @@ package ode_ecs
             view__clear,
             tiny_table__clear,
             tag_table__clear,
+            flags_table__clear,
             arch_table__clear,
             relations_table__clear,
             command_buffer__clear,
@@ -620,6 +678,7 @@ package ode_ecs
             compact_table__len,
             tiny_table__len,
             tag_table__len,
+            flags_table__len,
             arch_table__len,
             relations_table__len,
         }
@@ -629,6 +688,7 @@ package ode_ecs
             compact_table__cap,
             tiny_table__cap,
             tag_table__cap,
+            flags_table__cap,
             arch_table__cap,
             relations_table__cap,
         }
@@ -639,6 +699,7 @@ package ode_ecs
             compact_table__entities_slice,
             tiny_table__entities_slice,
             tag_table__entities_slice,
+            flags_table__entities_slice,
             arch_table__entities_slice,
             group__entities_slice,
         }
@@ -648,6 +709,7 @@ package ode_ecs
             compact_table__slice,
             tiny_table__slice,
             tag_table__slice,
+            flags_table__slice,
             view__column_slice,         // slice(&view, T) -> []^T - returns pointers to structs
             view__entities_slice,       // slice(&view) -> []entity_id
             group__slice,
@@ -679,6 +741,7 @@ package ode_ecs
             group__memory_usage,
             tiny_table__memory_usage,
             tag_table__memory_usage,
+            flags_table__memory_usage,
             arch_table__memory_usage,
             relations_table__memory_usage,
             command_buffer__memory_usage,
@@ -697,6 +760,7 @@ package ode_ecs
             group__is_valid,
             tiny_table__is_valid,
             tag_table__is_valid,
+            flags_table__is_valid,
             arch_table__is_valid,
             relations_table__is_valid,
             command_buffer__is_valid,
@@ -741,6 +805,7 @@ package ode_ecs
             Compact_Table,
             Tag_Table,
             Arch_Table,
+            Flags_Table,
         }
 
         // ECS specific errors
@@ -782,6 +847,8 @@ package ode_ecs
             Table_To_Cannot_Contain_Entity,
             Entity_Already_In_Table,
             Table_Type_Not_Supported,
+            Flags_Bits_Cannot_Be_Empty,
+            View_Includes_Need_A_Table,
         }
 
         Error :: union #shared_nil {

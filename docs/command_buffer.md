@@ -14,6 +14,7 @@ ecs.cmd_remove_component(&cb, &shields, hit_eid)
 spawned, _ := ecs.create_entity(&db) // creating entities is already iteration-safe
 ecs.cmd_add_component(&cb, &positions, spawned, Position{ x = 10, y = 20 })
 ecs.cmd_tag(&cb, &is_enemy, spawned)
+ecs.cmd_flag(&cb, &status, spawned, Status.Alert)   // Flags_Table
 
 // relations (needs a Relations_Table on the db, see relations.md):
 ecs.cmd_set_parent(&cb, spawned, squad_eid)

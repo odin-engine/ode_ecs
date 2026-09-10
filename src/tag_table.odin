@@ -8,7 +8,6 @@ package ode_ecs
 
 // Core
     import "core:mem"
-    import "core:math"
 
 // ODE
     import oc "ode_core"
@@ -67,8 +66,7 @@ package ode_ecs
         // subscriber lists and sync_watchers are allocated lazily, on first attach.
 
         self.rows = make([]entity_id, self.cap, db.allocator) or_return
-        // load factor 0.5 and make it power of two
-        oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
+        oc_maps.rh_map32__init(&self.eid_to_rid, oc_maps.rh_map32__capacity_for(self.cap), db.allocator) or_return
 
         // database__attach_tag is capacity-limited and must not leak the allocations above on failure.
         id, aerr := database__attach_tag(db, self)

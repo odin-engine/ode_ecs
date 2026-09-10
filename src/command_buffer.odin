@@ -37,6 +37,10 @@
 */
 package ode_ecs
 
+// Base
+    import "base:intrinsics"
+
+
 // Core
     import "core:mem"
 
@@ -58,12 +62,15 @@ package ode_ecs
         Arch_Add_Entity,
         Add_Pair,
         Remove_Pair,
+        Set_Flag,
+        Clear_Flag,
     }
 
     @(private)
     Command :: struct {
         kind: Command_Kind,
         destroy_children: bool,
+        flag_bit: u8,
         eid: entity_id,
         parent: entity_id,
         target: entity_id,
@@ -344,6 +351,22 @@ package ode_ecs
         return command_buffer__record_simple(self, Command_Kind.Remove_Tag, cast(^Shared_Table) table, eid, loc)
     }
 
+    command_buffer__flag :: proc(self: ^Command_Buffer, table: ^Flags_Table, eid: entity_id, #any_int bit: int, loc := #caller_location) -> Error {
+        return command_buffer__record_flag(self, Command_Kind.Set_Flag, table, eid, bit, loc)
+    }
+
+    command_buffer__flag_enum :: proc(self: ^Command_Buffer, table: ^Flags_Table, eid: entity_id, bit: $E, loc := #caller_location) -> Error where intrinsics.type_is_enum(E) {
+        return command_buffer__record_flag(self, Command_Kind.Set_Flag, table, eid, int(bit), loc)
+    }
+
+    command_buffer__unflag :: proc(self: ^Command_Buffer, table: ^Flags_Table, eid: entity_id, #any_int bit: int, loc := #caller_location) -> Error {
+        return command_buffer__record_flag(self, Command_Kind.Clear_Flag, table, eid, bit, loc)
+    }
+
+    command_buffer__unflag_enum :: proc(self: ^Command_Buffer, table: ^Flags_Table, eid: entity_id, bit: $E, loc := #caller_location) -> Error where intrinsics.type_is_enum(E) {
+        return command_buffer__record_flag(self, Command_Kind.Clear_Flag, table, eid, int(bit), loc)
+    }
+
     command_buffer__set_parent :: proc(self: ^Command_Buffer, child: entity_id, parent: entity_id, loc := #caller_location) -> Error {
         when VALIDATIONS {
             assert(command_buffer__is_valid(self), loc = loc)
@@ -471,6 +494,20 @@ package ode_ecs
                     terr := tag_table__add_tag(cast(^Tag_Table) cmd.table, cmd.eid)
                     if terr != nil && err == nil do err = terr
 
+                case Command_Kind.Set_Flag, Command_Kind.Clear_Flag:
+                    if !command__table_matches(cmd) || cmd.table.type != Table_Type.Flags_Table {
+                        skipped += 1
+                        continue
+                    }
+                    ft := cast(^Flags_Table) cmd.table
+                    ferr: Error
+                    if cmd.kind == Command_Kind.Set_Flag {
+                        ferr = flags_table__flag(ft, cmd.eid, int(cmd.flag_bit))
+                    } else {
+                        ferr = flags_table__unflag(ft, cmd.eid, int(cmd.flag_bit))
+                    }
+                    if ferr != nil && err == nil do err = ferr
+
                 case Command_Kind.Set_Parent:
                     if database__is_entity_correct(self.db, cmd.parent) != nil {
                         skipped += 1
@@ -531,6 +568,25 @@ package ode_ecs
         self.count += 1
 
         return nil
+    }
+
+    @(private)
+    command_buffer__record_flag :: proc(self: ^Command_Buffer, kind: Command_Kind, table: ^Flags_Table, eid: entity_id, bit: int, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(command_buffer__is_valid(self), loc = loc)
+            assert(!self.replaying, loc = loc)
+            assert(flags_table__is_valid(table), loc = loc)
+            assert(table.db == self.db, loc = loc)
+            assert(bit >= 0 && bit < BIT_SET_VALUES_CAP, "flag bit out of range 0..<128", loc = loc)
+        }
+
+        return command_buffer__append(self, Command{
+            kind = kind,
+            eid = eid,
+            table = cast(^Shared_Table) table,
+            table_id = table.id,
+            flag_bit = u8(bit),
+        })
     }
 
     @(private)

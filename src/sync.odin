@@ -379,6 +379,11 @@ package ode_ecs
         return sync_channel__register_common(self, cast(^Shared_Table) table, nil, true, false, loc)
     }
 
+    sync_channel__register_flags_table :: proc(self: ^Sync_Channel, table: ^Flags_Table, loc := #caller_location) -> Error {
+        when VALIDATIONS do assert(flags_table__is_valid(table), loc = loc)
+        return sync_channel__register_common(self, cast(^Shared_Table) table, type_info_of(Bits), false, false, loc)
+    }
+
     // Arch_Table isn't supported yet — this stub exists so sync_register(&channel, &an_arch_table) compiles and returns a clear Error instead of failing to match any overload.
     sync_channel__register_arch_table :: proc(self: ^Sync_Channel, table: ^Arch_Table, allow_non_pod := false) -> Error {
         return API_Error.Sync_Table_Type_Not_Supported
@@ -792,6 +797,11 @@ package ode_ecs
         return sync_decoder__register_common(self, cast(^Shared_Table) table, nil, true, false, loc)
     }
 
+    sync_decoder__register_flags_table :: proc(self: ^Sync_Decoder, table: ^Flags_Table, loc := #caller_location) -> Error {
+        when VALIDATIONS do assert(flags_table__is_valid(table), loc = loc)
+        return sync_decoder__register_common(self, cast(^Shared_Table) table, type_info_of(Bits), false, false, loc)
+    }
+
     // Arch_Table isn't supported yet — this stub compiles and returns a clear Error instead of failing to match any overload.
     sync_decoder__register_arch_table :: proc(self: ^Sync_Decoder, table: ^Arch_Table, allow_non_pod := false) -> Error {
         return API_Error.Sync_Table_Type_Not_Supported
@@ -866,6 +876,13 @@ package ode_ecs
                     comp = shared_table__get_component(e.table, eid)
                 }
 
+                flags_buf: Bits
+                is_flags := e.table.type == Table_Type.Flags_Table && database__is_entity_correct(self.db, eid) == nil
+                if is_flags {
+                    flags_buf = flags_table__bits_of(cast(^Flags_Table) e.table, eid)
+                    comp = &flags_buf
+                }
+
                 for fi in 0..<e.field_count {
                     if mask & (u32(1) << uint(fi)) == 0 do continue
                     f := e.fields[fi]
@@ -875,6 +892,7 @@ package ode_ecs
                     }
                     offset += int(f.size)
                 }
+                if is_flags do _ = flags_table__set_flags(cast(^Flags_Table) e.table, eid, flags_buf)
             }
         }
 

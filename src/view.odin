@@ -19,7 +19,7 @@ package ode_ecs
     @(private)
     VIEW_NO_RID :: view_record_id(max(u32))
 
-    View_Term :: union { ^Shared_Table, ^Pair_Table_Base }
+    View_Term :: union { ^Shared_Table, ^Pair_Table_Base, Flags }
 
     View_Column :: struct {
         type_info: ^runtime.Type_Info,
@@ -65,6 +65,7 @@ package ode_ecs
         any_of_tag_bits: Uni_Bits,
         suspended: bool,
         stale: bool,
+        match_extra: bool,
 
         dense_state: View_Dense_State,
         dense_cols: []View_Dense_State,
@@ -74,6 +75,11 @@ package ode_ecs
 
         len: int,
         cap: int,
+
+        flags_includes: []Flags,
+        flags_excludes: []Flags,
+        flags_any_of: []Flags,
+        has_flags: bool,
     }
 
     view__is_valid :: proc(self: ^View) -> bool {
@@ -92,15 +98,106 @@ package ode_ecs
     }
 
     @(private)
-    view__terms_to_tables :: proc(terms: []View_Term, allocator: runtime.Allocator) -> (res: []^Shared_Table, err: runtime.Allocator_Error) {
-        res = make([]^Shared_Table, len(terms), allocator) or_return
-        for term, i in terms {
+    view__terms_to_tables :: proc(terms: []View_Term, allocator: runtime.Allocator, flags_presence := false) -> (res: []^Shared_Table, err: runtime.Allocator_Error) {
+        n := 0
+        for term in terms {
             switch t in term {
-            case ^Shared_Table:    res[i] = t
-            case ^Pair_Table_Base: res[i] = &t.presence
+            case ^Shared_Table, ^Pair_Table_Base: n += 1
+            case Flags: if flags_presence && flags__implies_row(t.bits, t.op) do n += 1
+            }
+        }
+
+        res = make([]^Shared_Table, n, allocator) or_return
+        i := 0
+        for term in terms {
+            switch t in term {
+            case ^Shared_Table:
+                res[i] = t
+                i += 1
+            case ^Pair_Table_Base:
+                res[i] = &t.presence
+                i += 1
+            case Flags:
+                if flags_presence && flags__implies_row(t.bits, t.op) {
+                    res[i] = t.table
+                    i += 1
+                }
             }
         }
         return res, nil
+    }
+
+    @(private)
+    view__validate_flags_term :: proc(db: ^Database, f: Flags, loc := #caller_location) -> Error {
+        when VALIDATIONS {
+            assert(f.table != nil && f.table.state == Object_State.Normal && f.table.type == Table_Type.Flags_Table, "Flags term needs an initialized Flags_Table", loc = loc)
+            assert(f.table.db == db, "Flags term's table belongs to another Database", loc = loc)
+        }
+        if f.bits == {} && f.op != Flags_Op.Exact do return API_Error.Flags_Bits_Cannot_Be_Empty
+        return nil
+    }
+
+    @(private)
+    view__validate_flags :: proc(db: ^Database, includes, excludes, any_of: []View_Term, loc := #caller_location) -> Error {
+        has_source := false
+        for term in includes {
+            switch t in term {
+            case ^Shared_Table, ^Pair_Table_Base:
+                has_source = true
+            case Flags:
+                view__validate_flags_term(db, t, loc) or_return
+                if flags__implies_row(t.bits, t.op) do has_source = true
+            }
+        }
+        for term in excludes {
+            if f, ok := term.(Flags); ok do view__validate_flags_term(db, f, loc) or_return
+        }
+        for term in any_of {
+            if f, ok := term.(Flags); ok do view__validate_flags_term(db, f, loc) or_return
+        }
+        if !has_source do return API_Error.View_Includes_Need_A_Table
+        return nil
+    }
+
+    @(private)
+    view__collect_flags :: proc(terms: []View_Term, allocator: runtime.Allocator) -> (res: []Flags, err: runtime.Allocator_Error) {
+        n := 0
+        for term in terms {
+            if _, ok := term.(Flags); ok do n += 1
+        }
+        if n == 0 do return nil, nil
+
+        res = make([]Flags, n, allocator) or_return
+        i := 0
+        for term in terms {
+            if f, ok := term.(Flags); ok {
+                res[i] = f
+                i += 1
+            }
+        }
+        return res, nil
+    }
+
+    @(private)
+    view__attach_flags_table :: proc(self: ^View, table: ^Flags_Table) -> Error {
+        for v in table.flags_subscribers.items do if v == self do return nil
+        if table.flags_subscribers.items == nil do oc.dense_arr__init(&table.flags_subscribers, SUBSCRIBERS_CAP, table.db.allocator) or_return
+        _, err := oc.dense_arr__add_growing(&table.flags_subscribers, self, table.db.allocator)
+        return err
+    }
+
+    @(private)
+    view__init_flags :: proc(self: ^View, includes, excludes, any_of: []View_Term) -> Error {
+        self.flags_includes = view__collect_flags(includes, self.db.allocator) or_return
+        self.flags_excludes = view__collect_flags(excludes, self.db.allocator) or_return
+        self.flags_any_of = view__collect_flags(any_of, self.db.allocator) or_return
+        self.has_flags = self.flags_includes != nil || self.flags_excludes != nil || self.flags_any_of != nil
+        self.match_extra = self.has_flags || oc.dense_arr__len(&self.any_of) > 0
+
+        for group in ([][]Flags{self.flags_includes, self.flags_excludes, self.flags_any_of}) {
+            for f in group do view__attach_flags_table(self, f.table) or_return
+        }
+        return nil
     }
 
     view__init :: proc(
@@ -120,6 +217,8 @@ package ode_ecs
 
         if includes == nil || len(includes) <= 0 do return API_Error.Tables_Array_Should_Not_Be_Empty
 
+        view__validate_flags(db, includes, excludes, any_of, loc) or_return
+
         uni_bits__clear(&self.bits)
         uni_bits__clear(&self.exclude_bits)
         uni_bits__clear(&self.any_of_bits)
@@ -129,13 +228,18 @@ package ode_ecs
         self.excludes = {}
         self.any_of = {}
         self.arch_columns = {}
+        self.flags_includes = nil
+        self.flags_excludes = nil
+        self.flags_any_of = nil
+        self.has_flags = false
+        self.match_extra = false
         self.suspended = false
         self.stale = false
 
         self.db = db
         self.filter = filter
 
-        sorted_includes := view__terms_to_tables(includes, db.allocator) or_return
+        sorted_includes := view__terms_to_tables(includes, db.allocator, flags_presence = true) or_return
         defer delete(sorted_includes, db.allocator)
         slice.sort(sorted_includes)
         uniq_tables := slice.unique(sorted_includes)
@@ -295,6 +399,12 @@ package ode_ecs
             self.id = id
         }
 
+        ferr := view__init_flags(self, includes, excludes, any_of)
+        if ferr != nil {
+            view__terminate(self)
+            return ferr
+        }
+
         //
         // Subscribe to tables
         //
@@ -349,6 +459,21 @@ package ode_ecs
             derr := shared_table__detach_any_of_subscriber(table, self)
             if derr != nil && derr != oc.Core_Error.Not_Found do return derr
         }
+
+        for group in ([][]Flags{self.flags_includes, self.flags_excludes, self.flags_any_of}) {
+            for f in group {
+                if f.table == nil || f.table.type != Table_Type.Flags_Table do continue
+                _ = oc.dense_arr__remove_by_value(&f.table.flags_subscribers, self)
+            }
+        }
+        if self.flags_includes != nil do delete(self.flags_includes, self.db.allocator) or_return
+        if self.flags_excludes != nil do delete(self.flags_excludes, self.db.allocator) or_return
+        if self.flags_any_of != nil do delete(self.flags_any_of, self.db.allocator) or_return
+        self.flags_includes = nil
+        self.flags_excludes = nil
+        self.flags_any_of = nil
+        self.has_flags = false
+        self.match_extra = false
 
         for &col in self.columns {
             if col.rows != nil do delete(col.rows, self.db.allocator) or_return
@@ -487,10 +612,43 @@ package ode_ecs
                uni_bits__is_subset(&self.tag_bits, tag_bits) &&
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
                uni_bits__no_intersection(&self.exclude_tag_bits, tag_bits) &&
-               (oc.dense_arr__len(&self.any_of) == 0 || uni_bits__intersects(&self.any_of_bits, bits) || uni_bits__intersects(&self.any_of_tag_bits, tag_bits)) &&
+               (!self.match_extra || view__extra_match(self, eid, bits, tag_bits)) &&
                (!self.db.has_disabled_components ||
                    (uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix]) &&
                     uni_bits__no_intersection(&self.tag_bits, &self.db.eid_to_tag_disabled_bits[eid.ix])))
+    }
+
+    @(private)
+    view__extra_match :: proc(self: ^View, eid: entity_id, bits: ^Uni_Bits, tag_bits: ^Uni_Bits) -> bool {
+        for f in self.flags_includes {
+            if !flags__holds(flags_table__bits_of(f.table, eid), f.bits, f.op) do return false
+        }
+        for f in self.flags_excludes {
+            if flags__holds(flags_table__bits_of(f.table, eid), f.bits, f.op) do return false
+        }
+        if oc.dense_arr__len(&self.any_of) == 0 && len(self.flags_any_of) == 0 do return true
+        if uni_bits__intersects(&self.any_of_bits, bits) || uni_bits__intersects(&self.any_of_tag_bits, tag_bits) do return true
+        for f in self.flags_any_of {
+            if flags__holds(flags_table__bits_of(f.table, eid), f.bits, f.op) do return true
+        }
+        return false
+    }
+
+    // Adds or removes eid to match its current state; never adds while eid is being destroyed.
+    @(private)
+    view__reevaluate :: proc(self: ^View, eid: entity_id) {
+        member := self.eid_to_rid[eid.ix] != VIEW_NO_RID
+        if view__components_match(self, eid) {
+            if member || self.db.destroying_eid_ix == eid.ix do return
+            when VALIDATIONS {
+                aerr := view__add_record(self, eid)
+                assert(aerr != API_Error.Cannot_Add_Record_To_View_Container_Is_Full, "view is full — entity silently dropped, raise the view's included tables' caps")
+            } else {
+                view__add_record(self, eid)
+            }
+        } else if member {
+            view__remove_record(self, eid)
+        }
     }
 
     view__rerun_filter :: proc(self: ^View, eid: entity_id) -> Error {
@@ -679,7 +837,7 @@ package ode_ecs
                     self.columns[cid].rows[row_ix] = nil
                 case Table_Type.Table:
                     self.columns[cid].rows[row_ix] = table_raw__get_component_by_entity(cast(^Table_Raw) table, eid)
-                case Table_Type.Compact_Table:
+                case Table_Type.Compact_Table, Table_Type.Flags_Table:
                     self.columns[cid].rows[row_ix] = compact_table_raw__get_component_by_entity(cast(^Compact_Table_Raw) table, eid)
                 case Table_Type.Tiny_Table:
                     self.columns[cid].rows[row_ix] = tiny_table_base__get_component_by_entity(cast(^Tiny_Table_Base) table, eid)

@@ -129,6 +129,11 @@ package ode_ecs
             return tag_table__add_tag(cast(^Tag_Table) st, dst_eid)
         }
 
+        if st.type == Table_Type.Flags_Table {
+            ft := cast(^Flags_Table) st
+            return flags_table__change(ft, dst_eid, flags_table__bits_of(ft, src_eid))
+        }
+
         elem_size := shared_table__type_info(st).size
 
         if !shared_table__has_component(st, dst_eid) {

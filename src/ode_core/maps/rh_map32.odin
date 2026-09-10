@@ -29,7 +29,7 @@ package maps
         capacity: int,
         count: int,
 
-        half_capacity: int,
+        max_count: int,
         mask: int,
     }
 
@@ -37,10 +37,15 @@ package maps
         if self == nil do return false
         if self.items == nil do return false
         if self.capacity <= 0 do return false
-        if self.half_capacity <= 0 do return false
+        if self.max_count <= 0 do return false
         if self.mask == 0 do return false
 
         return true
+    }
+
+    // Smallest power-of-2 capacity holding count items under RH_MAP32_LOAD_PCT.
+    rh_map32__capacity_for :: proc(#any_int count: int) -> int {
+        return math.next_power_of_two((count * 100 + RH_MAP32_LOAD_PCT - 1) / RH_MAP32_LOAD_PCT)
     }
 
     rh_map32__init :: proc(self: ^Rh_Map32, #any_int capacity: int, allocator := context.allocator, loc := #caller_location) -> (err: oc.Error) {
@@ -61,9 +66,9 @@ package maps
 
         // derive from self.capacity (may have been bumped to the 8 minimum above)
         when MAPS_TESTING {
-            self.half_capacity = self.capacity
+            self.max_count = self.capacity
         } else {
-            self.half_capacity = self.capacity / 2  // this is for 0.5 load factor
+            self.max_count = self.capacity * RH_MAP32_LOAD_PCT / 100
         }
 
         self.mask = self.capacity - 1
@@ -80,7 +85,7 @@ package maps
         self.capacity = 0
         self.count = 0
 
-        self.half_capacity = 0
+        self.max_count = 0
         self.mask = 0
 
         return nil
@@ -100,7 +105,7 @@ package maps
     // Insert; key must be < RH_MAP32_DELETED (#no_bounds_check: idx is always masked with capacity - 1).
     rh_map32__add :: proc(self: ^Rh_Map32, key: u32, value: u32) -> (err: oc.Core_Error) #no_bounds_check {
 
-        if self.count >= self.half_capacity { // load factor >= 0.5
+        if self.count >= self.max_count {
             return oc.Core_Error.Container_Is_Full
         }
 
@@ -134,25 +139,24 @@ package maps
             idx = (idx + 1) & self.mask
             probe_distance += 1
 
-            // No mid-probe bail-out: count < half_capacity guarantees an empty
+            // No mid-probe bail-out: count < max_count guarantees an empty
             // slot exists, and bailing after a swap would drop the displaced item.
         }
     }
 
     // Single-probe get-or-insert: one walk either finds an existing key (found=true) or, if can_insert, inserts at the walk's natural point (found=false).
     rh_map32__get_or_insert :: #force_inline proc(self: ^Rh_Map32, key: u32, insert_value: u32, can_insert: bool) -> (value: u32, found: bool, err: oc.Core_Error) #no_bounds_check {
-        insertable := can_insert && self.count < self.half_capacity
+        insertable := can_insert && self.count < self.max_count
 
         idx := rh_map32__hash(self, key)
         probe_distance := 0
 
         if !insertable {
-            for probe_distance < self.half_capacity {
-                if self.items[idx].key == RH_MAP32_DELETED {
-                    if can_insert do err = oc.Core_Error.Container_Is_Full
-                    return 0, false, err
-                }
-                if self.items[idx].key == key do return self.items[idx].value, true, oc.Core_Error.None
+            for probe_distance < self.max_count {
+                k := self.items[idx].key
+                if k == key do return self.items[idx].value, true, oc.Core_Error.None
+                if k == RH_MAP32_DELETED do break
+                if ((idx - rh_map32__hash(self, k)) & self.mask) < probe_distance do break
                 idx = (idx + 1) & self.mask
                 probe_distance += 1
             }
@@ -194,14 +198,11 @@ package maps
         probe_distance := 0
         idx := ix
 
-        for probe_distance < self.half_capacity {
-            if self.items[idx].key == RH_MAP32_DELETED {
-                return RH_MAP32_DELETED, oc.DELETED_INDEX
-            }
-
-            if self.items[idx].key == key {
-                return self.items[idx].value, idx
-            }
+        for probe_distance < self.max_count {
+            k := self.items[idx].key
+            if k == key do return self.items[idx].value, idx
+            if k == RH_MAP32_DELETED do break
+            if ((idx - rh_map32__hash(self, k)) & self.mask) < probe_distance do break // Robin Hood: key would sit before a closer-to-home item
 
             idx = (idx + 1) & self.mask
             probe_distance += 1
@@ -320,7 +321,7 @@ package maps
 
         testing.expect(t, map1.count == 0)
         testing.expect(t, map1.capacity == 8)
-        testing.expect(t, map1.half_capacity == 8)
+        testing.expect(t, map1.max_count == 8)
         testing.expect(t, map1.mask == 0b111)
 
         // collision cluster: 16, 32, 64 all hash to 0 (identity mod 8); 1, 17 to 1; 2 to 2
@@ -411,7 +412,7 @@ package maps
         testing.expect(t, v == 222 && found == false && gerr == nil)
         testing.expect(t, map1.count == 2)
 
-        // fill to the load-factor limit (half_capacity == capacity == 8 in test mode)
+        // fill to the load-factor limit (max_count == capacity == 8 in test mode)
         for i := 2; i <= 7; i += 1 {
             v, found, gerr = rh_map32__get_or_insert(&map1, u32(i + 100), u32(i), true)
             testing.expect(t, found == false && gerr == nil)
@@ -432,7 +433,7 @@ package maps
 
     // Asserts observable behavior only (never slot placement), so it runs in
     // both modes; without -define:maps_testing=true it exercises the
-    // production Fibonacci hash, the 0.5 load factor, and the min-capacity-8 bump.
+    // production Fibonacci hash, the default load factor, and the min-capacity-8 bump.
     @(test)
     rh_map32__behavior__test :: proc(t: ^testing.T) {
         // Log into console when panic happens
@@ -446,13 +447,13 @@ package maps
         bad: Rh_Map32
         testing.expect(t, rh_map32__init(&bad, 6, allocator) == oc.Core_Error.Capacity_Is_Not_Power_Of_2)
 
-        // tiny capacity: production mode bumps to the 8 minimum with half_capacity 4
+        // tiny capacity: production mode bumps to the 8 minimum
         tiny: Rh_Map32
         testing.expect(t, rh_map32__init(&tiny, 2, allocator) == nil)
         when MAPS_TESTING {
-            testing.expect(t, tiny.capacity == 2 && tiny.half_capacity == 2)
+            testing.expect(t, tiny.capacity == 2 && tiny.max_count == 2)
         } else {
-            testing.expect(t, tiny.capacity == 8 && tiny.half_capacity == 4)
+            testing.expect(t, tiny.capacity == 8 && tiny.max_count == 8 * RH_MAP32_LOAD_PCT / 100)
         }
         testing.expect(t, tiny.mask == tiny.capacity - 1)
         testing.expect(t, rh_map32__terminate(&tiny, allocator) == nil)
@@ -465,7 +466,7 @@ package maps
 
         // fill to the load-factor limit with scattered keys (forces collisions
         // and wrap-around under any hash)
-        limit := m.half_capacity
+        limit := m.max_count
 
         key_of :: proc(i: int) -> u32 { return u32(i * 97 + 13) }
 

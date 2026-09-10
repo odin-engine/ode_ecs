@@ -76,6 +76,7 @@ live state. Events that add/set something fire **after**, so the new value is al
 | `Pair_Added` | after the row is linked — not fired on the idempotent duplicate-add no-op |
 | `Pair_Removed` | before unlinking — fires for every holder affected, including the automatic cleanup when a pair's **target** entity is destroyed (see [Pairs](pair_table.md#automatic-cleanup-on-destroy)) |
 | `Arch_Entity_Added` / `Arch_Entity_Removed` | same timing as Component_Added/Removed; `data` is always nil (a whole row spans several columns, no single pointer to hand back) |
+| `Flags_Changed` | after a [Flags_Table](flags_table.md) entry changes; `data` → `^Flags_Change{old, new}`. Gaining the first / losing the last flag also fires `Component_Added` / `Component_Removed` |
 
 **`Pair_Table`'s `presence` field is an ordinary `Tag_Table`** (see [Pairs](pair_table.md)), so
 adding a holder's *first* pair also fires `Tag_Added`, and removing their *last* pair also fires

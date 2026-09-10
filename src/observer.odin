@@ -61,6 +61,7 @@ package ode_ecs
         Pair_Removed,
         Arch_Entity_Added,
         Arch_Entity_Removed,
+        Flags_Changed,
     }
 
     Observer_Event :: struct {

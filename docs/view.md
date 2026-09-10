@@ -206,6 +206,30 @@ ecs.view_init(&v3, &my_ecs, {&positions}, any_of = {&likes, &boss})
 Membership follows the pairs automatically: an entity joins on its first `pair_add` and leaves on its last `pair_remove` — or when its last target is destroyed. Passing `&likes.presence` is equivalent; listing both collapses to one term.
 
 
+## Flags
+
+A [`Flags_Table`](flags_table.md) can be passed as `&status` ("has any flag"), or as a `Flags` term that tests specific flags with an operation:
+
+```odin
+ecs.view_init(&v1, &my_ecs, {&positions, ecs.flags_term(&status, {ALERT, ARMED})})         // has both (And, the default)
+ecs.view_init(&v2, &my_ecs, {&positions, ecs.Flags{&status, {ALERT, ARMED}, .Or}})         // has either
+ecs.view_init(&v3, &my_ecs, {&positions}, excludes = {ecs.flags_term(&status, {ASLEEP})})  // not asleep
+ecs.view_init(&v4, &my_ecs, {&positions}, any_of = {ecs.flags_term(&status, {ALERT}), ecs.flags_term(&status, {ARMED}, .Nor)})  // alert, or unarmed
+```
+
+| op | holds when |
+|---|---|
+| `And` (default) | has all of `bits` |
+| `Or` | has any of `bits` |
+| `Xor` | has exactly one of `bits` |
+| `Nor` | has none of `bits` |
+| `Nand` | lacks at least one of `bits` |
+| `Exact` | has exactly `bits` (`{}` = no flags at all) |
+
+In `includes` a term must hold, in `excludes` it must not, and in `any_of` at least one term — flags or table — must hold. Membership follows flag changes automatically. A term that implies the entity has flags (`And`, `Or`, `Xor`, non-empty `Exact`) also limits the view to the table's rows, so a view of only such terms works on its own.
+
+`view_init` returns `Flags_Bits_Cannot_Be_Empty` for empty `bits` (except with `Exact`), and `View_Includes_Need_A_Table` when `includes` holds no table and only `Nor`/`Nand`/`Exact {}` terms — add a table to them.
+
 ## Component enable/disable
 
 Unlike `excludes`/`any_of` (structural properties of the view itself, fixed at `view_init`), [`disable_component`/`enable_component`](tables.md#component-enable-disable) is a *per-entity* toggle that works with any view — disabling one of a view's included tables for an entity evicts it, without removing the component:

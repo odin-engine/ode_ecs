@@ -9,7 +9,6 @@ package ode_ecs
 // Core
     import "core:mem"
     import "core:slice"
-    import "core:math"
 
 // ODE
     import oc "ode_core"
@@ -67,7 +66,7 @@ package ode_ecs
 
         self.rid_to_eid = make([]entity_id, self.cap, db.allocator) or_return
 
-        oc_maps.rh_map32__init(&self.eid_to_rid, math.next_power_of_two(self.cap * 2), db.allocator) or_return
+        oc_maps.rh_map32__init(&self.eid_to_rid, oc_maps.rh_map32__capacity_for(self.cap), db.allocator) or_return
 
         self.subscribers_cap = subscribers_cap
         self.sync_channels_cap = sync_channels_cap

@@ -232,6 +232,36 @@ memory_usage(self: ^Tag_Table) -> int   // proc group
 is_valid(self: ^Tag_Table) -> bool      // proc group
 ```
 
+## Flags_Table
+
+Up to 128 flags (`Bits`) per entity, stored as a `Compact_Table(Bits)`; an entity has a row exactly
+when it has at least one flag. See [Flags_Table](flags_table.md).
+
+```odin
+flags_table_init(self: ^Flags_Table, db: ^Database, cap: int) -> Error
+flags_table_terminate(self: ^Flags_Table) -> Error
+
+flag(self: ^Flags_Table, eid: entity_id, bit: int | $E) -> Error       // also tag()
+unflag(self: ^Flags_Table, eid: entity_id, bit: int | $E) -> Error     // also untag()
+has_flag(self: ^Flags_Table, eid: entity_id, bit: int | $E) -> bool    // also has_tag()
+has_tag(self: ^Flags_Table, eid: entity_id) -> bool                    // has any flag
+has_flags(self: ^Flags_Table, eid: entity_id, bits: Bits, op := Flags_Op.And) -> bool
+get_flags(self: ^Flags_Table, eid: entity_id) -> Bits
+set_flags(self: ^Flags_Table, eid: entity_id, bits: Bits) -> Error
+clear_flags(self: ^Flags_Table, eid: entity_id) -> Error
+flags_of(a, b, ...: $E) -> Bits                                         // 1..8 enum values, or flags_of(bit_set[E]{...})
+flags_term(table: ^Flags_Table, bits: Bits, op := Flags_Op.And) -> Flags
+
+clear, table_len, table_cap, slice (-> []Bits), entities_slice, get_entity, memory_usage, is_valid   // proc groups
+```
+
+```odin
+Bits     :: bit_set[0..<128]
+Flags_Op :: enum u8 { And = 0, Or, Xor, Nor, Nand, Exact }
+Flags    :: struct { table: ^Flags_Table, bits: Bits, op: Flags_Op }
+Flags_Change :: struct { old, new: Bits }   // Flags_Changed observer payload
+```
+
 ## Arch_Table
 
 A true-SoA archetype table: N type-erased columns sharing one row index — an entity has the whole
@@ -331,7 +361,7 @@ Iterates entities possessing a given set of component tables, stored column-majo
 [View](view.md).
 
 ```odin
-View_Term :: union { ^Shared_Table, ^Pair_Table_Base }   // any table (&positions), or a Pair_Table (&likes) meaning "has >= 1 pair"
+View_Term :: union { ^Shared_Table, ^Pair_Table_Base, Flags }   // any table (&positions), a Pair_Table (&likes) = "has >= 1 pair", or a Flags term
 
 view_init(self: ^View, db: ^Database, includes: []View_Term,
      excludes: []View_Term = nil, any_of: []View_Term = nil,
@@ -463,6 +493,8 @@ cmd_arch_add_entity(self: ^Command_Buffer, arch: ^Arch_Table, eid: entity_id, v1
 
 cmd_add_tag(self: ^Command_Buffer, table: ^Tag_Table, eid: entity_id) -> Error       // = cmd_tag
 cmd_remove_tag(self: ^Command_Buffer, table: ^Tag_Table, eid: entity_id) -> Error    // = cmd_untag
+cmd_flag(self: ^Command_Buffer, table: ^Flags_Table, eid: entity_id, bit: int | $E) -> Error     // also cmd_tag / cmd_add_tag
+cmd_unflag(self: ^Command_Buffer, table: ^Flags_Table, eid: entity_id, bit: int | $E) -> Error   // also cmd_untag / cmd_remove_tag
 
 cmd_set_parent(self: ^Command_Buffer, child: entity_id, parent: entity_id) -> Error
 cmd_remove_parent(self: ^Command_Buffer, child: entity_id) -> Error   // = cmd_unparent
@@ -496,6 +528,7 @@ sync_register(self: ^Sync_Channel, table: ^Table($T), allow_non_pod := false) ->
 sync_register(self: ^Sync_Channel, table: ^Tag_Table) -> Error                           // proc group — no allow_non_pod, Tag_Table carries no component data
 sync_register(self: ^Sync_Decoder, table: ^Table($T), allow_non_pod := false) -> Error   // proc group: also Compact_Table, Tiny_Table
 sync_register(self: ^Sync_Decoder, table: ^Tag_Table) -> Error                           // proc group
+sync_register(self: ^Sync_Channel | ^Sync_Decoder, table: ^Flags_Table) -> Error         // proc group
 // registering an Arch_Table returns API_Error.Sync_Table_Type_Not_Supported — out of scope for v1
 sync_unregister(self: ^Sync_Channel, table: ^Shared_Table) -> Error
 
@@ -537,6 +570,7 @@ Observer_Event_Kind :: enum {
     Parent_Set, Parent_Removed,
     Pair_Added, Pair_Removed,
     Arch_Entity_Added, Arch_Entity_Removed,
+    Flags_Changed,                  // data -> ^Flags_Change{old, new}
 }
 
 Observer_Event :: struct {
@@ -636,6 +670,7 @@ overbase_load_from_file(self: ^Overbase, path: string, allocator := context.allo
 
 ```odin
 entity_id ::             oc.ix_gen              // bit_field { ix: u32, gen: u32 }
+Bits ::                  bit_set[0..<128]       // a Flags_Table entry
 table_id ::              distinct int
 table_record_id ::       distinct int
 view_id ::               distinct int
@@ -654,7 +689,7 @@ Object_State :: enum {
 }
 
 Table_Type :: enum {
-    Auto, Table, Tiny_Table, Compact_Table, Tag_Table, Arch_Table,
+    Auto, Table, Tiny_Table, Compact_Table, Tag_Table, Arch_Table, Flags_Table,
 }
 
 API_Error :: enum {
@@ -676,6 +711,7 @@ API_Error :: enum {
     Tables_Cap_Exceeds_Compile_Time_Limit, Observers_Feature_Disabled,
     Entity_Not_In_Table, Table_To_Cannot_Contain_Entity, Entity_Already_In_Table,
     Table_Type_Not_Supported,
+    Flags_Bits_Cannot_Be_Empty, View_Includes_Need_A_Table,
 }
 
 Error :: union #shared_nil {
