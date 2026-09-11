@@ -23,8 +23,6 @@ package ode_ecs__tests
     // table set used to keep old bits OR-ed in and stopped matching.
     @(test)
     view_reinit_resets_bits__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // no allocations outside provided allocator
@@ -62,8 +60,6 @@ package ode_ecs__tests
     // silently dead after re-init.
     @(test)
     view_reinit_resets_suspended__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -99,8 +95,6 @@ package ode_ecs__tests
     // deferred-hole path.
     @(test)
     database_reinit_resets_tail_swap_pause__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -138,8 +132,6 @@ package ode_ecs__tests
     // pack's mid-pause guarantee) but must not clear the table's own pause flag.
     @(test)
     table_pause_survives_database_resume__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -183,8 +175,6 @@ package ode_ecs__tests
     // resume packs owned tables without clearing the group's own pause.
     @(test)
     group_pause_survives_database_resume__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -230,8 +220,6 @@ package ode_ecs__tests
     // survive a data-only clear() — clear resets row data, not caller-set mode.
     @(test)
     table_pause_packing_reinit_clear__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -262,8 +250,6 @@ package ode_ecs__tests
     // re-init — it used to keep notifying views from a previous life.
     @(test)
     tiny_table_reinit_clears_subscribers__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -301,8 +287,6 @@ package ode_ecs__tests
     // just documented incompleteness.
     @(test)
     view_suspend_missed_removal_sets_stale__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -337,7 +321,7 @@ package ode_ecs__tests
         ecs.suspend(&view)
         testing.expect(t, ecs.remove_component(&positions, e1) == nil)
         ecs.resume(&view)
-        testing.expect(t, view.stale == true)
+        when ecs.VALIDATIONS do testing.expect(t, view.stale == true) // stale is tracked only with validations
 
         // rebuild restores trust and correct content
         testing.expect(t, ecs.rebuild(&view) == nil)
@@ -358,7 +342,7 @@ package ode_ecs__tests
         ecs.suspend(&view)
         testing.expect(t, ecs.destroy_entity(&db, e2) == nil)
         ecs.resume(&view)
-        testing.expect(t, view.stale == true)
+        when ecs.VALIDATIONS do testing.expect(t, view.stale == true) // stale is tracked only with validations
         testing.expect(t, ecs.rebuild(&view) == nil)
         testing.expect(t, view.stale == false)
         testing.expect_value(t, ecs.view_len(&view), 1)
@@ -370,8 +354,6 @@ package ode_ecs__tests
 
     @(test)
     view_rebuild_all_table_types__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -458,8 +440,6 @@ package ode_ecs__tests
     // no-op (nil), matching component tables; it used to return Container_Is_Full.
     @(test)
     tag_table_full_readd_is_noop__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -487,8 +467,6 @@ package ode_ecs__tests
     // current view length on reset; it used to walk cleared rows after shrinking.
     @(test)
     iterator_explicit_end_row_clamps__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

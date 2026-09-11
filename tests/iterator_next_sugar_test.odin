@@ -23,8 +23,6 @@ package ode_ecs__tests
     // ecs.next(&it) with no table args is plain iterator__next (bool advance,
     // now in the same `next` group) — get_entity/get_component called manually.
     iterator_next0_type_free__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -71,8 +69,6 @@ package ode_ecs__tests
 
     @(test)
     iterator_next1_one_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -115,8 +111,6 @@ package ode_ecs__tests
 
     @(test)
     iterator_next2_two_tables__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -165,8 +159,6 @@ package ode_ecs__tests
 
     @(test)
     iterator_next_empty_view__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -197,8 +189,6 @@ package ode_ecs__tests
     // get_component form — they must be freely mixable on the same `it`.
     @(test)
     iterator_next_mixed_with_manual_next__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -252,8 +242,6 @@ package ode_ecs__tests
     // Proves the extended arity (beyond iterate1..4's cap of 4) actually works.
     @(test)
     iterator_next7_wide_arity__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

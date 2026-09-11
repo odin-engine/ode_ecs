@@ -18,8 +18,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__is_in__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -49,8 +47,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__move_to_superset__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -87,8 +83,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__move_entity_not_in_from__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -116,8 +110,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__sudo_move_drops_missing_columns__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -151,8 +143,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__copy_to_superset_leaves_source_intact__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -191,8 +181,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__sudo_copy_drops_missing_columns__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -227,8 +215,6 @@ package ode_ecs__tests
 
     @(test)
     move_copy_groups_dispatch_to_table_component__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -274,8 +260,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__command_buffer_arch_add_entity4_columns_by_type__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -316,8 +300,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__add_entity_rejects_second_arch_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -345,8 +327,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__add_entity_same_table_still_component_already_exist__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -367,8 +347,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__remove_then_add_to_different_arch_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -395,8 +373,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__terminate_releases_exclusivity_claim__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -422,8 +398,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__deserialize_restores_exclusivity_claim__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

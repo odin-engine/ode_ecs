@@ -81,9 +81,11 @@ package ode_core
 
     @(test)
     mem_track__test :: proc(t: ^testing.T) {
-        // the check procs intentionally log an error per leak/bad free —
-        // silence them while we exercise the failing paths on purpose
-        context.logger = log.nil_logger()
+        // a check that finds a problem logs an error; keep those out of the test runner's log
+        silent :: proc(check: proc(mt: ^Mem_Track) -> bool, mt: ^Mem_Track) -> bool {
+            context.logger = log.nil_logger()
+            return check(mt)
+        }
 
         mt: Mem_Track
         tracked := mem_track__init(&mt, context.allocator)
@@ -97,7 +99,7 @@ package ode_core
         p, aerr := mem.alloc(64, mem.DEFAULT_ALIGNMENT, tracked)
         testing.expect(t, aerr == .None)
         testing.expect(t, p != nil)
-        testing.expect(t, mem_track__check_leaks(&mt) == true)
+        testing.expect(t, silent(mem_track__check_leaks, &mt) == true)
 
         // freeing it clears the leak
         testing.expect(t, mem.free(p, tracked) == .None)
@@ -106,7 +108,7 @@ package ode_core
         // freeing a pointer this allocator never allocated is a bad free (collected, not panicked)
         x: int
         mem.free(&x, tracked)
-        testing.expect(t, mem_track__check_bad_frees(&mt) == true)
+        testing.expect(t, silent(mem_track__check_bad_frees, &mt) == true)
 
         // clear resets the tracked state
         mem_track__clear(&mt)

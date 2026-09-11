@@ -8,8 +8,6 @@ import ecs "../src"
 
 @(test)
 table__slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -54,8 +52,6 @@ table__slice__test :: proc(t: ^testing.T) {
 
 @(test)
 compact_table__slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -100,8 +96,6 @@ compact_table__slice__test :: proc(t: ^testing.T) {
 
 @(test)
 tiny_table__slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -146,8 +140,6 @@ tiny_table__slice__test :: proc(t: ^testing.T) {
 
 @(test)
 tag_table__slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -200,8 +192,6 @@ tag_table__slice__test :: proc(t: ^testing.T) {
 
 @(test)
 arch_table__slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -243,8 +233,6 @@ arch_table__slice__test :: proc(t: ^testing.T) {
 
 @(test)
 table__entities_slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -286,8 +274,6 @@ table__entities_slice__test :: proc(t: ^testing.T) {
 
 @(test)
 compact_table__entities_slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -329,8 +315,6 @@ compact_table__entities_slice__test :: proc(t: ^testing.T) {
 
 @(test)
 tiny_table__entities_slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()
@@ -372,8 +356,6 @@ tiny_table__entities_slice__test :: proc(t: ^testing.T) {
 
 @(test)
 group__entities_slice__test :: proc(t: ^testing.T) {
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
     allocator := context.allocator
     context.allocator = mem.panic_allocator()

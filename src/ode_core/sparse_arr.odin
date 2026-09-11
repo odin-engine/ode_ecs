@@ -175,9 +175,6 @@ package ode_core
 
     @(test)
     sparse_arr__test :: proc(t: ^testing.T) {
-        // Log into console when panic happens
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
@@ -277,8 +274,6 @@ package ode_core
 
     @(test)
     sparse_arr__is_valid__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -300,8 +295,6 @@ package ode_core
 
     @(test)
     sparse_arr__is_valid_or_empty__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -327,8 +320,6 @@ package ode_core
     // sparse_arr__add's "more than one nil hole" branch: only the first hole fills, and has_nil_item stays true.
     @(test)
     sparse_arr__multiple_nil_holes__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -372,8 +363,6 @@ package ode_core
 
     @(test)
     sparse_arr__resize__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -427,8 +416,6 @@ package ode_core
 
     @(test)
     sparse_arr__add_growing__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

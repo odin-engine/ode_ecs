@@ -17,8 +17,6 @@ package ode_ecs__tests
 
     @(test)
     batch_remove__table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -92,8 +90,6 @@ package ode_ecs__tests
 
     @(test)
     batch_remove__table_full_population__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -129,8 +125,6 @@ package ode_ecs__tests
 
     @(test)
     batch_remove__table_with_group__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -184,8 +178,6 @@ package ode_ecs__tests
 
     @(test)
     batch_remove__compact_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -239,8 +231,6 @@ package ode_ecs__tests
 
     @(test)
     batch_remove__tiny_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -294,8 +284,6 @@ package ode_ecs__tests
 
     @(test)
     destroy_entities__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

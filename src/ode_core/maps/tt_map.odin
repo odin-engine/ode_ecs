@@ -159,9 +159,6 @@ package maps
 
     @(test)
     tt_map__test :: proc(t: ^testing.T) {
-        // Log into console when panic happens
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator

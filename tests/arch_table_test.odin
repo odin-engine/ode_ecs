@@ -18,8 +18,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__init_terminate__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -45,8 +43,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__init_errors__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -61,8 +57,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__create_entity_and_get_component__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -107,8 +101,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__add_entity_to_existing__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -132,8 +124,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__remove_entity_swaps_every_column__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -180,8 +170,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__pause_resume_packing__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -218,8 +206,6 @@ package ode_ecs__tests
 
     @(test)
     arch_iterator__skips_hole_while_paused__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -261,8 +247,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__destroy_entity_removes_row__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -285,8 +269,6 @@ package ode_ecs__tests
 
     @(test)
     arch_iterator__next_sugar__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -344,8 +326,6 @@ package ode_ecs__tests
 
     @(test)
     arch_iterator__batches_and_column_not_found__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -397,8 +377,6 @@ package ode_ecs__tests
 
     @(test)
     arch_iterator__type_free_next__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -446,8 +424,6 @@ package ode_ecs__tests
 
     @(test)
     arch_iterator__wide_arity__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -491,8 +467,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__command_buffer_add_and_remove__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -548,8 +522,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__command_buffer_terminated_table_is_skipped__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -578,8 +550,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__serialization_round_trip__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -629,8 +599,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__serialization_schema_mismatch__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -664,8 +632,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__mixed_view_with_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -726,8 +692,6 @@ package ode_ecs__tests
 
     @(test)
     arch_table__view_auto_register_arch_columns__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

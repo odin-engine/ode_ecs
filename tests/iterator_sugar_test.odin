@@ -17,8 +17,6 @@ package ode_ecs__tests
 
     @(test)
     iterate_one_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -61,8 +59,6 @@ package ode_ecs__tests
 
     @(test)
     iterate_two_tables__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -113,8 +109,6 @@ package ode_ecs__tests
 
     @(test)
     iterate_empty_view__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -143,8 +137,6 @@ package ode_ecs__tests
     // get_component form — they must be freely mixable on the same `it`.
     @(test)
     iterate_mixed_with_manual_next__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

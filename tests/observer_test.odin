@@ -69,8 +69,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__structural_lifecycle_events__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -115,8 +113,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__tag_and_arch_events__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -156,8 +152,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__enable_disable_events__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -190,8 +184,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__relations_events__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -235,8 +227,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__pair_events__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -286,8 +276,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__interested_in_filter__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -311,8 +299,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__database_auto_terminate__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -338,8 +324,6 @@ when ecs.OBSERVERS_ENABLED {
 
     @(test)
     observer__command_buffer_replay_fires_events__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

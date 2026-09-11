@@ -30,9 +30,6 @@ package ode_ecs__tests
         // Prepare
         //
 
-            // Log into console when panic happens
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
@@ -252,8 +249,6 @@ package ode_ecs__tests
     // While paused, untagging leaves holes and moves nothing; pack compacts them.
     @(test)
     tag_table__pause_packing__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -325,8 +320,6 @@ package ode_ecs__tests
     // untags, independent of the database-wide flag.
     @(test)
     tag_table__pause_packing_standalone__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -368,8 +361,6 @@ package ode_ecs__tests
     // below the last live rid and the loop silently skipped that tag.
     @(test)
     tag_table__paused_len_iteration__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -425,8 +416,6 @@ package ode_ecs__tests
     // Tag_Table op, not just through destroy_entity.
     @(test)
     tag_table__expired_entity_id__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -454,8 +443,6 @@ package ode_ecs__tests
     // Object_Invalid rather than touching dead state.
     @(test)
     tag_table__pause_resume_edge_cases__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -492,9 +479,6 @@ package ode_ecs__tests
         // Prepare
         //
 
-            // Log into console when panic happens
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
@@ -550,8 +534,6 @@ package ode_ecs__tests
         //
         // Prepare
         //
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -590,8 +572,6 @@ package ode_ecs__tests
         //
         // Prepare
         //
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -639,8 +619,6 @@ package ode_ecs__tests
         //
         // Prepare
         //
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -688,8 +666,6 @@ package ode_ecs__tests
         //
         // Prepare
         //
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()

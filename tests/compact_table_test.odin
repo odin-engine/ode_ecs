@@ -24,8 +24,6 @@ package ode_ecs__tests
     compact_table__attaching_detaching_tables__test :: proc(t: ^testing.T) {
         //
         // Prepare
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -80,8 +78,6 @@ package ode_ecs__tests
     compact_table__attaching_detaching_views__test :: proc(t: ^testing.T) {
         //
         // Prepare
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -140,8 +136,6 @@ package ode_ecs__tests
     compact_table__creating_destroying_entities__test :: proc(t: ^testing.T) {
         //
         // Prepare
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -188,8 +182,6 @@ package ode_ecs__tests
     compact_table__adding_removing_components__test :: proc(t: ^testing.T) {
         //
         // Prepare
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -712,8 +704,6 @@ package ode_ecs__tests
     compact_table__views_subscribing_for_updates__test :: proc(t: ^testing.T) {
         //
         // Prepare
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -808,8 +798,6 @@ package ode_ecs__tests
     compact_table__filter__test :: proc(t: ^testing.T) {
         //
         // Prepare
-            context.logger = log.create_console_logger()
-            defer log.destroy_console_logger(context.logger)
 
             allocator := context.allocator
             context.allocator = mem.panic_allocator()
@@ -992,8 +980,6 @@ package ode_ecs__tests
 
     @(test)
     compact_table__pause_packing__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -1067,8 +1053,6 @@ package ode_ecs__tests
 
     @(test)
     compact_table__pause_packing_standalone__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -1108,8 +1092,6 @@ package ode_ecs__tests
 
     @(test)
     compact_table__add_at_cap_already_exists__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -1145,8 +1127,6 @@ package ode_ecs__tests
 
     @(test)
     compact_table__expired_entity_id__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -1174,8 +1154,6 @@ package ode_ecs__tests
 
     @(test)
     compact_table__pause_resume_edge_cases__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

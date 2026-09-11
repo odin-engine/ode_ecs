@@ -297,9 +297,6 @@ package maps
             return
         }
 
-        // Log into console when panic happens
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
@@ -436,9 +433,6 @@ package maps
     // production Fibonacci hash, the default load factor, and the min-capacity-8 bump.
     @(test)
     rh_map32__behavior__test :: proc(t: ^testing.T) {
-        // Log into console when panic happens
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
@@ -528,8 +522,6 @@ package maps
 
     @(test)
     rh_map32__is_valid__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

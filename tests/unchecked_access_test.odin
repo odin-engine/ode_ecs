@@ -23,8 +23,6 @@ package ode_ecs__tests
 
     @(test)
     unchecked_access__table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -62,8 +60,6 @@ package ode_ecs__tests
 
     @(test)
     unchecked_access__compact_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -100,8 +96,6 @@ package ode_ecs__tests
 
     @(test)
     unchecked_access__tiny_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -138,8 +132,6 @@ package ode_ecs__tests
 
     @(test)
     unchecked_access__arch_table__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()

@@ -174,9 +174,6 @@ package ode_core
     @(test)
     ix_gen_factory__test :: proc(t: ^testing.T) {
 
-        // Log into console when panic happens
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator() // to make sure no allocations happen outside provided allocator
@@ -316,8 +313,6 @@ package ode_core
 
     @(test)
     ix_gen_factory__free_id_errors__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -355,8 +350,6 @@ package ode_core
     // GEN_MAX is 4.29 billion, so this pokes the internal slot state directly to fast-forward to the edge of the wrap instead of actually looping that many cycles.
     @(test)
     ix_gen_factory__gen_wraparound__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
@@ -390,8 +383,6 @@ package ode_core
     // The clear default (bump_gen = true) must expire ids issued before the clear.
     @(test)
     ix_gen_factory__clear_default_expires__test :: proc(t: ^testing.T) {
-        context.logger = log.create_console_logger()
-        defer log.destroy_console_logger(context.logger)
 
         allocator := context.allocator
         context.allocator = mem.panic_allocator()
