@@ -4,7 +4,7 @@
 ⚡ A high-performance [hybrid](/docs/ecs_types.md) [Entity-Component-System](/docs/what_is_ecs.md) written in Odin.
 
 Our other projects:
-- 🗡️ [ODE_DOS](https://github.com/odin-engine/ode_dos) - a Thief-style Dark Object System for Odin.
+- 🗡️ [ODE_DOS](https://github.com/odin-engine/ode_dos) - a Thief-style **Dark Object System** for Odin.
 - 👊 [ODE_BRUTAL_ECS](https://github.com/odin-engine/ode_brutal_ecs) - a minimal, manual, Archetype ECS built for extreme performance.
 
 ### What ODE_ECS offers
