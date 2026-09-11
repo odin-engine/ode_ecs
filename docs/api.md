@@ -725,7 +725,7 @@ Error :: union #shared_nil {
 |---|---|---|
 | `ECS_VALIDATIONS` | `true` | Assert-based parameter/state validation (`VALIDATIONS`); disable for a slight speed gain in release builds |
 | `ECS_TABLES_MULT` | `1` | Max component types = `128 * ECS_TABLES_MULT`. Bump only past 128 component types — lower is faster and smaller |
-| `ECS_TABLES_CAP` | `16` | Initial preallocation for `Database.tables`/`tag_tables`/`groups` |
+| `ECS_TABLES_CAP` | `16` | Initial preallocation for `Database.tables`; `tag_tables` and `groups` use it when first needed |
 | `ECS_VIEWS_CAP` | `16` | Initial preallocation for `Database.views` |
 | `ECS_TINY_TABLES_CAP` | `32` | Initial preallocation for `Tiny_Table` subscriber slots |
 | `ECS_PAIR_TABLES_CAP` | `8` | Initial preallocation for attached `Pair_Table`s |

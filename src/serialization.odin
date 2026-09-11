@@ -121,6 +121,14 @@ package ode_ecs
     }
 
     @(private)
+    snap_writer__zeros :: proc(self: ^Snap_Writer, #any_int size: int) {
+        if size <= 0 do return
+        assert(self.offset + size <= len(self.buf))
+        mem.zero(&self.buf[self.offset], size)
+        self.offset += size
+    }
+
+    @(private)
     snap_writer__pad8 :: proc(self: ^Snap_Writer) {
         aligned := snap__align8(self.offset)
         for self.offset < aligned {
@@ -433,7 +441,11 @@ package ode_ecs
         snap_writer__write(&w, raw_data(self.eid_to_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
         snap_writer__pad8(&w)
 
-        snap_writer__write(&w, raw_data(self.eid_to_tag_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
+        if self.eid_to_tag_disabled_bits != nil {
+            snap_writer__write(&w, raw_data(self.eid_to_tag_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
+        } else {
+            snap_writer__zeros(&w, self.overbase.id_factory.cap * size_of(Uni_Bits))
+        }
         snap_writer__pad8(&w)
 
         for table in self.tables.items {
@@ -992,7 +1004,11 @@ package ode_ecs
         snap_reader__read(&r, raw_data(self.eid_to_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
         snap_reader__pad8(&r) or_return
 
-        snap_reader__read(&r, raw_data(self.eid_to_tag_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
+        if self.eid_to_tag_disabled_bits != nil {
+            snap_reader__read(&r, raw_data(self.eid_to_tag_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
+        } else {
+            _ = snap_reader__bytes(&r, saved_cap * size_of(Uni_Bits)) or_return
+        }
         snap_reader__pad8(&r) or_return
 
         self.has_disabled_components = true

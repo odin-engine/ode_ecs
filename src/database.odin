@@ -27,6 +27,7 @@ package ode_ecs
         tables: oc.Sparse_Arr(Shared_Table),
 
         tag_tables: oc.Sparse_Arr(Tag_Table),
+        tag_tables_cap: int,
 
         views: oc.Sparse_Arr(View),
 
@@ -68,7 +69,7 @@ package ode_ecs
         if self.overbase == nil do return false
         if !overbase__is_valid(self.overbase) do return false
         if !oc.sparse_arr__is_valid(&self.tables) do return false
-        if !oc.sparse_arr__is_valid(&self.tag_tables) do return false
+        if !oc.sparse_arr__is_valid_or_empty(&self.tag_tables) do return false
         if !oc.sparse_arr__is_valid(&self.views) do return false
         if !oc.dense_arr__is_valid_or_empty(&self.groups) do return false
         if !oc.sparse_arr__is_valid_or_empty(&self.pair_tables) do return false
@@ -76,8 +77,6 @@ package ode_ecs
         if !oc.sparse_arr__is_valid_or_empty(&self.observers) do return false
         if self.eid_to_bits == nil do return false
         if self.eid_to_disabled_bits == nil do return false
-        if self.eid_to_tag_bits == nil do return false
-        if self.eid_to_tag_disabled_bits == nil do return false
         if self.tiny_table_subscriber_slots == nil do return false
 
         return true
@@ -107,7 +106,7 @@ package ode_ecs
         overbase__attach_database(self.overbase, self) or_return
 
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.tag_tables, tables_cap, self.allocator) or_return
+        self.tag_tables_cap = tables_cap
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
         self.groups_cap = tables_cap
         self.pair_tables_cap = pair_tables_cap
@@ -117,8 +116,6 @@ package ode_ecs
 
         self.eid_to_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
         self.eid_to_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
-        self.eid_to_tag_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
-        self.eid_to_tag_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -150,7 +147,7 @@ package ode_ecs
         overbase__attach_database(self.overbase, self) or_return
 
         oc.sparse_arr__init(&self.tables, tables_cap, self.allocator) or_return
-        oc.sparse_arr__init(&self.tag_tables, tables_cap, self.allocator) or_return
+        self.tag_tables_cap = tables_cap
         oc.sparse_arr__init(&self.views, views_cap, self.allocator) or_return
         self.groups_cap = tables_cap
         self.pair_tables_cap = pair_tables_cap
@@ -160,8 +157,6 @@ package ode_ecs
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
         self.eid_to_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
-        self.eid_to_tag_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
-        self.eid_to_tag_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -399,7 +394,8 @@ package ode_ecs
         }
 
         bits := self.eid_to_bits[eid.ix]
-        tag_bits := self.eid_to_tag_bits[eid.ix]
+        tag_bits: Uni_Bits
+        if self.eid_to_tag_bits != nil do tag_bits = self.eid_to_tag_bits[eid.ix]
 
         self.destroying_eid_ix = eid.ix
         defer self.destroying_eid_ix = DELETED_INDEX
@@ -445,10 +441,10 @@ package ode_ecs
         }
 
         uni_bits__clear(&self.eid_to_bits[eid.ix])
-        uni_bits__clear(&self.eid_to_tag_bits[eid.ix])
+        if self.eid_to_tag_bits != nil do uni_bits__clear(&self.eid_to_tag_bits[eid.ix])
         if self.has_disabled_components {
             uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
-            uni_bits__clear(&self.eid_to_tag_disabled_bits[eid.ix])
+            if self.eid_to_tag_disabled_bits != nil do uni_bits__clear(&self.eid_to_tag_disabled_bits[eid.ix])
         }
 
         return nil
@@ -715,6 +711,21 @@ package ode_ecs
 
     @(private)
     database__attach_tag :: proc(self: ^Database, table: ^Tag_Table) -> (id: table_id, err: Error) {
+        if self.tag_tables.items == nil {
+            if aerr := oc.sparse_arr__init(&self.tag_tables, self.tag_tables_cap, self.allocator); aerr != nil do return DELETED_INDEX, aerr
+        }
+        if self.eid_to_tag_bits == nil {
+            tag_bits, terr := make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator)
+            if terr != nil do return DELETED_INDEX, terr
+            tag_disabled_bits, derr := make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator)
+            if derr != nil {
+                delete(tag_bits, self.allocator)
+                return DELETED_INDEX, derr
+            }
+            self.eid_to_tag_bits = tag_bits
+            self.eid_to_tag_disabled_bits = tag_disabled_bits
+        }
+
         raw_id: int
         raw_id, err = oc.sparse_arr__add(&self.tag_tables, table)
         tag_id_cap := BIT_SET_VALUES_CAP * TABLES_MULT

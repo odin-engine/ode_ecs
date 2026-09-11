@@ -213,7 +213,8 @@ package ode_ecs
         }
 
         bits := db.eid_to_bits[eid.ix]
-        tag_bits := db.eid_to_tag_bits[eid.ix]
+        tag_bits: Uni_Bits
+        if db.eid_to_tag_bits != nil do tag_bits = db.eid_to_tag_bits[eid.ix]
 
         when TABLES_MULT == 1 {
             v := transmute(u128) bits

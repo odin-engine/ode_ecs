@@ -66,6 +66,7 @@ package ode_ecs
         suspended: bool,
         stale: bool,
         match_extra: bool,
+        has_tag_terms: bool,
 
         dense_state: View_Dense_State,
         dense_cols: []View_Dense_State,
@@ -244,6 +245,7 @@ package ode_ecs
         uni_bits__clear(&self.tag_bits)
         uni_bits__clear(&self.exclude_tag_bits)
         uni_bits__clear(&self.any_of_tag_bits)
+        self.has_tag_terms = false
         self.excludes = {}
         self.any_of = {}
         self.arch_columns = {}
@@ -326,6 +328,7 @@ package ode_ecs
                 tag := cast(^Tag_Table) table
                 self.tags[ti] = tag
                 uni_bits__add(&self.tag_bits, tag.id)
+                self.has_tag_terms = true
                 ti += 1
             } else {
                 self.tables[di] = table
@@ -346,6 +349,7 @@ package ode_ecs
                 oc.dense_arr__add(&self.excludes, cast(^Shared_Table) table)
                 if table.type == Table_Type.Tag_Table {
                     uni_bits__add(&self.exclude_tag_bits, (cast(^Tag_Table) table).id)
+                    self.has_tag_terms = true
                 } else {
                     uni_bits__add(&self.exclude_bits, table.id)
                 }
@@ -358,6 +362,7 @@ package ode_ecs
                 oc.dense_arr__add(&self.any_of, cast(^Shared_Table) table)
                 if table.type == Table_Type.Tag_Table {
                     uni_bits__add(&self.any_of_tag_bits, (cast(^Tag_Table) table).id)
+                    self.has_tag_terms = true
                 } else {
                     uni_bits__add(&self.any_of_bits, table.id)
                 }
@@ -527,6 +532,7 @@ package ode_ecs
         self.tag_bits = {}
         self.exclude_tag_bits = {}
         self.any_of_tag_bits = {}
+        self.has_tag_terms = false
         self.filter = nil
         self.len = 0
         self.cap = 0
@@ -653,20 +659,25 @@ package ode_ecs
 
     view__components_match :: #force_inline proc(self: ^View, eid: entity_id) -> bool {
         bits := &self.db.eid_to_bits[eid.ix]
-        tag_bits := &self.db.eid_to_tag_bits[eid.ix]
 
         return uni_bits__is_subset(&self.bits, bits) &&
-               uni_bits__is_subset(&self.tag_bits, tag_bits) &&
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
-               uni_bits__no_intersection(&self.exclude_tag_bits, tag_bits) &&
-               (!self.match_extra || view__extra_match(self, eid, bits, tag_bits)) &&
+               (!self.has_tag_terms || view__tags_match(self, eid)) &&
+               (!self.match_extra || view__extra_match(self, eid, bits)) &&
                (!self.db.has_disabled_components ||
                    (uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix]) &&
-                    uni_bits__no_intersection(&self.tag_bits, &self.db.eid_to_tag_disabled_bits[eid.ix])))
+                    (!self.has_tag_terms || uni_bits__no_intersection(&self.tag_bits, &self.db.eid_to_tag_disabled_bits[eid.ix]))))
+    }
+
+    // Only called for views with tag terms, so the tag arrays exist.
+    @(private)
+    view__tags_match :: #force_inline proc(self: ^View, eid: entity_id) -> bool {
+        tag_bits := &self.db.eid_to_tag_bits[eid.ix]
+        return uni_bits__is_subset(&self.tag_bits, tag_bits) && uni_bits__no_intersection(&self.exclude_tag_bits, tag_bits)
     }
 
     @(private)
-    view__extra_match :: proc(self: ^View, eid: entity_id, bits: ^Uni_Bits, tag_bits: ^Uni_Bits) -> bool {
+    view__extra_match :: proc(self: ^View, eid: entity_id, bits: ^Uni_Bits) -> bool {
         for f in self.flags_includes {
             if !flags__holds(flags_table__bits_of(f.table, eid), f.bits, f.op) do return false
         }
@@ -674,7 +685,7 @@ package ode_ecs
             if flags__holds(flags_table__bits_of(f.table, eid), f.bits, f.op) do return false
         }
         if oc.dense_arr__len(&self.any_of) == 0 && len(self.flags_any_of) == 0 do return true
-        if uni_bits__intersects(&self.any_of_bits, bits) || uni_bits__intersects(&self.any_of_tag_bits, tag_bits) do return true
+        if uni_bits__intersects(&self.any_of_bits, bits) || (self.has_tag_terms && uni_bits__intersects(&self.any_of_tag_bits, &self.db.eid_to_tag_bits[eid.ix])) do return true
         for f in self.flags_any_of {
             if flags__holds(flags_table__bits_of(f.table, eid), f.bits, f.op) do return true
         }
