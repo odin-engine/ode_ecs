@@ -144,6 +144,14 @@ package ode_ecs
     }
 
     @(private)
+    snap__any_nonzero :: proc(b: []byte) -> bool {
+        for v in b {
+            if v != 0 do return true
+        }
+        return false
+    }
+
+    @(private)
     snap_reader__bytes :: proc(self: ^Snap_Reader, #any_int size: int) -> ([]byte, Error) {
         if size < 0 || self.offset + size > len(self.data) do return nil, API_Error.Snapshot_Invalid
         res := self.data[self.offset : self.offset + size]
@@ -438,7 +446,11 @@ package ode_ecs
             snap_writer__pad8(&w)
         }
 
-        snap_writer__write(&w, raw_data(self.eid_to_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
+        if self.eid_to_disabled_bits != nil {
+            snap_writer__write(&w, raw_data(self.eid_to_disabled_bits), self.overbase.id_factory.cap * size_of(Uni_Bits))
+        } else {
+            snap_writer__zeros(&w, self.overbase.id_factory.cap * size_of(Uni_Bits))
+        }
         snap_writer__pad8(&w)
 
         if self.eid_to_tag_disabled_bits != nil {
@@ -1001,7 +1013,12 @@ package ode_ecs
             snap_reader__pad8(&r) or_return
         }
 
-        snap_reader__read(&r, raw_data(self.eid_to_disabled_bits), saved_cap * size_of(Uni_Bits)) or_return
+        // a snapshot with nothing disabled leaves the array unallocated
+        disabled_bytes := snap_reader__bytes(&r, saved_cap * size_of(Uni_Bits)) or_return
+        if snap__any_nonzero(disabled_bytes) {
+            database__ensure_disabled_bits(self) or_return
+            mem.copy(raw_data(self.eid_to_disabled_bits), raw_data(disabled_bytes), len(disabled_bytes))
+        }
         snap_reader__pad8(&r) or_return
 
         if self.eid_to_tag_disabled_bits != nil {
@@ -1011,7 +1028,7 @@ package ode_ecs
         }
         snap_reader__pad8(&r) or_return
 
-        self.has_disabled_components = true
+        self.has_disabled_components = self.eid_to_disabled_bits != nil || self.eid_to_tag_disabled_bits != nil
 
         for _ in 0..<int(hdr.section_count) {
             th: Snap_Table_Header

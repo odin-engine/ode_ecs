@@ -369,3 +369,81 @@ package ode_ecs__tests
             testing.expect(t, !ecs.is_component_disabled(&tiny_armors, e1))
             testing.expect(t, !ecs.is_component_disabled(&arch, e1))
     }
+
+///////////////////////////////////////////////////////////////////////////////
+// Lazy disabled bits
+
+    // eid_to_disabled_bits is allocated on the first disable, not at init.
+    @(test)
+    disabled_bits_are_lazy__test :: proc(t: ^testing.T) {
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        db: ecs.Database
+        healths: ecs.Table(EHealth)
+        defer ecs.terminate(&db)
+
+        testing.expect(t, ecs.init(&db, entities_cap = 8, allocator = allocator) == nil)
+        testing.expect(t, ecs.table_init(&healths, &db, 8) == nil)
+
+        e1, _ := ecs.create_entity(&db)
+        h, _ := ecs.add_component(&healths, e1)
+        h.hp = 5
+
+        testing.expect(t, db.eid_to_disabled_bits == nil)
+        testing.expect(t, !ecs.is_component_disabled(&healths, e1))
+        testing.expect(t, ecs.enable_component(&healths, e1) == nil) // nothing to enable
+        testing.expect(t, db.eid_to_disabled_bits == nil)
+        testing.expect(t, ecs.destroy_entity(&db, e1) == nil)
+        testing.expect(t, db.eid_to_disabled_bits == nil)
+
+        e2, _ := ecs.create_entity(&db)
+        _, aerr := ecs.add_component(&healths, e2)
+        testing.expect(t, aerr == nil)
+        testing.expect(t, ecs.disable_component(&healths, e2) == nil)
+        testing.expect(t, db.eid_to_disabled_bits != nil)
+        testing.expect(t, ecs.is_component_disabled(&healths, e2))
+        testing.expect(t, ecs.enable_component(&healths, e2) == nil)
+        testing.expect(t, !ecs.is_component_disabled(&healths, e2))
+    }
+
+    // A snapshot round-trips with the array missing on either side.
+    @(test)
+    disabled_bits_snapshot__test :: proc(t: ^testing.T) {
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        a, b: ecs.Database
+        ha, hb: ecs.Table(EHealth)
+        defer ecs.terminate(&b)
+        defer ecs.terminate(&a)
+
+        testing.expect(t, ecs.init(&a, entities_cap = 8, allocator = allocator) == nil)
+        testing.expect(t, ecs.init(&b, entities_cap = 8, allocator = allocator) == nil)
+        testing.expect(t, ecs.table_init(&ha, &a, 8) == nil)
+        testing.expect(t, ecs.table_init(&hb, &b, 8) == nil)
+
+        e1, _ := ecs.create_entity(&a)
+        c, _ := ecs.add_component(&ha, e1)
+        c.hp = 7
+
+        size, size_err := ecs.serialized_size(&a)
+        testing.expect(t, size_err == nil)
+        buf := make([]byte, size, allocator)
+        defer delete(buf, allocator)
+
+        // nothing disabled: the reader stays unallocated
+        _, werr := ecs.serialize(&a, buf)
+        testing.expect(t, werr == nil)
+        testing.expect(t, ecs.deserialize(&b, buf) == nil)
+        testing.expect(t, b.eid_to_disabled_bits == nil)
+        testing.expect_value(t, ecs.get_component(&hb, e1).hp, 7)
+
+        // disabled: the reader allocates and the bit survives
+        testing.expect(t, ecs.disable_component(&ha, e1) == nil)
+        _, werr2 := ecs.serialize(&a, buf)
+        testing.expect(t, werr2 == nil)
+        testing.expect(t, ecs.deserialize(&b, buf) == nil)
+        testing.expect(t, b.eid_to_disabled_bits != nil)
+        testing.expect(t, ecs.is_component_disabled(&hb, e1))
+    }

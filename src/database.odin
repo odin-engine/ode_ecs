@@ -36,7 +36,7 @@ package ode_ecs
 
         eid_to_bits: []Uni_Bits,
 
-        eid_to_disabled_bits: []Uni_Bits,
+        eid_to_disabled_bits: []Uni_Bits, // allocated on the first disable_component
 
         eid_to_tag_bits: []Uni_Bits,
 
@@ -76,7 +76,6 @@ package ode_ecs
         if !oc.sparse_arr__is_valid_or_empty(&self.command_buffers) do return false
         if !oc.sparse_arr__is_valid_or_empty(&self.observers) do return false
         if self.eid_to_bits == nil do return false
-        if self.eid_to_disabled_bits == nil do return false
         if self.tiny_table_subscriber_slots == nil do return false
 
         return true
@@ -115,7 +114,6 @@ package ode_ecs
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
-        self.eid_to_disabled_bits = make([]Uni_Bits, int(entities_cap), self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -156,7 +154,6 @@ package ode_ecs
         self.tiny_table_subscriber_slots = make([]Tiny_Table_Subscriber_Slot, tiny_tables_cap, self.allocator) or_return
 
         self.eid_to_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
-        self.eid_to_disabled_bits = make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator) or_return
 
         self.state = Object_State.Normal
 
@@ -443,7 +440,7 @@ package ode_ecs
         uni_bits__clear(&self.eid_to_bits[eid.ix])
         if self.eid_to_tag_bits != nil do uni_bits__clear(&self.eid_to_tag_bits[eid.ix])
         if self.has_disabled_components {
-            uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
+            if self.eid_to_disabled_bits != nil do uni_bits__clear(&self.eid_to_disabled_bits[eid.ix])
             if self.eid_to_tag_disabled_bits != nil do uni_bits__clear(&self.eid_to_tag_disabled_bits[eid.ix])
         }
 
@@ -509,6 +506,13 @@ package ode_ecs
         total := size_of(self^)
 
         if self.owns_overbase do total += overbase__memory_usage(self.overbase)
+
+        total += size_of(Uni_Bits) * len(self.eid_to_bits)
+        total += size_of(Uni_Bits) * len(self.eid_to_disabled_bits)
+        total += size_of(Uni_Bits) * len(self.eid_to_tag_bits)
+        total += size_of(Uni_Bits) * len(self.eid_to_tag_disabled_bits)
+        total += size_of(^Arch_Table) * len(self.eid_to_arch_table)
+        total += size_of(Tiny_Table_Subscriber_Slot) * len(self.tiny_table_subscriber_slots)
         for table in self.tables.items {
             if table != nil do total += shared_table__memory_usage(table)
         }
@@ -710,6 +714,16 @@ package ode_ecs
     }
 
     @(private)
+    database__ensure_disabled_bits :: proc(self: ^Database) -> Error {
+        if self.eid_to_disabled_bits != nil do return nil
+
+        bits, err := make([]Uni_Bits, self.overbase.id_factory.cap, self.allocator)
+        if err != nil do return err
+        self.eid_to_disabled_bits = bits
+        return nil
+    }
+
+    @(private)
     database__attach_tag :: proc(self: ^Database, table: ^Tag_Table) -> (id: table_id, err: Error) {
         if self.tag_tables.items == nil {
             if aerr := oc.sparse_arr__init(&self.tag_tables, self.tag_tables_cap, self.allocator); aerr != nil do return DELETED_INDEX, aerr
@@ -871,6 +885,7 @@ package ode_ecs
         }
         database__is_entity_correct(self, eid) or_return
 
+        database__ensure_disabled_bits(self) or_return
         uni_bits__add(&self.eid_to_disabled_bits[eid.ix], id)
         self.has_disabled_components = true
 
@@ -894,7 +909,7 @@ package ode_ecs
         }
         database__is_entity_correct(self, eid) or_return
 
-        uni_bits__remove(&self.eid_to_disabled_bits[eid.ix], id)
+        if self.eid_to_disabled_bits != nil do uni_bits__remove(&self.eid_to_disabled_bits[eid.ix], id)
 
         database__notify_observers(self, .Component_Enabled, eid, table_id = id)
 
@@ -910,6 +925,7 @@ package ode_ecs
     @(private)
     @(require_results)
     database__is_component_disabled :: #force_inline proc "contextless" (self: ^Database, eid: entity_id, id: table_id) -> bool #no_bounds_check {
+        if self.eid_to_disabled_bits == nil do return false
         return uni_bits__exists(&self.eid_to_disabled_bits[eid.ix], id)
     }
 

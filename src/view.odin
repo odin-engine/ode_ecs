@@ -664,9 +664,17 @@ package ode_ecs
                uni_bits__no_intersection(&self.exclude_bits, bits) &&
                (!self.has_tag_terms || view__tags_match(self, eid)) &&
                (!self.match_extra || view__extra_match(self, eid, bits)) &&
-               (!self.db.has_disabled_components ||
-                   (uni_bits__no_intersection(&self.bits, &self.db.eid_to_disabled_bits[eid.ix]) &&
-                    (!self.has_tag_terms || uni_bits__no_intersection(&self.tag_bits, &self.db.eid_to_tag_disabled_bits[eid.ix]))))
+               (!self.db.has_disabled_components || view__enabled_match(self, eid))
+    }
+
+    // Only reached once something is disabled; either bit array can still be nil.
+    @(private)
+    view__enabled_match :: #force_inline proc(self: ^View, eid: entity_id) -> bool {
+        if d := self.db.eid_to_disabled_bits; d != nil && !uni_bits__no_intersection(&self.bits, &d[eid.ix]) do return false
+        if !self.has_tag_terms do return true
+
+        td := self.db.eid_to_tag_disabled_bits
+        return td == nil || uni_bits__no_intersection(&self.tag_bits, &td[eid.ix])
     }
 
     // Only called for views with tag terms, so the tag arrays exist.
