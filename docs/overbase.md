@@ -74,6 +74,17 @@ This matters because entity indices are recycled: without this guarantee, a Data
 
 `ecs.clear` only resets the id space (bumping generations so held-over IDs expire) when called on a Database that **owns** its Overbase — for a Database attached via `init_from_overbase`, `clear` wipes that Database's own tables/views/relations but leaves the shared Overbase's entity IDs untouched, since bumping them would invalidate IDs still valid for sibling Databases. Clear (or terminate) every attached Database, then use `ecs.clear`/re-init on the Overbase itself if you need to reset the whole shared id space.
 
+## Growing
+
+`overbase_grow` (or `grow`) raises the entity capacity after init, for loaders that learn their sizes late. Every attached Database follows: its tables, views, pair tables and relations table get longer id-indexed arrays, and ids, generations and components stay as they are. A table's row capacity is separate and grows with `grow(&table, cap)`; views over it grow with it.
+
+```odin
+ecs.grow(&overbase, 4096) or_return   // entities
+ecs.grow(&positions, 4096) or_return  // rows
+```
+
+Grow at load boundaries, never while iterating. An Overbase whose Databases use sync channels returns `API_Error.Cannot_Grow_With_Sync`.
+
 ## Serialization
 
 A Database's own [binary snapshot](/README.md#-saving-and-loading-snapshots) (`ecs.serialize`/`ecs.deserialize`) captures its tables *and*, when it **owns** its Overbase (the common case — a plain `ecs.init`-created Database), the entity-id state (generations, freed list) too — exactly as before.

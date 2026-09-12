@@ -171,6 +171,30 @@ package ode_core
 
     }
 
+    // Keeps every id and generation; new slots start free with gen 0.
+    ix_gen_factory__grow :: proc(self: ^Ix_Gen_Factory, cap: int, allocator: runtime.Allocator) -> runtime.Allocator_Error {
+        if cap <= self.cap do return .None
+
+        items := make([]ix_gen, cap, allocator) or_return
+        freed, err := make([]u32, cap, allocator)
+        if err != .None {
+            delete(items, allocator)
+            return err
+        }
+
+        copy(items, self.items)
+        for i in self.cap..<cap do items[i].ix = DELETED_INDEX
+        copy(freed, self.freed[:self.freed_count])
+        for i in self.freed_count..<cap do freed[i] = max(u32) // debug fill only
+
+        delete(self.items, allocator)
+        delete(self.freed, allocator)
+        self.items = items
+        self.freed = freed
+        self.cap = cap
+        return .None
+    }
+
     @(test)
     ix_gen_factory__test :: proc(t: ^testing.T) {
 
@@ -404,4 +428,44 @@ package ode_core
         testing.expect(t, new_id.ix == old_id.ix)
         testing.expect(t, new_id != old_id)
         testing.expect(t, ix_gen_factory__is_expired(&factory, old_id))
+    }
+
+    @(test)
+    ix_gen_factory__grow__test :: proc(t: ^testing.T) {
+
+        allocator := context.allocator
+        context.allocator = mem.panic_allocator()
+
+        factory: Ix_Gen_Factory
+        defer ix_gen_factory__terminate(&factory, allocator)
+        ix_gen_factory__init(&factory, 2, allocator)
+
+        a, _ := ix_gen_factory__new_id(&factory)
+        b, _ := ix_gen_factory__new_id(&factory)
+        testing.expect(t, ix_gen_factory__free_id(&factory, a) == Core_Error.None)
+        a2, _ := ix_gen_factory__new_id(&factory) // a's slot, next generation
+        testing.expect(t, ix_gen_factory__free_id(&factory, b) == Core_Error.None)
+
+        testing.expect(t, ix_gen_factory__grow(&factory, 1, allocator) == .None) // smaller: no-op
+        testing.expect_value(t, factory.cap, 2)
+
+        testing.expect(t, ix_gen_factory__grow(&factory, 5, allocator) == .None)
+        testing.expect_value(t, factory.cap, 5)
+        testing.expect(t, !ix_gen_factory__is_expired(&factory, a2))
+        testing.expect(t, ix_gen_factory__is_expired(&factory, a))
+        testing.expect(t, ix_gen_factory__is_expired(&factory, b))
+        testing.expect_value(t, ix_gen_factory__len(&factory), 1)
+
+        // the freed slot comes back first, with a new generation
+        b2, _ := ix_gen_factory__new_id(&factory)
+        testing.expect_value(t, b2.ix, b.ix)
+        testing.expect(t, b2 != b)
+
+        for _ in 0..<3 {
+            id, err := ix_gen_factory__new_id(&factory)
+            testing.expect(t, err == Core_Error.None)
+            testing.expect(t, id.ix >= 2)
+        }
+        _, full := ix_gen_factory__new_id(&factory)
+        testing.expect(t, full == Core_Error.Container_Is_Full)
     }

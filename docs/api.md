@@ -105,6 +105,7 @@ means the same logical entity across all of them. See [Overbase](overbase.md).
 overbase_init(self: ^Overbase, entities_cap: u32, databases_cap := 1,
      allocator := context.allocator) -> Error
 overbase_terminate(self: ^Overbase) -> Error
+overbase_grow(self: ^Overbase, entities_cap: u32) -> Error   // also grow(); see Growing capacities
 init_from_overbase(db: ^Database, overbase: ^Overbase, ...) -> Error   // see Database section — attaches a Database to this Overbase
 
 create_entity(self: ^Overbase) -> (entity_id, Error)          // proc group
@@ -637,6 +638,26 @@ is_valid(self: ^Pair_Table($T)) -> bool      // proc group
 
 ---
 
+## Growing capacities
+
+For loaders that learn their sizes late (hot reload, streamed content). Grow at load boundaries,
+never while iterating; a capacity at or below the current one is a no-op. Ids, generations,
+components, pairs and view rows are kept. See [Overbase](overbase.md#growing).
+
+```odin
+grow(self: ^Overbase, entities_cap: u32) -> Error      // every attached Database, table, view, pair table and relations table follows
+grow(self: ^Table($T), cap: int) -> Error              // cap <= entities_cap; views over it grow and re-point their cached pointers
+grow(self: ^Compact_Table($T), cap: int) -> Error
+grow(self: ^Flags_Table, cap: int) -> Error
+grow(self: ^Tag_Table, cap: int) -> Error
+grow(self: ^Pair_Table($T), holders_cap: int, pairs_cap: int) -> Error
+grow(self: ^Relations_Table, cap: int) -> Error
+```
+
+An Overbase whose Databases have sync channels returns `API_Error.Cannot_Grow_With_Sync`.
+
+---
+
 ## Serialization (whole-`Database` binary snapshot)
 
 Round-trips a whole `Database` — entities, every table's components, relations, and pairs. See
@@ -711,7 +732,7 @@ API_Error :: enum {
     Tables_Cap_Exceeds_Compile_Time_Limit, Observers_Feature_Disabled,
     Entity_Not_In_Table, Table_To_Cannot_Contain_Entity, Entity_Already_In_Table,
     Table_Type_Not_Supported,
-    Flags_Bits_Cannot_Be_Empty, View_Includes_Need_A_Table,
+    Flags_Bits_Cannot_Be_Empty, View_Includes_Need_A_Table, Cannot_Grow_With_Sync,
 }
 
 Error :: union #shared_nil {

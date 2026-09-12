@@ -76,6 +76,25 @@ package maps
         return nil
     }
 
+    // Rehashes into capacity (a power of 2) when that is larger.
+    rh_map32__grow :: proc(self: ^Rh_Map32, #any_int capacity: int, allocator := context.allocator) -> (err: oc.Error) {
+        assert(rh_map32__is_valid(self))
+        if capacity <= self.capacity do return nil
+
+        old := self^
+        if ierr := rh_map32__init(self, capacity, allocator); ierr != nil {
+            self^ = old
+            return ierr
+        }
+
+        for item in old.items {
+            if item.key == RH_MAP32_DELETED do continue
+            if aerr := rh_map32__add(self, item.key, item.value); aerr != .None do return aerr
+        }
+        delete(old.items, allocator)
+        return nil
+    }
+
     rh_map32__terminate :: proc(self: ^Rh_Map32, allocator := context.allocator, loc := #caller_location) -> (err: oc.Error) {
         assert(self != nil, loc = loc)
 
@@ -536,4 +555,25 @@ package maps
 
         testing.expect(t, rh_map32__terminate(&m, allocator) == nil)
         testing.expect(t, rh_map32__is_valid(&m) == false)
+    }
+
+    @(test)
+    rh_map32__grow__test :: proc(t: ^testing.T) {
+        m: Rh_Map32
+        testing.expect(t, rh_map32__init(&m, 8) == nil)
+        defer rh_map32__terminate(&m)
+
+        key_of :: proc(i: int) -> u32 { return u32(i * 97 + 13) }
+        for i in 0..<4 do testing.expect(t, rh_map32__add(&m, key_of(i), u32(i)) == .None)
+
+        testing.expect(t, rh_map32__grow(&m, 4) == nil) // smaller: no-op
+        testing.expect_value(t, m.capacity, 8)
+
+        testing.expect(t, rh_map32__grow(&m, 64) == nil)
+        testing.expect_value(t, m.capacity, 64)
+        testing.expect_value(t, m.count, 4)
+        for i in 0..<4 do testing.expect_value(t, rh_map32__get(&m, key_of(i)), u32(i))
+
+        for i in 4..<32 do testing.expect(t, rh_map32__add(&m, key_of(i), u32(i)) == .None)
+        for i in 0..<32 do testing.expect_value(t, rh_map32__get(&m, key_of(i)), u32(i))
     }

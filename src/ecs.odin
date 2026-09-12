@@ -89,6 +89,7 @@ package ode_ecs
     //
         overbase_init           :: overbase__init
         overbase_terminate      :: overbase__terminate
+        overbase_grow           :: overbase__grow
         init_from_overbase      :: database__init_from_overbase
 
         entities_len :: proc {
@@ -304,6 +305,19 @@ package ode_ecs
             table__get_component_mut_unchecked,
             compact_table__get_component_mut_unchecked,
             tiny_table__get_component_mut_unchecked,
+        }
+
+    //
+    // Growing capacities (at load boundaries, never mid-frame)
+    //
+        grow :: proc {
+            overbase__grow,
+            table__grow,
+            compact_table__grow,
+            flags_table__grow,
+            tag_table__grow,
+            pair_table__grow,
+            relations_table__grow,
         }
 
     //
@@ -852,6 +866,7 @@ package ode_ecs
             Table_Type_Not_Supported,
             Flags_Bits_Cannot_Be_Empty,
             View_Includes_Need_A_Table,
+            Cannot_Grow_With_Sync,
         }
 
         Error :: union #shared_nil {
