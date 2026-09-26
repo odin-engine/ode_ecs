@@ -29,6 +29,10 @@ package ode_ecs__tests
         neurons_count: int
     }
 
+    Speed :: struct {
+        value: f32,
+    }
+
 ///////////////////////////////////////////////////////////////////////////////
     when !ecs.SYNC_ENABLED {
         @(test)

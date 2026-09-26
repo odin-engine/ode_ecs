@@ -1,0 +1,11 @@
+out/
+*.exe
+*.pdb
+*.bin
+
+# Ignore  .md files 
+*.md
+
+# Allow the README.md file 
+!/README.md
+!docs/*.md

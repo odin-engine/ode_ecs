@@ -167,6 +167,41 @@
             }
         },
         {
+            "label": "Serialization Tests",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "test",
+                "${workspaceFolder}\\tests\\serialization\\",
+                "-debug",
+                "-o:none",
+                "-define:ODIN_TEST_THREADS=1",
+                "-define:ODIN_TEST_RANDOM_SEED=1",
+                "-define:ODIN_TEST_LOG_LEVEL=warning",
+                "-define:ODIN_TEST_FANCY=false",
+                "-define:ODIN_TEST_CLIPBOARD=false",
+                "-define:ODIN_TEST_PROGRESS_WIDTH=0",
+                "-define:ODIN_TEST_SHORT_LOGS=true"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\tests\\serialization\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
             "label": "Private Tests",
             "group": {
                 "kind": "build",

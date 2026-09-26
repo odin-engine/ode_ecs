@@ -4,7 +4,7 @@
     Tests for binary snapshot serialization (serialization.odin).
 */
 
-package ode_ecs__tests
+package ode_ecs__serialization_tests
 
 // Core
     import "core:testing"
@@ -14,10 +14,10 @@ package ode_ecs__tests
     import "core:os"
 
 // ODE
-    import ecs "../src"
+    import ecs "../../src"
 
 ///////////////////////////////////////////////////////////////////////////////
-// Components (Position and AI are defined in ecs_test.odin)
+// Components (Position and AI are defined in common_test.odin)
 
     Speed :: struct {
         value: f32,
@@ -924,8 +924,8 @@ package ode_ecs__tests
             testing.expect(t, ecs.add_tag(&a.is_alive, eids[0]) == nil)
             testing.expect(t, ecs.set_parent(&a.db, eids[1], eids[0]) == nil)
 
-            // cwd-relative: works both from tests/ (odin test .) and tests/out/
-            // (the ECS Tests task); *.snap is gitignored and removed below
+            // cwd-relative: works both from tests/serialization/ (odin test .) and tests/serialization/out/
+            // (the Serialization Tests task); *.snap is gitignored and removed below
             path :: "save_load_round_trip.snap"
             defer os.remove(path)
 

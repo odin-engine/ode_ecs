@@ -33,3 +33,6 @@ fuzz
 *-autosave.kra
 *.kra~
 *.snap
+tests/serialization/out/*
+!tests/serialization/out/.keep
+tests/serialization/kdl_out/

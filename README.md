@@ -170,7 +170,7 @@ Tables documentation is [here](/docs/tables.md).
 
 >**NOTE:** Creating databases, tables, views, etc., should happen outside the game's frame loop.
 
-## 🪟 **View**  
+## 🌄 **View** 
 
 A *_View_* is a precomputed query (so you do not need to compute the query every frame). A View is used when you want to iterate over entities that have specific components. A View does not store component data or copies of it. Instead, it holds pointers to component data stored in tables for fast access.
 
@@ -433,5 +433,16 @@ A value of `2` will set the maximum number of component types to 256, `3` will i
 * [Documentation](/docs/_index.md)
 * [Updates Timeline](/docs/updates.md)    
 * [FAQ](/docs/faq.md)
+
+# 📜 License
+
+ODE_ECS is licensed under the zlib License — see [LICENSE](/LICENSE).
+
+### Third-party code
+
+ODE_ECS embeds [ODE_KDL](/src/ode_kdl) (zlib License), which powers the [KDL snapshots](/docs/serialization.md#human-readable-kdl-snapshots). ODE_KDL contains code derived from [ckdl](https://github.com/tjol/ckdl), Copyright (c) Thomas Jollans, licensed under the MIT License. See [src/ode_kdl/LICENSE](/src/ode_kdl/LICENSE) for the full texts.
+
+If you distribute a product built with ODE_ECS, please include the ckdl MIT copyright and permission notice (from [src/ode_kdl/LICENSE](/src/ode_kdl/LICENSE)) in your product's credits or documentation.
+
 ---
 ‼️ If you have any questions about ODE_ECS or encounter any issues, please open an issue ticket, and I'll try to answer, fix, or add new functionality.

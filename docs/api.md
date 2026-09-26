@@ -672,6 +672,16 @@ save_to_file(self: ^Database, path: string, allocator := context.allocator,
 load_from_file(self: ^Database, path: string, allocator := context.allocator) -> Error
 ```
 
+### KDL snapshot (human-readable folder)
+
+The same snapshot, written as a folder of `.kdl` files with a `_snapshot.kdl` manifest. See
+[Serialization](serialization.md#human-readable-kdl-snapshots).
+
+```odin
+save_to_kdl(self: ^Database, folder: string, overwrite := false, allocator := context.allocator) -> Error
+load_from_kdl(self: ^Database, folder: string, allocator := context.allocator) -> Error
+```
+
 ### Overbase serialization
 
 Same idea, for a shared `Overbase`'s id space (its attached `Database`s are serialized separately,
@@ -727,6 +737,7 @@ API_Error :: enum {
     Snapshot_Invalid, Snapshot_Version_Mismatch, Snapshot_Schema_Mismatch,
     Snapshot_Capacity_Too_Small, Snapshot_Component_Not_POD,
     Cannot_Serialize_While_Packing_Paused, Serialize_Buffer_Too_Small, File_Error,
+    Snapshot_Already_Exists,
     Sync_Table_Type_Not_Supported, Sync_Too_Many_Fields, Sync_Table_Already_Registered,
     Sync_Buffer_Too_Small, Sync_Feature_Disabled,
     Tables_Cap_Exceeds_Compile_Time_Limit, Observers_Feature_Disabled,

@@ -1,0 +1,261 @@
+// VS Code Tasks configuration file
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+    },
+    "problemMatcher": {
+        "owner": "odin",
+        "source": "Odin",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^(.*?)(\\((\\d+):(\\d+)\\))\\s+(Syntax\\s+)?(Error|Warning):\\s+(.+)$",
+          "file": 1,
+          "line": 3,
+          "column": 4,
+          "severity": 6,
+          "message": 7
+        }
+    },
+    "tasks": [
+        {
+            "label": "KDL Tests",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "test",
+                "${workspaceFolder}\\tests\\",
+                "-debug",
+                "-o:none",
+                "-define:ODIN_TEST_THREADS=1",
+                "-define:ODIN_TEST_RANDOM_SEED=1",
+                "-define:ODIN_TEST_LOG_LEVEL=warning",
+                "-define:ODIN_TEST_FANCY=false",
+                "-define:ODIN_TEST_CLIPBOARD=false",
+                "-define:ODIN_TEST_PROGRESS_WIDTH=0",
+                "-define:ODIN_TEST_SHORT_LOGS=true"
+
+                //"-show-defineables"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\tests\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Check src",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "check",
+                "${workspaceFolder}\\src",
+                "-vet",
+                "-no-entry-point"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Check kdl_cat",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "check",
+                "${workspaceFolder}\\kdl_cat",
+                "-vet",
+                "-no-entry-point"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "kdl-cat",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "detail": "",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "run",
+                "${workspaceFolder}\\cmd\\kdl_cat",
+                "-debug",
+                "-o:none",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\cmd\\kdl_cat\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Check kdl_tokenize",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "check",
+                "${workspaceFolder}\\kdl_tokenize",
+                "-vet",
+                "-no-entry-point"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "kdl-tokenize",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "detail": "",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "run",
+                "${workspaceFolder}\\cmd\\kdl_tokenize",
+                "-debug",
+                "-o:none",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\cmd\\kdl_tokenize\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "Check kdl_parse_events",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "check",
+                "${workspaceFolder}\\kdl_parse_events",
+                "-vet",
+                "-no-entry-point"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "kdl-parse-events",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "detail": "",
+            "isBackground": false,
+            "command": "odin",
+            "args": [
+                "run",
+                "${workspaceFolder}\\cmd\\kdl_parse_events",
+                "-debug",
+                "-o:none",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\cmd\\kdl_parse_events\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+    ]
+}

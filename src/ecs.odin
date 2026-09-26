@@ -125,6 +125,12 @@ package ode_ecs
         load_from_file          :: database__load_from_file
 
     //
+    // KDL snapshot (human-readable folder of .kdl files)
+    //
+        save_to_kdl             :: database__save_to_kdl
+        load_from_kdl           :: database__load_from_kdl
+
+    //
     // Overbase serialization
     //
         overbase_serialized_size :: overbase__serialized_size
@@ -853,6 +859,7 @@ package ode_ecs
             Cannot_Serialize_While_Packing_Paused,
             Serialize_Buffer_Too_Small,
             File_Error,
+            Snapshot_Already_Exists,
             Sync_Table_Type_Not_Supported,
             Sync_Too_Many_Fields,
             Sync_Table_Already_Registered,
