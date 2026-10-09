@@ -81,7 +81,7 @@ package ode_ecs
             assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc)
-            assert(cap < int(max(u32)), loc = loc)
+            assert(u64(cap) < u64(max(u32)), loc = loc)
         }
 
         if len(component_types) == 0 do return API_Error.Tables_Array_Should_Not_Be_Empty

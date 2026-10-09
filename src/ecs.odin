@@ -121,14 +121,6 @@ package ode_ecs
         serialized_size         :: database__serialized_size
         serialize               :: database__serialize
         deserialize              :: database__deserialize
-        save_to_file            :: database__save_to_file
-        load_from_file          :: database__load_from_file
-
-    //
-    // KDL snapshot (human-readable folder of .kdl files)
-    //
-        save_to_kdl             :: database__save_to_kdl
-        load_from_kdl           :: database__load_from_kdl
 
     //
     // Overbase serialization
@@ -136,8 +128,6 @@ package ode_ecs
         overbase_serialized_size :: overbase__serialized_size
         overbase_serialize       :: overbase__serialize
         overbase_deserialize     :: overbase__deserialize
-        overbase_save_to_file    :: overbase__save_to_file
-        overbase_load_from_file  :: overbase__load_from_file
 
     //
     // Table
