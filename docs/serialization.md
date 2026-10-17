@@ -22,7 +22,7 @@ Rules:
 * **Pack before saving.** While packing is paused (or tables still hold holes), `serialize` returns `Cannot_Serialize_While_Packing_Paused` — call `resume_packing`/`pack` first.
 * Entity generations are 32-bit: an `entity_id` held across exactly 4,294,967,296 destroy/create reuses of the same index compares equal again. This is a general property of ODE_ECS ids, but long-lived snapshots make old ids more likely to stick around — don't keep `entity_id`s from *other*, older snapshots and expect `is_expired` to catch them.
 * The format is versioned and validated (magic, endianness, version); a corrupt or truncated buffer fails with `Snapshot_Invalid` without touching the database.
-* **No files on js/wasm.** `save_to_file`/`load_from_file` and the KDL snapshots below don't exist on the `js` targets, which have no file system. `serialize`/`deserialize` into your own buffer work everywhere.
+* **No files on js or freestanding wasm.** `save_to_file`/`load_from_file` and the KDL snapshots below don't exist on the `js` and `freestanding` targets, which have no file system (`ecs.HAS_FILE_SYSTEM` is false there). `serialize`/`deserialize` into your own buffer work everywhere.
 
 ### Human-readable KDL snapshots
 

@@ -313,14 +313,14 @@
             }
         },
         {
-            "label": "JS Check",
+            "label": "Wasm Check",
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
             "type": "shell",
             "isBackground": false,
-            "command": "odin check src -target:js_wasm32 -no-entry-point -define:ECS_SYNC_ENABLED=true -define:ECS_OBSERVERS_ENABLED=true && echo JS Check OK",
+            "command": "odin check src -target:js_wasm32 -no-entry-point -define:ECS_SYNC_ENABLED=true -define:ECS_OBSERVERS_ENABLED=true && odin check src -target:freestanding_wasm32 -no-entry-point -define:ECS_SYNC_ENABLED=true -define:ECS_OBSERVERS_ENABLED=true && echo Wasm Check OK",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {

@@ -16,6 +16,9 @@ package ode_ecs
 
     VALIDATIONS :: #config(ECS_VALIDATIONS, true)
 
+    // core:os doesn't exist on js or freestanding
+    HAS_FILE_SYSTEM :: ODIN_OS != .JS && ODIN_OS != .Freestanding
+
     BIT_SET_VALUES_CAP :: 128
 
     Bits :: bit_set[0..<BIT_SET_VALUES_CAP]
@@ -122,8 +125,7 @@ package ode_ecs
         serialize               :: database__serialize
         deserialize              :: database__deserialize
 
-        // core:os doesn't exist on js
-        when ODIN_OS != .JS {
+        when HAS_FILE_SYSTEM {
             save_to_file        :: database__save_to_file
             load_from_file      :: database__load_from_file
         }
@@ -131,7 +133,7 @@ package ode_ecs
     //
     // KDL snapshot (human-readable folder of .kdl files)
     //
-        when ODIN_OS != .JS {
+        when HAS_FILE_SYSTEM {
             save_to_kdl         :: database__save_to_kdl
             load_from_kdl       :: database__load_from_kdl
         }
@@ -143,7 +145,7 @@ package ode_ecs
         overbase_serialize       :: overbase__serialize
         overbase_deserialize     :: overbase__deserialize
 
-        when ODIN_OS != .JS {
+        when HAS_FILE_SYSTEM {
             overbase_save_to_file    :: overbase__save_to_file
             overbase_load_from_file  :: overbase__load_from_file
         }

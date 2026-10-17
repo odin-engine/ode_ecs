@@ -4,6 +4,7 @@
     Tests for sync.odin; run with `odin test . -define:ECS_SYNC_ENABLED=true`
 */
 #+build !js
+#+build !freestanding
 package ode_ecs
 
 // Base

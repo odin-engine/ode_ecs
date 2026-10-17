@@ -1,9 +1,10 @@
 /*
     File save/load helpers for serialization.odin and overbase_serialization.odin.
-    Split out because core:os doesn't exist on js/wasm; in-memory
+    Split out because core:os doesn't exist on js or freestanding wasm; in-memory
     (de)serialization still works there.
 */
 #+build !js
+#+build !freestanding
 package ode_ecs
 
 // Core

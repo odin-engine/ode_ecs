@@ -2,6 +2,7 @@
     2025 (c) Oleh, https://github.com/zm69
 */
 #+build !js
+#+build !freestanding
 #+private
 package ode_ecs
 

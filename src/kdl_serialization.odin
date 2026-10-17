@@ -11,9 +11,10 @@
     apply path, with the same schema rules as serialization.odin.
 
     Native only: snapshots are folders on disk, and core:os doesn't exist on
-    js/wasm.
+    js or freestanding wasm.
 */
 #+build !js
+#+build !freestanding
 package ode_ecs
 
 // Base
