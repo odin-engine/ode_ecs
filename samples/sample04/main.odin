@@ -270,7 +270,7 @@ main :: proc() {
         tags_dense := ecs.slice(&tags_table)
         tags_eids := ecs.entities_slice(&tags_table)
         for i in 0..<len(tags_dense) {
-            tag := &tags_dense[i]
+            tag := tags_dense[i]
             eid := tags_eids[i]
 
             if eid == human {
@@ -302,7 +302,7 @@ main :: proc() {
         bool_dense := ecs.slice(&bool_table)
         bool_eids := ecs.entities_slice(&bool_table)
         for i in 0..<len(bool_dense) {
-            comp := &bool_dense[i]
+            comp := bool_dense[i]
             eid := bool_eids[i]
 
             if eid == human {
