@@ -166,14 +166,3 @@ package ode_core
     }
 
     sparse_arr__clear :: sparse_arr__zero
-
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests
-// 
-
-
-
-
-    // sparse_arr__add's "more than one nil hole" branch: only the first hole fills, and has_nil_item stays true.
-

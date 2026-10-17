@@ -111,7 +111,6 @@ package maps
 
     // Low-bits Fibonacci hash for power-of-2 capacity: (k * odd_constant) mod 2^n
     // is a bijection on dense consecutive keys, so zero collisions for entity indexes.
-    @(private)
     rh_map32__hash :: #force_inline proc "contextless" (self: ^Rh_Map32, key: u32) -> int {
         when MAPS_TESTING {
             return int(key) & self.mask // predictable hash for tests
@@ -301,14 +300,3 @@ package maps
     rh_map32__memory_usage :: proc(self: ^Rh_Map32) -> int {
         return size_of(Rh_Map32) + size_of(Rh_Map32_Item) * self.capacity
     }
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests
-//
-
-
-    // Asserts observable behavior only (never slot placement), so it runs in
-    // both modes; without -define:maps_testing=true it exercises the
-    // production Fibonacci hash, the default load factor, and the min-capacity-8 bump.
-
-

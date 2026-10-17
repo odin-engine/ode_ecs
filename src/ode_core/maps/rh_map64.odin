@@ -183,10 +183,3 @@ package maps
     rh_map64__memory_usage :: proc(self: ^Rh_Map64) -> int {
         return size_of(Rh_Map64) + size_of(Rh_Map64_Item) * self.capacity
     }
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests
-//
-
-
-

@@ -74,6 +74,3 @@ package ode_core
         mem_track__panic_if_bad_frees(self)
         mem_track__panic_if_leaks(self)
     }
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests

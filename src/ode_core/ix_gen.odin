@@ -193,10 +193,3 @@ package ode_core
         self.cap = cap
         return .None
     }
-
-
-
-    // GEN_MAX is 4.29 billion, so this pokes the internal slot state directly to fast-forward to the edge of the wrap instead of actually looping that many cycles.
-
-    // The clear default (bump_gen = true) must expire ids issued before the clear.
-

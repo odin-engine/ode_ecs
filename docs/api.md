@@ -661,7 +661,7 @@ An Overbase whose Databases have sync channels returns `API_Error.Cannot_Grow_Wi
 ## Serialization (whole-`Database` binary snapshot)
 
 Round-trips a whole `Database` — entities, every table's components, relations, and pairs. See
-[Serialization](serialization.md).
+[Serialization](serialization.md). The file and KDL calls in this section are not available on `js` targets.
 
 ```odin
 serialized_size(self: ^Database) -> (size: int, err: Error)

@@ -9,12 +9,6 @@ package ode_ecs
 // Core
     import "core:os"
 
-// Public API
-    save_to_file        :: database__save_to_file
-    load_from_file      :: database__load_from_file
-    overbase_save_to_file    :: overbase__save_to_file
-    overbase_load_from_file  :: overbase__load_from_file
-
 ///////////////////////////////////////////////////////////////////////////////
 // File convenience
 

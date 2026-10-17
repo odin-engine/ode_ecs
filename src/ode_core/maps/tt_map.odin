@@ -151,10 +151,3 @@ package maps
     tt_map__memory_usage :: proc(self: ^Tt_Map($CAP, $V)) -> int {
         return size_of(self^)
     }
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests
-// 
-
-
-

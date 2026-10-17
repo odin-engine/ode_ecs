@@ -249,7 +249,7 @@
             "command": "odin",
             "args": [
                 "test",
-                "${workspaceFolder}\\src\\ode_core\\",
+                "${workspaceFolder}\\src\\ode_core\\tests",
                 "-debug",
                 "-o:none",
                 "-define:ODIN_TEST_THREADS=1",
@@ -286,7 +286,7 @@
             "command": "odin",
             "args": [
                 "test",
-                "${workspaceFolder}\\src\\ode_core\\maps",
+                "${workspaceFolder}\\src\\ode_core\\tests\\maps",
                 "-debug",
                 "-o:none",
                 "-define:ODIN_TEST_THREADS=1",
@@ -301,6 +301,32 @@
             ],
             "options": {
                 "cwd": "${workspaceFolder}\\src\\ode_core\\out\\"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true,
+                "close": false
+            }
+        },
+        {
+            "label": "JS Check",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "type": "shell",
+            "isBackground": false,
+            "command": "odin check src -target:js_wasm32 -no-entry-point -define:ECS_SYNC_ENABLED=true -define:ECS_OBSERVERS_ENABLED=true && echo JS Check OK",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "cmd.exe",
+                    "args": ["/d", "/c"]
+                }
             },
             "presentation": {
                 "echo": true,

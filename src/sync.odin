@@ -4,11 +4,8 @@
     WARNING: This feature is in experimental stage and is not yet considered stable. 
              The API may change in future releases.
 
-    Off by default — build with -define:ECS_SYNC_ENABLED=true to compile it in.
-    This file's own @(test) procs
-    below require the flag to mean anything; run them with
-    `odin test . -define:ECS_SYNC_ENABLED=true` (mirrors -define:maps_testing=true
-    for the maps package).
+    Off by default — build with -define:ECS_SYNC_ENABLED=true to compile it in;
+    its tests need the same flag.
 
     Sync — delta-change replication, built for sending over an unreliable
     transport (UDP) with minimal traffic: collect_delta emits only the bytes

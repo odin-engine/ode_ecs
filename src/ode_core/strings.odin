@@ -40,7 +40,3 @@ import "core:mem"
 
         return strings.clone(strings.to_string(res_b), allocator), nil 
     }
-
-///////////////////////////////////////////////////////////////////////////////
-// Tests
-// 

@@ -31,10 +31,6 @@ package ode_ecs
 // ODE
     import kdl "ode_kdl/src"
 
-// Public API
-    save_to_kdl             :: database__save_to_kdl
-    load_from_kdl           :: database__load_from_kdl
-
 ///////////////////////////////////////////////////////////////////////////////
 // Format
 

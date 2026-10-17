@@ -152,8 +152,3 @@ package ode_ecs
         bits__intersects,
         bits_arr__intersects,
     }
-
-
-
-
-

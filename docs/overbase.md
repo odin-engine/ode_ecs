@@ -100,7 +100,7 @@ ecs.overbase_serialize(&overbase, buf)
 // ... later, into an Overbase already init'd with cap >= the saved cap ...
 ecs.overbase_deserialize(&overbase, buf)
 
-// or to/from a file:
+// or to/from a file (not available on js targets):
 ecs.overbase_save_to_file(&overbase, "world.overbase.snap")
 ecs.overbase_load_from_file(&overbase, "world.overbase.snap")
 ```
