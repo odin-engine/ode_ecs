@@ -9,7 +9,6 @@ package maps
 // Core
     import "core:log"
     import "core:mem"
-    import "core:testing"
 
     // Predictable hash values for map tests (key 0 -> hash 0, key 1 -> hash 1, etc.)
     MAPS_TESTING :: #config(maps_testing, false)

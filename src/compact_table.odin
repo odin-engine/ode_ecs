@@ -555,7 +555,7 @@ package ode_ecs
             assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc)
-            assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc)
+            assert(u64(db.overbase.id_factory.cap) < u64(max(u32)), loc = loc)
             assert(size_of(T) != 0, "component type T must not be zero-sized — use Tag_Table for a marker/tag component that carries no data", loc = loc)
         }
 

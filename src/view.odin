@@ -340,7 +340,7 @@ package ode_ecs
         }
 
         when VALIDATIONS {
-            assert(self.cap < int(max(u32)), loc = loc)
+            assert(u64(self.cap) < u64(max(u32)), loc = loc)
         }
 
         if len(uniq_excludes) > 0 {

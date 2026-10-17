@@ -23,7 +23,6 @@ package ode_ecs
 
 // Core
     import "core:mem"
-    import "core:os"
     import "core:slice"
 
 // ODE
@@ -1197,28 +1196,4 @@ package ode_ecs
         }
 
         return nil
-    }
-
-///////////////////////////////////////////////////////////////////////////////
-// File convenience
-
-    database__save_to_file :: proc(self: ^Database, path: string, allocator := context.allocator, allow_non_pod := false) -> Error {
-        size := database__serialized_size(self) or_return
-
-        buf := make([]byte, size, allocator) or_return
-        defer delete(buf, allocator)
-
-        written := database__serialize(self, buf, allow_non_pod) or_return
-
-        if os.write_entire_file(path, buf[:written]) != nil do return API_Error.File_Error
-
-        return nil
-    }
-
-    database__load_from_file :: proc(self: ^Database, path: string, allocator := context.allocator) -> Error {
-        data, rerr := os.read_entire_file(path, allocator)
-        if rerr != nil do return API_Error.File_Error
-        defer delete(data, allocator)
-
-        return database__deserialize(self, data)
     }

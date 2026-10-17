@@ -9,7 +9,11 @@
     Loading transcodes the folder into the binary snapshot format and hands
     it to database__deserialize, so both formats share one validation and
     apply path, with the same schema rules as serialization.odin.
+
+    Native only: snapshots are folders on disk, and core:os doesn't exist on
+    js/wasm.
 */
+#+build !js
 package ode_ecs
 
 // Base

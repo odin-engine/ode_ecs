@@ -57,7 +57,7 @@ package ode_ecs
             assert(self.state == Object_State.Not_Initialized, loc = loc)
             assert(cap > 0, loc = loc)
             assert(cap <= db.overbase.id_factory.cap, loc = loc) // cannot be larger than entities_cap
-            assert(db.overbase.id_factory.cap < int(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
+            assert(u64(db.overbase.id_factory.cap) < u64(max(u32)), loc = loc) // eid.ix keys must fit the u32 rid map
         }
 
         shared_table__init(&self.shared, Table_Type.Tag_Table, db)

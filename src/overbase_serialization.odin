@@ -23,7 +23,6 @@
 package ode_ecs
 
 // Core
-    import "core:os"
     import "core:slice"
 
 // ODE
@@ -154,29 +153,4 @@ package ode_ecs
         assert(r.offset == len(data))
 
         return nil
-    }
-
-///////////////////////////////////////////////////////////////////////////////
-// File convenience
-
-    // Serialize into a temporary buffer (the only allocation) and write it to `path`, overwriting the file if it exists.
-    overbase__save_to_file :: proc(self: ^Overbase, path: string, allocator := context.allocator) -> Error {
-        size := overbase__serialized_size(self) or_return
-
-        buf := make([]byte, size, allocator) or_return
-        defer delete(buf, allocator)
-
-        written := overbase__serialize(self, buf) or_return
-
-        if os.write_entire_file(path, buf[:written]) != nil do return API_Error.File_Error
-
-        return nil
-    }
-
-    overbase__load_from_file :: proc(self: ^Overbase, path: string, allocator := context.allocator) -> Error {
-        data, rerr := os.read_entire_file(path, allocator)
-        if rerr != nil do return API_Error.File_Error
-        defer delete(data, allocator)
-
-        return overbase__deserialize(self, data)
     }
