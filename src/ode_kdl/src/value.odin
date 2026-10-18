@@ -7,7 +7,7 @@
     the active union case *is* the type, so there's no separate `type` field
     to keep in sync.
 */
-package kdl
+package kdl_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // Value

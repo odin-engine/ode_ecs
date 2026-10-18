@@ -15,7 +15,7 @@
     without the caller having to recompute it (unlike ckdl's own C, which
     has to re-derive every raw pointer after each buffer refill).
 */
-package kdl
+package kdl_ecs
 
 // Base
     import "base:runtime"

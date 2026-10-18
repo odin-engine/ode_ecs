@@ -6,7 +6,7 @@
     src/grammar.h / tokenizer.c character-class functions, v2-only (no
     kdl_character_set parameter — this port doesn't support KDL v1).
 */
-package kdl
+package kdl_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // Grammar

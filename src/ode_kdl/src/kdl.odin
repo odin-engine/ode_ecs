@@ -11,7 +11,7 @@
     architecture and the deliberate differences from upstream ckdl (v2
     only, no CLI/bindings beyond kdl-cat).
 */
-package kdl
+package kdl_ecs
 
 ///////////////////////////////////////////////////////////////////////////////
 // Defines

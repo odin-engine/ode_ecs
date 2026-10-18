@@ -12,7 +12,7 @@
     Emitter must never be moved after init; self.writer in buffering mode
     holds a pointer into the same struct it lives in.
 */
-package kdl
+package kdl_ecs
 
 // Core
     import "base:runtime"

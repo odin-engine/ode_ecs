@@ -9,7 +9,7 @@
     utf8.c) — it alone distinguishes a truncated-at-the-buffer-edge sequence
     (Incomplete: go read more) from a genuinely invalid one (Decode_Error).
 */
-package kdl
+package kdl_ecs
 
 // Core
     import "core:unicode/utf8"

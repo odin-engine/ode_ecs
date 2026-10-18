@@ -8,7 +8,7 @@
     _kdl_write_buffer; growth is handled by the builder instead of manual
     realloc.
 */
-package kdl
+package kdl_ecs
 
 // Core
     import "core:strings"

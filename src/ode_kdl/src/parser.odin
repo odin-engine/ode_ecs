@@ -19,7 +19,7 @@
     Number's string-encoded case, matching kdl_number's
     KDL_NUMBER_TYPE_STRING_ENCODED.
 */
-package kdl
+package kdl_ecs
 
 // Core
     import "base:runtime"

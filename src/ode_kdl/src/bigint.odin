@@ -8,7 +8,7 @@
     for growth instead of hand-rolled realloc, and `append`/`pop` instead of
     the manual carry-digit dance.
 */
-package kdl
+package kdl_ecs
 
 // Core
     import "base:runtime"
