@@ -54,7 +54,7 @@ What if you need to iterate over entities with a specific combination of compone
 
 Instead, we use [Views](#-view). Views are _pre-calculated queries_. During development, you decide which component sets you need to iterate over and create a View ahead of time. The View updates automatically when entities are created or components change. This means the View is always ready for iteration without requiring costly queries.
 
-[Flags_Table](#️-flags_table) stores many boolean flags per entity (e.g., `Stunned`, `Dead`, `In_Air`) in one table, up to 128 per table, and Views can filter on them. Need more? Use several Flags_Tables — an entity can be in any number of them.
+[Flags_Table](#️-flags_table) stores many boolean flags per entity (e.g., `Stunned`, `Dead`, `In_Air`) in one table, up to 128 per table, and Views can filter on them. Need more? Use several Flags_Tables — an entity can have any number of them.
 
 ODE_ECS supports both sparse-set and archetype [architectures](/docs/ecs_types.md). You can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
