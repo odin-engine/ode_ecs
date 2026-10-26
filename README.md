@@ -25,7 +25,7 @@ Our other projects:
 - [Relations](/docs/relations.md) — for modeling parent/child links between entities.
 - [Command buffers](/docs/command_buffer.md) — let you defer mutations, which can help in multithreaded code.
 - [Pause/resume packing](#️-pausing-a-single-table-or-group) — a way to mutate tables safely while iterating.
-- [Binary snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, flags, relations) to a buffer or file, with entity IDs staying valid after reload.
+- [Binary and text snapshots](/docs/serialization.md) — save/load a whole Database (entities, components, flags, relations) to a buffer or file, with entity IDs staying valid after reload.
 - [Overbase](/docs/overbase.md) — a way to share one entity-ID space across multiple Databases.
 
 #### Tested & documented 
@@ -58,7 +58,7 @@ Instead, we use [Views](#-view). Views are _pre-calculated queries_. During deve
 
 ODE_ECS supports both sparse-set and archetype [architectures](/docs/ecs_types.md). You can use an archetype approach with [Arch_Table](/docs/arch_table.md). You can even *mix* both architectures — a single entity can hold components across both Tables and `Arch_Table`s, and Arch_Tables can be included in [Views](/docs/view.md) or [Groups](/docs/group.md).
 
->**NOTE:** If you are new to ODE_ECS, you can choose to focus just on three objects: [Database](#-database), [Table](#table), and [View](#-view). Everything else consists of optimizations or additional features that you might not need at the beginning and can add later.
+> 💡If you are new to ODE_ECS, you can choose to focus just on three objects: [Database](#-database), [Table](#table), and [View](#-view). Everything else consists of optimizations or additional features that you might not need at the beginning and can add later.
 
 ## 🧩 Database  
  
@@ -77,7 +77,7 @@ When initializing a `Database`, you can specify the maximum `entities_cap` as we
 
 Every other object (tables, views) linked to `my_ecs` will now use `my_allocator` to allocate memory.  
 
->**NOTE:** ODE_ECS never reallocates memory automatically during the frame loop. This follows the same reasoning as avoiding garbage collectors — to prevent performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
+>💡 ODE_ECS never reallocates memory automatically during the frame loop. This follows the same reasoning as avoiding garbage collectors — to prevent performance drops caused by unexpected memory allocations, deallocations, or memory copying. Usually, you know the maximum number of entities you want in your game, so you can preallocate that amount ahead of time.  
 
 You can have as many ECS databases in your game as you want:  
 
@@ -106,7 +106,7 @@ If you have a `Position` component, you can create a table like this:
 
     ecs.table_init(&positions, db=&my_ecs, cap=100)
 ```  
->**NOTE:** The component type cannot be zero-sized (`size_of(T) == 0`).
+>💡 The component type cannot be zero-sized (`size_of(T) == 0`).
 
 To create an entity, you can do this:  
 
@@ -142,7 +142,7 @@ Or this:
     }
 ```  
 
->**NOTE:** Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in a live `slice`. 
+>💡 Iterating over components in a `Table` is as fast as possible because it is just iterating over a slice/array. There are no "empty" or "deleted" components in a live `slice`. 
 
 You can get the row-aligned `entity_id`s alongside components with `entities_slice`:  
 
@@ -168,7 +168,7 @@ Using an entity, you can access its other components:
 ```
 Tables documentation is [here](/docs/tables.md).
 
->**NOTE:** Creating databases, tables, views, etc., should happen outside the game's frame loop.
+>💡 Creating databases, tables, views, etc., should happen outside the game's frame loop.
 
 ## 🌄 **View** 
 
