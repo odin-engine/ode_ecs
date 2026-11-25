@@ -220,7 +220,7 @@ Read about View filters [here](/docs/view.md#filters).
 
 ## 🏷️ Flags_Table
 
-A `Flags_Table` gives each entity a set of flags (an `ecs.Bits` set), up to 128 flags per table, so one table can hold many boolean states. You don't need a separate table for every tag or flag, and an entity can be in any number of Flags_Tables (for example `status` and `abilities`), so the total number of flags per entity is not limited to 128. Flags are integer bits `0..<128` or values of your own enum:
+A `Flags_Table` gives each entity a set of flags (an `ecs.Bits` set), up to 128 flags per table, so one table can hold many boolean states. You don't need a separate table for every tag or flag, and an entity can have any number of Flags_Tables (for example `status` and `abilities`), so the total number of flags per entity is not limited to 128. Flags are integer bits `0..<128` or values of your own enum:
 
 ```odin
     Status :: enum u8 { Alive, Stunned, In_Air, Enemy }
