@@ -91,8 +91,6 @@ You can have as many ECS databases in your game as you want:
 
 `Database`s share **nothing** (by default) and can use different allocators.
 
-The other main types of objects in ODE_ECS are tables, views, and [groups](/docs/group.md).  
-
 ## **Table**  
 
 A component **_Table_** is a dense array of components of the same type. I named it "table" because it is very similar to the concept of a table in relational databases. Each different type of component requires a separate table. For example, you might have a `positions` table for `Position` components and an `ais` table for `AI` components.  
