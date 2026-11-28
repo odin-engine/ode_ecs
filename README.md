@@ -16,7 +16,7 @@ Our other projects:
 - Frame-to-frame stability from both CPU and memory standpoints.
 
 #### Low-level & hybrid
-- A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Flags_Table](/docs/flags_table.md) (up to 128 flags per table, no component data; an entity can be in any number of Flags_Tables).
+- A few table types to fit different needs. [Table](#table) (general purpose), [Compact_Table](/docs/tables.md#compact_tablet) (lower memory use), [Tiny_Table](/docs/tables.md#tiny_tablet) (small fixed-cap, inline storage), [Flags_Table](/docs/flags_table.md) (up to 128 flags per table, no component data; an entity can have any number of Flags_Tables).
 - Supports both sparse-set and archetype styles. [Arch_Table](/docs/arch_table.md) gives you an archetype approach, and it can be combined with regular Tables on the same entity if that's useful for your case.
 
 #### Other features
